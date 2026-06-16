@@ -1,0 +1,20 @@
+[workspace]
+resolver = "2"
+members = ["crates/sim", "crates/game"]
+
+[workspace.package]
+edition = "2021"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/benjaminabbitt/atomica"
+
+[workspace.dependencies]
+atomica-sim = { path = "crates/sim" }
+macroquad = "0.4"
+egui-macroquad = "0.17"
+
+# Smaller, faster wasm artifacts for release web builds.
+[profile.release]
+opt-level = "z"
+lto = true
+codegen-units = 1
+panic = "abort"

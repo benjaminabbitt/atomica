@@ -1,0 +1,3 @@
+/target
+# Built wasm artifact is staged into web/ by `make web`; don't commit it.
+/web/*.wasm

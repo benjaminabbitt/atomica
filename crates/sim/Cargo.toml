@@ -1,0 +1,12 @@
+[package]
+name = "atomica-sim"
+version = "0.0.0"
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Engine-agnostic, deterministic battle simulation for CHROME AND CODE."
+
+[dependencies]
+# Intentionally none. This crate must stay free of rendering/engine deps and of
+# any non-deterministic source (no `rand`, no system time) so battles are
+# reproducible for async / replayable auto-resolution.
