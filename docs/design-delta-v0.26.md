@@ -388,12 +388,7 @@ None of it breaks the crate split or phase ordering.
 
 **Economy & Rep (#14) — currency banks, Rep is live.** Currency accumulates into a spendable wallet (save for big buys); **Rep is a live unit-summation that drops when a contributing unit leaves** the roster. You can stockpile money, never standing — fire the earners and your Rep falls. Reconciles "spending must work" with "Rep isn't banked" (§2).
 
-**Corp politics (#3) — coupled rivals.** Courting a corp **costs Rep with its rival**; the market forces alignment and your standing picks your enemies. Rival graph (◆, tunable):
-- **Cyberware ↔ Medical** — chrome vs flesh (the signature axis)
-- **Military-Industrial ↔ Insurance** — cause damage vs cover it
-- **Vehicles ↔ Real Estate** — the road vs the tower (nomad vs landed)
-- **Media ↔ Financial** — soft influence vs hard capital
-- category-level: **Cops ↔ the street** (clans / independents) via Notoriety (#2).
+**Corp politics (#3) — coupled rivals, *dynamic per run*.** Courting a corp **costs Rep with its rival**; the market forces alignment and your standing picks your enemies. **The rivalry graph is rolled fresh at run start** — *no fixed pairs* — so every run is a new political map to read and adapt to; it's **stable within a run** (you can still plan), rolled by the run layer (`atomica-run`) and seedable for replays. The one constant is the category-level **Cops ↔ street** opposition (clans / independents), via Notoriety (#2). *(Thematic pairings like chrome↔flesh or road↔tower can surface as flavored/weighted outcomes, but none is permanent.)*
 
 **Morale Break (#5) — by unit trait.** Each unit's Break is a trait ◆: **Steadfast → rout** (flee: forced Kite/Disperse, can't attack) vs **Feral → berserk** (attack nearest, incl. allies). Machines immune (no mind, §4). Disciplined archetypes (Steel Lotus) resist Break and lean rout; feral ones berserk.
 
