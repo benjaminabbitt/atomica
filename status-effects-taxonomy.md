@@ -2,6 +2,8 @@
 
 **Working draft v0.25** · Comprehensive survey + design schema. Reported mechanics are sourced (§9). Anything marked ◆ is my synthesis/analysis, **not** a game fact.
 
+> **Continued in [`docs/design-delta-v0.26.md`](docs/design-delta-v0.26.md)** — post-v0.25 decisions: three-axis identity (chassis × faction × role), the faction economy, the Doctor/Ripperdoc/White-hat mender triad + cross-pool healing, equipment-condition, the Resolve/morale layer, vehicles, Rep/Notoriety politics, and the **PAN** & **AR** digital sub-layers.
+
 ## Contents
 - §0 Conventions & flags
 - §1 Headline findings

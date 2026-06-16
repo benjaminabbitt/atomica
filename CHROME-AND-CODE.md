@@ -2,6 +2,8 @@
 
 *Async auto-battler / roguelike-deckbuilder · cyberpunk, neo-Japan cyber-samurai. Names are placeholder. This is the at-a-glance spec; the full design doc (`status-effects-taxonomy.md`) holds the reasoning, the survey of precedents, and the open-question detail. **Numbers throughout are TBD** — this fixes the *shapes*, not the values.*
 
+> **Post-v0.25 synthesis** (three-axis identity & factions, the mender triad + cross-pool healing, equipment-condition, morale/Resolve, vehicles, Rep/politics, **PAN** & **AR**, archetype roster) lives in [`docs/design-delta-v0.26.md`](docs/design-delta-v0.26.md).
+
 ---
 
 ## The spine — two realms
