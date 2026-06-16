@@ -41,7 +41,7 @@ They **compete**: a Rep portfolio is a balancing act, and cozying up to one sect
 | **Military-Industrial** | maker | *Bastion Defense* | guns, armor, EMP, war-drones / mechs | firepower, armor, EMP |
 | **Vehicles** | maker | *Velocity Motors* | transports, mobility, ramming rigs | vehicle armies, mobility |
 | **Financial** | service | *Meridian Capital* | currency, income, interest | buy-power, mercs |
-| **Insurance** | service | *Sentinel Assurance* | **no gear of its own** — **pre-combat** coverage (a KO'd insured unit still earns next economy phase; loss compensation); **resells** makers' gear at a **discount** | death-insurance, economic defense |
+| **Insurance** | service | *Sentinel Assurance* | **no gear of its own** — **pre-combat** coverage (a downed insured unit is **recovered, not lost**, and still earns next phase; loss compensation); **resells** makers' gear at a **discount** | death-insurance, economic defense |
 | **Media** | service | *Sygnal* | Rep, intel, info-war (vendors spoof / signals *software*) | signals, spoof offense, Rep manipulation |
 | **Real Estate** | service | *Bedrock Holdings* | **not the battle board** — safe-houses, roster / stash capacity, between-battle recovery, run-map holdings | logistics & staying power |
 
@@ -264,29 +264,39 @@ The **Rep + gear faucet.** Alongside standard battles (which pay currency / surv
 - **Forgoes** the standard currency win-reward — a Job is taken *instead of* a normal fight. **Take-the-dive** goes further: you give up the win itself, trading the match for the payout.
 - The offerer's **rivals may sour** on you (the Rep web, §2.5).
 
-### 9.4 Casualties & the downtime economy ◆
+### 9.4 Death, extraction & the downtime economy ◆
 
-Death is **per-battle, not permanent.** A KO'd / dead unit (Integrity 0) is **resurrected to full for the next battle** — the run ends only on a *battle* loss (army eliminated), never on losing individual units. (In-battle death triggers — Detonate / Legacy / Data-spill, §7G — still fire; the KO is real *for that battle*.)
+**Downed, then decided.** A unit at 0 Integrity is **downed** (a Death's-Door grace state, §6.4), not instantly gone; its fate resolves by whether you got it out:
 
-The one persistent cost of a KO is **economic, in the non-PvP segments that follow** (Jobs / shop / downtime) before the next battle: that segment's economy & Rep generation scales with your **surviving** units; **KO'd units contribute nothing** while recovering. So —
+| Outcome | Condition | Result |
+|---|---|---|
+| **Recovered** | **extracted** (pulled off the field) *or* **insured** (pre-paid policy) | survives → returns next battle |
+| **Dead + salvage** | downed, *not* extracted, *not* insured | **permanently lost** — but you **salvage** it: detachable gear / chrome (Ripperdoc) + biomatter / **Medical benefit** (Doctor) |
 
-- **Clean wins pay more** — fewer casualties → more contributors in the following segment.
-- **Pyrrhic victories are taxed** — heavy losses still *win the fight*, but you collect less Rep / economy after, without losing the units themselves.
-- **Take-the-dive (§9.1) compounds** — throwing a match KOs your units, so the very segment you took the Job for pays out leaner; price it in.
-- Soft attrition that rewards menders (Doctor / Ripperdoc keep contributors up), defense, and positioning — *without* permadeath.
+Death is **conditional, not automatic** — you choose how much to spend (extraction tempo/risk, or an insurance premium) to keep a unit; the consolation for losing one is its salvage. The **run still ends only on a battle loss** (army wiped), but you can now **bleed units permanently across a run while winning** — real stakes. *(Revises the earlier "always resurrect next battle" rule.)*
 
-**Casualty offsets ◆ — two channels:**
+**Two-tier stakes ◆:**
+- **Generic units are fungible** — salvage recovers most of their value; losing one is a resource hit, then you re-buy. Don't over-invest saving them.
+- **Characters carry *unsalvageable* essence** — their **signature skill + inbuilt identity** (§7F inbuilt equipment) can't be harvested. You get their detachable gear back, but **the character is gone for good.** That's what makes named units worth extracting, insuring, and protecting.
 
-- **Insurance** (the Insurance corp) is a **pre-combat purchase**: insure a unit *before* the battle and, if it's KO'd, it **still participates in the next economy phase** (the payout *is* its contribution) — negating the casualty penalty for that unit. You must commit before the fight, so it's a **bet on who might fall**, not a retroactive fix.
-- **Medical** (the Medical corp / Doctor): **unit loss yields medical benefits** — a casualty is converted (salvaged biomatter / harvested augments / a medical claim) into healing, Doctor-service discounts, or Medical Rep for the rest of the roster. The **more** you lose, the more this stream pays — casualties feed the medical economy.
+**The two service offsets map to the two outcomes ◆:**
+- **Insurance** (pre-combat) → the **Recovered** path: an insured downed unit is **saved, not lost**, *and* still earns the next economy phase (the payout = its contribution). A **bet on who might fall**, committed before the fight.
+- **Medical** (Doctor / Medical corp) → the **salvage** value on the **Dead** path: a casualty converts to healing / Doctor discounts / Medical Rep; **more loss pays more**.
 
-So **Insurance hedges the *economic* loss (pre-paid); Medical turns the *body* into benefit (after the fact).** Either softens the casualty tax without removing the incentive to keep units up. *(Dials open: §11.)*
+So **Insurance buys survival + earning (pre-paid); Medical turns the body into benefit when survival fails.**
+
+**Downtime economy** (the live unit-summation, §2): a downed unit contributes **nothing** to the segment it fell in unless **insured**; whether it later returns (Recovered) or is gone (Dead) just sets whether it rejoins the sum. So —
+- **Clean wins pay more** — fewer casualties → more contributors next segment.
+- **Pyrrhic victories are taxed** — and now can cost you *units*, not just income.
+- **Take-the-dive (§9.1) compounds** — throwing a match downs your units; without extraction/insurance you bleed roster *and* collect a leaner payout. Price it in.
+
+*(Extraction mechanics, salvage tables, and the unsalvageable-essence model: §11.)*
 
 ### 9.5 Factoring
 
 - **Engine:** generalize the verdict into an injected **`Objective`** (eliminate / survive-N / hold-hex / extract / protect / margin-loss / time) the orchestrator checks each tick — one more IoC seam (Phase 4). **Margin-loss** compares the army-strength differential against X.
 - **Run:** `atomica-run` owns the **Job** (offerer, requirements, Rep + gear, run-map node); loadout **requirements validate at deploy time**, keeping the sim objective-only (Phase 10).
-- **Casualties:** the battle reports its end-state **KO list**; `atomica-run` zeroes those units' downtime contribution, then **resurrects** them at the next battle. The sim stays oblivious to the run economy.
+- **Casualties:** the sim handles **downing + extraction** (who fell, who got pulled out); `atomica-run` resolves **Recovered** (extracted / insured) vs **Dead + salvage**, applies salvage, drops downtime contributions per §9.4, and carries survivors forward. The sim owns the *event*; the run owns death's *consequences*.
 - **Resolves** the taxonomy's §10.1 "alternate objective" TBD.
 
 ---
@@ -322,6 +332,7 @@ None of it breaks the crate split or phase ordering.
 10. **Naming pass** — confirm corp / clan placeholder names; lock the street-name register across the roster.
 11. **Generic vs. faction gear** — how much edge branded gear buys over the generic 1.0× baseline; the licit/illicit split and its Notoriety cost; whether *any* gear (vs. only specialist depth) is ever truly faction-exclusive.
 12. **Jobs** — run-map availability / frequency; how margin-loss "X" is measured (army-strength differential? surviving units?); does *failing* a Job cost Rep or just forfeit the reward; can you abandon mid-Job; how endorsement requirements interact with the generic tier.
-13. **Casualty economy** — each unit's downtime contribution model (flat? by tier/cost?); whether Insurance coverage offsets a KO'd unit's lost contribution; do **mid-battle revives** (a mender bringing a unit back up before battle's end) count as "survived" for downtime; multi-segment downtime — do KO'd units stay out until the *next battle* resurrection, or recover across segments.
+13. **Casualty economy** — each unit's downtime contribution model (flat? by tier/cost?); do **mid-battle revives** (a mender standing a downed unit back up before battle's end) count as "survived" for downtime; multi-segment downtime — do Recovered units sit out one segment or several.
 14. **Economy as flow vs. stock** — since economy & Rep are a live unit-summation (§2): is spendable currency a per-segment **flow** (set by current roster, use-it-or-lose-it) or does it **bank** into an accumulated stock? Does Rep **drop** when a contributing unit leaves the roster (pure live sum), or **ratchet** (units build a standing that persists)? The dial sets how punishing roster churn is.
 15. **Casualty-offset dials (§9.4)** — Insurance pre-combat: premium cost, per-unit vs. blanket, and the purchase window; Medical-benefit conversion: salvage vs. claim model, what "more loss → more benefit" curves to, and whether it harvests the lost unit's *gear*; can a unit carry **both** offsets, and do they stack?
+16. **Death model (§9.4)** — the **extraction** mechanic: reach a board edge? carried out by a unit / vehicle (the Rig)? a stabilize-window the Doctor extends (Death's Door, §6.4)? Its difficulty sets the **permadeath rate** (easy ≈ resurrect, hard ≈ brutal). Plus the **salvage tables** (what gear / biomatter a death returns) and the **unsalvageable** model — is it the signature skill, the inbuilt gear, or the whole character that's lost for good?
