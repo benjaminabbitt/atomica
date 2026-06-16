@@ -24,26 +24,26 @@ A unit's identity is **three orthogonal axes**, not one class:
 
 ## 2. The faction layer ◆
 
-**Unifying principle:** *each faction is the economy/vendor for one mechanical pillar.* The faction map mirrors the systems map on the money side — your Rep portfolio = which subsystems your build can afford to lean on.
+**Unifying principle:** *each faction is the economy for one pillar* — some **make** combat gear, some **sell services**. The faction map mirrors the systems map on the money side — your Rep portfolio = which subsystems your build can afford to lean on.
 
 **Factoring:** factions are **engine-blind.** A unit carries a `faction` tag that only `atomica-run` (economy/Rep) and `atomica-content` (aesthetic) read; the battle `sim` never knows factions exist. Zero coupling.
 
-### 2.1 The Corps — a rival market, one sector per subsystem
+### 2.1 The Corps — a rival market (makers & service corps)
 
-They **compete**: a Rep portfolio is a balancing act, and cozying up to one sector is debt with its rival. Names are placeholders.
+They **compete**: a Rep portfolio is a balancing act, and cozying up to one sector is debt with its rival. Corps split into **makers** (vendor combat gear — a loadout pillar) and **service corps** (shape the run economy, no gear of their own). Names are placeholders.
 
-| Sector | Example name | Sells / economy | Shapes build toward |
-|---|---|---|---|
-| **Cyberware** | *Halcyon Cybernetics* | premium chrome, Link gear, hack programs | heavy-cyber, netrunner hardware |
-| **Medical** | *Helix Biomed* | Doctors, bioware, Vaccinated — *and* engineered Virus | bio-augment, sustain, contagion |
-| **Military-Industrial** | *Bastion Defense* | guns, armor, EMP, war-drones / mechs | firepower, armor, EMP |
-| **Vehicles** | *Velocity Motors* | transports, mobility, ramming rigs | vehicle armies, mobility |
-| **Insurance** | *Sentinel Assurance* | wards, Buffer / negation, revive (Legacy) | defense, mitigation, death-insurance |
-| **Financial** | *Meridian Capital* | currency, income, interest | the economy engine; buy-power, mercs |
-| **Media** | *Sygnal* | Rep, intel, info-war — IFF / spoof | signals, spoof offense, Rep manipulation |
-| **Real Estate** | *Bedrock Holdings* | territory, fortification, the seam | board control, area-denial, position |
+| Sector | Type | Example | Sells / economy | Shapes build toward |
+|---|---|---|---|---|
+| **Cyberware** | maker | *Halcyon Cybernetics* | premium chrome, Link gear, hack programs | heavy-cyber, netrunner hardware |
+| **Medical** | maker | *Helix Biomed* | Doctors, bioware, Vaccinated — *and* engineered Virus | bio-augment, sustain, contagion |
+| **Military-Industrial** | maker | *Bastion Defense* | guns, armor, EMP, war-drones / mechs | firepower, armor, EMP |
+| **Vehicles** | maker | *Velocity Motors* | transports, mobility, ramming rigs | vehicle armies, mobility |
+| **Financial** | service | *Meridian Capital* | currency, income, interest | buy-power, mercs |
+| **Insurance** | service | *Sentinel Assurance* | **no gear of its own** — risk *coverage* (revive / payout on a lost unit, loss compensation); **resells** makers' gear at a **discount** | death-insurance, economic defense |
+| **Media** | service | *Sygnal* | Rep, intel, info-war (vendors spoof / signals *software*) | signals, spoof offense, Rep manipulation |
+| **Real Estate** | service | *Bedrock Holdings* | **not the battle board** — safe-houses, roster / stash capacity, between-battle recovery, run-map holdings | logistics & staying power |
 
-Each sector's *real-world business is its mechanic*: Real Estate sells **space** → board/terrain control; Insurance sells **risk-reduction** → wards + revive; Media sells **information** → Rep + the IFF/spoof/AR layer.
+The split keeps each honest to its real business: **Insurance** doesn't *make* anything — it sells **coverage** (a policy that revives or compensates a lost unit) and **resells** makers' gear cheap; **Financial** sells **capital**; **Real Estate** sells **staying power** (base, roster, recovery — *not* in-battle positioning); **Media** sells **information** (Rep, intel, and the info-war software behind IFF / spoof). The makers fill your loadout; the service corps shape your run.
 
 ### 2.2 Cops — the order faction
 
