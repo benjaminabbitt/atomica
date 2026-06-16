@@ -413,3 +413,38 @@ None of it breaks the crate split or phase ordering.
 **Casualty offsets (#15, structure) — per-unit insurance, salvage-as-claim, stackable.** Insurance is **per-unit, pre-combat** (pick who to insure — the bet). Salvage is a **tier-scaled claim** (payout per lost unit by value), not gear-by-gear harvesting. A dead unit can be **both** insured and salvaged (money + materials stack). Premiums/curves ⏳.
 
 **Still genuinely open after this pass:** #4 cross-pool costs (⏳), #16 permadeath-rate (⏳), #9 faction rosters (authoring), #10 naming (authoring).
+
+---
+
+## 14. Shops & vendors ◆
+
+The between-battle storefronts. **Each faction is a vendor** (makers sell gear, service corps sell services), plus universal stops. Currency buys; **Rep gates access/price** (§13 #1); illicit stock raises **Notoriety** (§13 #2). All `atomica-run` + `atomica-content`.
+
+**Realm symmetry ◆:** **Arms** (physical weapons + armor) ∥ **Programs** (digital software) — one offense-*and*-defense shop per realm, mirroring the two-realm spine.
+
+**Gear vendors:**
+
+| Shop | Sells | Vendor |
+|---|---|---|
+| **Cyber** | implants (Link / Firewall / Hack-effect) **+ skill chips** (§10) | Cyberware corp / Ripperdoc |
+| **Bioware** | bio-augments (no Link, EMP-immune, Reject) | Medical corp / Doctor |
+| **Arms** | **guns + melee/blades + armor/defense** — the whole physical realm | Mil-Industrial / clans |
+| **Programs** | **all software — offense (hacks / worms / spoof) + defense (anti-Worm / firewall / Link-effects)** — the digital realm | Runner |
+| **Consumables** | grenades, EMP, stims, coolant | Mil-Industrial / street |
+| **Vehicles** | rigs / transports (extraction-capable, §5) | Vehicles corp / The Haul |
+
+**Service vendors:**
+
+| Shop | Sells | Vendor |
+|---|---|---|
+| **Insurance** | per-unit pre-combat policies (§9.4) | Insurance corp |
+| **Extraction** | medevac membership (§9.4) | Nomad / independent |
+| **Clinic** | between-battle heal · chrome-repair · Worm-cleanse · salvage | Doctor / Ripperdoc / White-hat |
+| **Fixer** | grey-market & illicit gear, intel, Rep brokering | Independent (the Broker) |
+| **Bank** | loans, income, interest | Financial corp |
+| **Base** | roster & stash capacity, recovery, safe-house | Real Estate corp |
+
+**Roster & meta:**
+- **Recruitment** — draft / hire chassis · archetypes · veterans (§13 #17).
+- **Jobs board** — the Rep + gear faucet (§9).
+- **Loadout station** *(free config, not a purchase)* — assign movement / targeting profiles, set **PAN segmentation** (§13 #7), install skill chips, manage insurance.
