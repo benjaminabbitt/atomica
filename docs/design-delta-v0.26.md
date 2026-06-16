@@ -74,6 +74,25 @@ Rep is **per-faction**, and the factions are a web of rivalries (corps compete �
 - **Who you've angered supplies your enemies** — anger Bastion Defense → fight their war-drones; rack up Notoriety → Cops raid you. **Your economic choices pick your boss fights** (the roguelike-run engine).
 - **Fixer / Media** are the levers that convert Rep across the web.
 
+### 2.6 Equipment affiliation & the generic tier ◆
+
+Equipment carries its **own affiliation, separate from the unit's faction.** A Steel Lotus blade can field a generic pistol *and* a Halcyon cyberdeck; affiliation gates **acquisition** (Rep / legality), **never use**.
+
+| Affiliation | Gate | Character |
+|---|---|---|
+| **Generic** (unaffiliated) | none — open-market, always stocked | reliable baseline; the basics of *every* pillar; no signature gimmick |
+| **Corp** (sector) | sector Rep | specialist / premium depth in one pillar; branded quirk |
+| **Clan** | loyalty Rep | themed (blades / bioware / vehicles); often inbuilt identity gear |
+| **Law Enforcement** | restricted / licit | control & surveillance gear; illicit acquisition → **Notoriety** |
+
+Principles:
+- **Generic covers the basics across all pillars; factions deepen one.** No capability is locked behind a faction — factions add depth/edge, not gates (upholds "build-shaping, not role-gating," §1).
+- **Generic = the economy floor:** always available at zero Rep, so a fresh draft is playable; it's also the **1.0× balance baseline** faction gear is tuned against.
+- **Upgrade path:** start generic → invest Rep → swap up to branded specialist gear in your chosen pillar(s).
+- Orthogonal **illicit flag** (grey / black market): some generic *and* stolen faction gear is illicit → raises **Notoriety** (§2.2); licit generic is politically inert.
+
+*The faction rosters above (corp sectors, clans, LE subdivisions) are **open scaffolds** — they'll expand. The generic tier is the constant beneath them.*
+
 ---
 
 ## 3. The sustain triad + cross-pool healing ◆
@@ -240,3 +259,4 @@ None of it breaks the crate split or phase ordering.
 8. **AR detection** — visible-in-AR rules, sensor range, what Jammer / Blind / Scramble do to the AR picture numerically; Heat→AR signature curve.
 9. **Faction rosters** — fill Runner / Corp archetypes; finalize clan list; cop subdivisions in or out.
 10. **Naming pass** — confirm corp / clan placeholder names; lock the street-name register across the roster.
+11. **Generic vs. faction gear** — how much edge branded gear buys over the generic 1.0× baseline; the licit/illicit split and its Notoriety cost; whether *any* gear (vs. only specialist depth) is ever truly faction-exclusive.
