@@ -4,7 +4,7 @@
 //! a snapshot of it each frame, and drives ticks from a step button / auto-play
 //! timer. All game rules live in the sim crate.
 
-use atomica_sim::{Attack, Battle, DamageType, Defense, Hex, Outcome, Team, Unit};
+use atomica_sim::{ArmorClass, Attack, Battle, DamageType, Defense, Hex, Outcome, StatusSpec, Team, Unit};
 use egui_macroquad::egui;
 use macroquad::prelude::*;
 
@@ -22,7 +22,7 @@ fn hex_to_pixel(h: Hex, origin: Vec2) -> Vec2 {
 
 /// A tiny demo encounter so the window shows something real on first run.
 fn demo_battle() -> Battle {
-    let mk = |id, name: &str, team, q, r, dmg, init, range, pen| Unit {
+    let mk = |id, name: &str, team, q, r, dmg, init, range, dtype, pen, armor_class| Unit {
         id,
         name: name.to_string(),
         team,
@@ -30,23 +30,28 @@ fn demo_battle() -> Battle {
         integrity: 40.0,
         max_integrity: 40.0,
         defense: Defense { barrier: 6.0, plating: 6.0 },
+        armor_class,
         initiative: init,
         link: 0.0,
         firewall: 0.0,
         immunity: 0.0,
-        attack: Attack { damage: dmg, dtype: DamageType::Piercing, pen, range },
+        attack: Attack { damage: dmg, dtype, pen, range },
+        statuses: Vec::new(),
         alive: true,
     };
     use atomica_sim::PenTier::*;
-    Battle::new(
-        vec![
-            mk(0, "Katana", Team::A, 0, 0, 14.0, 7.0, 1, Internal),
-            mk(1, "Rifle", Team::A, 0, 2, 9.0, 5.0, 4, Contact),
-            mk(2, "Bulwark", Team::B, 5, 0, 7.0, 4.0, 1, Contact),
-            mk(3, "SMG", Team::B, 5, 2, 8.0, 6.0, 3, External),
-        ],
-        0xC0DE,
-    )
+    use ArmorClass::*;
+    use DamageType::*;
+    let mut units = vec![
+        mk(0, "Katana", Team::A, 0, 0, 14.0, 7.0, 1, Slashing, Internal, Padding),
+        mk(1, "Rifle", Team::A, 0, 2, 9.0, 5.0, 4, Piercing, Contact, Mail),
+        mk(2, "Bulwark", Team::B, 5, 0, 7.0, 4.0, 1, Bludgeoning, Contact, Plate),
+        mk(3, "SMG", Team::B, 5, 2, 8.0, 6.0, 3, Piercing, External, Mail),
+    ];
+    // Seed a couple of statuses so the pipeline is visible on first run.
+    units[2].add_status(StatusSpec::burn(), 6, 3);
+    units[3].add_status(StatusSpec::lag(), 6, 1);
+    Battle::new(units, 0xC0DE)
 }
 
 fn team_color(team: Team, alive: bool) -> Color {
@@ -127,10 +132,25 @@ async fn main() {
 
                 ui.separator();
                 for u in &battle.units {
-                    let tag = if u.is_alive() { "" } else { "  (down)" };
+                    if !u.is_alive() {
+                        ui.label(format!("{:?}  {:<8} (down)", u.team, u.name));
+                        continue;
+                    }
+                    let statuses: String = u
+                        .statuses
+                        .iter()
+                        .map(|s| {
+                            if s.stacks > 1 {
+                                format!("{}×{}", s.spec.name, s.stacks)
+                            } else {
+                                s.spec.name.to_string()
+                            }
+                        })
+                        .collect::<Vec<_>>()
+                        .join(", ");
                     ui.label(format!(
-                        "{:?}  {:<8} {:>4.0}/{:<3.0}{}",
-                        u.team, u.name, u.integrity, u.max_integrity, tag
+                        "{:?}  {:<8} {:>4.0}/{:<3.0}  [{:?}]  {}",
+                        u.team, u.name, u.integrity, u.max_integrity, u.armor_class, statuses
                     ));
                 }
             });

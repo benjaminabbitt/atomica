@@ -10,17 +10,29 @@
 //! what makes the design's *async / replayable auto-resolution* possible.
 //!
 //! ## Scope (so far)
-//! This is the architectural skeleton, not the full ruleset. It models the locked
-//! *shapes* — the stat line, layered defense, penetration tiers, the armor matrix,
-//! initiative-ordered ticks — with placeholder values. The à-la-carte status pool,
-//! both contagion families, netrunning, IFF/spoof, and Heat are intentionally
-//! left as `TODO` extension points rather than stubbed with guessed numbers.
+//! Models the locked *shapes* with placeholder values:
+//! - the unit stat line, layered defense, penetration tiers;
+//! - the [`armor`] matrix (damage type vs armor class);
+//! - the [`status`] pool on the design's 9-axis schema (DoTs, Crash/Lag, Breach,
+//!   Corrode), processed each tick;
+//! - an initiative-ordered tick loop with a minimal "attack nearest / step toward"
+//!   resolution.
+//!
+//! Not yet built: the two contagion families (a spreading special case of
+//! statuses), netrunning, IFF/spoof, and Heat.
 
+pub mod armor;
 mod hex;
 mod rng;
+mod status;
 
+pub use armor::ArmorClass;
 pub use hex::Hex;
 pub use rng::Rng;
+pub use status::{
+    Behavior, Decay, Effect, Magnitude, Resist, Stacking, Status, StatusSpec, Targeting, Timing,
+    Trigger,
+};
 
 /// Which side a unit fights for.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -91,23 +103,76 @@ pub struct Unit {
     pub integrity: f32,
     pub max_integrity: f32,
     pub defense: Defense,
+    /// Armor class for the [`armor`] matrix.
+    pub armor_class: ArmorClass,
 
     /// Physical Initiative — turn order in the world (higher acts first).
     pub initiative: f32,
     /// Digital Initiative / net presence. `0.0` ⇒ immune to all digital attack.
     pub link: f32,
-    /// Resist vs Worm + hacks.
+    /// Resist vs Worm + hacks, as a `0.0..=1.0` reduction to stochastic rolls.
     pub firewall: f32,
-    /// Resist vs Virus.
+    /// Resist vs Virus, as a `0.0..=1.0` reduction to stochastic rolls.
     pub immunity: f32,
 
     pub attack: Attack,
+    /// Active à-la-carte statuses.
+    pub statuses: Vec<Status>,
     pub alive: bool,
 }
 
 impl Unit {
     pub fn is_alive(&self) -> bool {
         self.alive && self.integrity > 0.0
+    }
+
+    /// Apply a status, honoring its stacking axis (merge with any same-named one).
+    pub fn add_status(&mut self, spec: StatusSpec, duration: u32, stacks: u32) {
+        if let Some(existing) = self.statuses.iter_mut().find(|s| s.spec.name == spec.name) {
+            match spec.stacking {
+                Stacking::Refresh => existing.duration = existing.duration.max(duration),
+                Stacking::Stack { max } => {
+                    existing.stacks = (existing.stacks + stacks).min(max);
+                    existing.duration = existing.duration.max(duration);
+                }
+            }
+        } else {
+            self.statuses.push(Status { spec, stacks, duration });
+        }
+    }
+
+    fn is_stunned(&self) -> bool {
+        self.statuses.iter().any(|s| matches!(s.spec.effect, Effect::Stun))
+    }
+
+    /// Initiative after Lag-style slows.
+    fn effective_initiative(&self) -> f32 {
+        let mut init = self.initiative;
+        for s in &self.statuses {
+            if let Effect::Slow(f) = s.spec.effect {
+                init *= f;
+            }
+        }
+        init
+    }
+
+    /// Incoming-damage multiplier from Breach-style vulnerabilities.
+    fn vuln_mult(&self) -> f32 {
+        let mut m = 1.0;
+        for s in &self.statuses {
+            if let Effect::Vuln(f) = s.spec.effect {
+                m *= f;
+            }
+        }
+        m
+    }
+}
+
+fn resist_value(unit: &Unit, resist: Resist) -> f32 {
+    match resist {
+        Resist::None => 0.0,
+        Resist::Immunity => unit.immunity,
+        Resist::Firewall => unit.firewall,
     }
 }
 
@@ -130,54 +195,23 @@ pub struct Battle {
 
 impl Battle {
     pub fn new(units: Vec<Unit>, seed: u64) -> Self {
-        Self {
-            units,
-            tick: 0,
-            rng: Rng::new(seed),
-        }
+        Self { units, tick: 0, rng: Rng::new(seed) }
     }
 
-    /// Advance one tick: each living unit, in physical-initiative order, acts once.
-    ///
-    /// Acting = attack the nearest enemy if in range, else step toward it. This is
-    /// the minimal resolution loop; richer behavior profiles (Advance/Hold/Kite,
-    /// targeting modes) and the status pipeline hang off this same ordering.
+    /// Advance one tick:
+    /// 1. **status phase** — DoTs and plating-shred fire (may kill);
+    /// 2. **action phase** — each non-stunned unit acts in effective-initiative
+    ///    order (attack nearest enemy in range, else step toward it);
+    /// 3. **decay phase** — statuses wear off.
     pub fn step(&mut self) -> Outcome {
         if let o @ (Outcome::Winner(_) | Outcome::Draw) = self.outcome() {
             return o;
         }
         self.tick += 1;
 
-        // Deterministic action order: initiative desc, id asc as the tiebreak.
-        let mut order: Vec<usize> = (0..self.units.len())
-            .filter(|&i| self.units[i].is_alive())
-            .collect();
-        order.sort_by(|&a, &b| {
-            let (ua, ub) = (&self.units[a], &self.units[b]);
-            ub.initiative
-                .partial_cmp(&ua.initiative)
-                .unwrap_or(std::cmp::Ordering::Equal)
-                .then(ua.id.cmp(&ub.id))
-        });
-
-        for i in order {
-            if !self.units[i].is_alive() {
-                continue; // died earlier this tick
-            }
-            let Some(target) = self.nearest_enemy(i) else {
-                continue;
-            };
-            let (pos, atk) = {
-                let u = &self.units[i];
-                (u.pos, u.attack)
-            };
-            let tpos = self.units[target].pos;
-            if pos.distance(tpos) <= atk.range {
-                self.resolve_attack(i, target);
-            } else {
-                self.units[i].pos = pos.step_toward(tpos);
-            }
-        }
+        self.status_phase();
+        self.action_phase();
+        self.decay_phase();
 
         self.outcome()
     }
@@ -204,31 +238,116 @@ impl Battle {
         }
     }
 
+    fn status_phase(&mut self) {
+        for i in 0..self.units.len() {
+            if !self.units[i].is_alive() {
+                continue;
+            }
+            // Take the list out so we can mutate the unit while iterating it.
+            let statuses = std::mem::take(&mut self.units[i].statuses);
+            for st in &statuses {
+                let fires = match st.spec.behavior {
+                    Behavior::Deterministic => true,
+                    Behavior::Stochastic(p) => {
+                        let resist = resist_value(&self.units[i], st.spec.resist);
+                        self.rng.chance(p - resist)
+                    }
+                };
+                if !fires {
+                    continue;
+                }
+                match st.spec.effect {
+                    Effect::Dot { magnitude, pen } => {
+                        let amt = magnitude.amount(&self.units[i]) * st.stacks as f32;
+                        apply_damage(&mut self.units[i], amt, pen, magnitude.can_kill());
+                    }
+                    Effect::PlatingShred(mag) => {
+                        let amt = mag.amount(&self.units[i]) * st.stacks as f32;
+                        let p = &mut self.units[i].defense.plating;
+                        *p = (*p - amt).max(0.0);
+                    }
+                    // Stun / Slow / Vuln are passive modifiers, read in other phases.
+                    Effect::Stun | Effect::Slow(_) | Effect::Vuln(_) => {}
+                }
+                if !self.units[i].is_alive() {
+                    break;
+                }
+            }
+            self.units[i].statuses = statuses;
+        }
+    }
+
+    fn action_phase(&mut self) {
+        // Deterministic order: effective initiative desc, id asc as the tiebreak.
+        let mut order: Vec<usize> =
+            (0..self.units.len()).filter(|&i| self.units[i].is_alive()).collect();
+        order.sort_by(|&a, &b| {
+            let (ua, ub) = (&self.units[a], &self.units[b]);
+            ub.effective_initiative()
+                .partial_cmp(&ua.effective_initiative())
+                .unwrap_or(std::cmp::Ordering::Equal)
+                .then(ua.id.cmp(&ub.id))
+        });
+
+        for i in order {
+            if !self.units[i].is_alive() || self.units[i].is_stunned() {
+                continue;
+            }
+            let Some(target) = self.nearest_enemy(i) else {
+                continue;
+            };
+            let (pos, atk) = {
+                let u = &self.units[i];
+                (u.pos, u.attack)
+            };
+            let tpos = self.units[target].pos;
+            if pos.distance(tpos) <= atk.range {
+                self.resolve_attack(i, target);
+            } else {
+                self.units[i].pos = pos.step_toward(tpos);
+            }
+        }
+    }
+
+    fn decay_phase(&mut self) {
+        for u in &mut self.units {
+            for st in &mut u.statuses {
+                match st.spec.decay {
+                    Decay::Duration => st.duration = st.duration.saturating_sub(1),
+                    Decay::Stacks => st.stacks = st.stacks.saturating_sub(1),
+                }
+            }
+            u.statuses.retain(|st| match st.spec.decay {
+                Decay::Duration => st.duration > 0,
+                Decay::Stacks => st.stacks > 0,
+            });
+        }
+    }
+
     fn nearest_enemy(&self, i: usize) -> Option<usize> {
         let me = &self.units[i];
         self.units
             .iter()
             .enumerate()
             .filter(|(j, u)| *j != i && u.is_alive() && u.team == me.team.enemy())
-            // Distance first, then id, so ties resolve deterministically.
             .min_by_key(|(_, u)| (me.pos.distance(u.pos), u.id))
             .map(|(j, _)| j)
     }
 
     fn resolve_attack(&mut self, attacker: usize, target: usize) {
         let atk = self.units[attacker].attack;
-        // The armor matrix will scale damage by dtype-vs-material here; for now the
-        // type is carried through unchanged. `rng` is threaded in so stochastic
-        // statuses can hook this without changing the call sites.
-        let _ = (&mut self.rng, atk.dtype);
-        apply_damage(&mut self.units[target], atk.damage, atk.pen);
+        // Armor matrix (type vs class) × Breach vulnerability.
+        let mult = armor::matrix(atk.dtype, self.units[target].armor_class)
+            * self.units[target].vuln_mult();
+        let dmg = atk.damage * mult;
+        apply_damage(&mut self.units[target], dmg, atk.pen, true);
     }
 }
 
 /// Route `amount` through the defense layers selected by `pen`, spilling any
-/// remainder inward. Pierce semantics ("drop a tier") are expressed by choosing a
-/// deeper `PenTier`.
-fn apply_damage(unit: &mut Unit, amount: f32, pen: PenTier) {
+/// remainder inward. `can_kill == false` (the PctCurrent "softener") floors
+/// Integrity at 1.0 instead of dropping the unit.
+fn apply_damage(unit: &mut Unit, amount: f32, pen: PenTier, can_kill: bool) {
     let mut remaining = amount;
     if matches!(pen, PenTier::External) {
         remaining = absorb(&mut unit.defense.barrier, remaining);
@@ -238,8 +357,12 @@ fn apply_damage(unit: &mut Unit, amount: f32, pen: PenTier) {
     }
     unit.integrity -= remaining;
     if unit.integrity <= 0.0 {
-        unit.integrity = 0.0;
-        unit.alive = false;
+        if can_kill {
+            unit.integrity = 0.0;
+            unit.alive = false;
+        } else {
+            unit.integrity = 1.0;
+        }
     }
 }
 
@@ -254,7 +377,7 @@ fn absorb(layer: &mut f32, amount: f32) -> f32 {
 mod tests {
     use super::*;
 
-    fn unit(id: u32, team: Team, q: i32, dmg: f32, init: f32) -> Unit {
+    fn unit(id: u32, team: Team, q: i32) -> Unit {
         Unit {
             id,
             name: format!("U{id}"),
@@ -263,64 +386,117 @@ mod tests {
             integrity: 30.0,
             max_integrity: 30.0,
             defense: Defense::default(),
-            initiative: init,
+            armor_class: ArmorClass::Mail,
+            initiative: 5.0,
             link: 0.0,
             firewall: 0.0,
             immunity: 0.0,
             attack: Attack {
-                damage: dmg,
+                damage: 10.0,
                 dtype: DamageType::Piercing,
                 pen: PenTier::Internal,
                 range: 1,
             },
+            statuses: Vec::new(),
             alive: true,
         }
     }
 
-    fn demo() -> Battle {
-        Battle::new(
-            vec![
-                unit(0, Team::A, 0, 10.0, 5.0),
-                unit(1, Team::B, 3, 8.0, 4.0),
-            ],
-            123,
-        )
+    fn duel() -> Battle {
+        let mut a = unit(0, Team::A, 0);
+        a.initiative = 6.0;
+        let b = unit(1, Team::B, 3);
+        Battle::new(vec![a, b], 123)
     }
 
     #[test]
     fn layers_absorb_then_integrity() {
-        let mut u = unit(0, Team::A, 0, 0.0, 0.0);
+        let mut u = unit(0, Team::A, 0);
         u.defense = Defense { barrier: 5.0, plating: 5.0 };
-        apply_damage(&mut u, 12.0, PenTier::External);
-        // 5 barrier + 5 plating soaked, 2 reaches integrity.
-        assert_eq!(u.integrity, 28.0);
+        apply_damage(&mut u, 12.0, PenTier::External, true);
+        assert_eq!(u.integrity, 28.0); // 5 + 5 soaked, 2 through
         assert_eq!(u.defense.barrier, 0.0);
         assert_eq!(u.defense.plating, 0.0);
     }
 
     #[test]
     fn internal_bypasses_layers() {
-        let mut u = unit(0, Team::A, 0, 0.0, 0.0);
+        let mut u = unit(0, Team::A, 0);
         u.defense = Defense { barrier: 99.0, plating: 99.0 };
-        apply_damage(&mut u, 10.0, PenTier::Internal);
+        apply_damage(&mut u, 10.0, PenTier::Internal, true);
         assert_eq!(u.integrity, 20.0);
         assert_eq!(u.defense.barrier, 99.0);
     }
 
     #[test]
+    fn softener_never_kills() {
+        let mut u = unit(0, Team::A, 0);
+        apply_damage(&mut u, 9999.0, PenTier::Internal, false);
+        assert_eq!(u.integrity, 1.0);
+        assert!(u.alive);
+    }
+
+    #[test]
+    fn burn_dot_ticks_down_integrity() {
+        let mut b = Battle::new(vec![unit(0, Team::A, 0)], 1);
+        b.units[0].add_status(StatusSpec::burn(), 3, 2); // 2 stacks × 2 dmg, Contact
+        let before = b.units[0].integrity;
+        b.status_phase();
+        // No plating ⇒ full 4 reaches Integrity.
+        assert_eq!(b.units[0].integrity, before - 4.0);
+    }
+
+    #[test]
+    fn full_immunity_blocks_poison() {
+        let mut u = unit(0, Team::A, 0);
+        u.immunity = 1.0; // resist == base chance ⇒ p <= 0
+        let mut b = Battle::new(vec![u], 7);
+        b.units[0].add_status(StatusSpec::poison(), 5, 1);
+        let before = b.units[0].integrity;
+        for _ in 0..20 {
+            b.status_phase();
+        }
+        assert_eq!(b.units[0].integrity, before);
+    }
+
+    #[test]
+    fn breach_amplifies_incoming_damage() {
+        let attacker = unit(0, Team::A, 0);
+        let mut target = unit(1, Team::B, 0); // same hex ⇒ in melee range
+        target.add_status(StatusSpec::breach(), 3, 1); // ×1.5
+        let mut b = Battle::new(vec![attacker, target], 1);
+        // Piercing vs Mail = 1.0, so 10 base × 1.5 breach = 15.
+        b.resolve_attack(0, 1);
+        assert_eq!(b.units[1].integrity, 30.0 - 15.0);
+    }
+
+    #[test]
+    fn crash_skips_the_action() {
+        let mut b = duel();
+        // Stun the faster unit; it should not move/attack this tick.
+        b.units[0].add_status(StatusSpec::crash(), 1, 1);
+        let pos_before = b.units[0].pos;
+        b.action_phase();
+        assert_eq!(b.units[0].pos, pos_before);
+    }
+
+    #[test]
     fn battle_terminates_with_a_winner() {
-        let mut b = demo();
-        let outcome = b.resolve(1000);
-        assert!(matches!(outcome, Outcome::Winner(_)));
+        let mut b = duel();
+        assert!(matches!(b.resolve(1000), Outcome::Winner(_)));
     }
 
     #[test]
     fn resolution_is_deterministic() {
-        let mut x = demo();
-        let mut y = demo();
+        let setup = || {
+            let mut b = duel();
+            b.units[1].add_status(StatusSpec::poison(), 99, 1); // exercise the RNG
+            b
+        };
+        let mut x = setup();
+        let mut y = setup();
         assert_eq!(x.resolve(1000), y.resolve(1000));
         assert_eq!(x.tick, y.tick);
-        // State, not just the verdict, must match tick-for-tick.
         for (a, b) in x.units.iter().zip(&y.units) {
             assert_eq!(a.integrity, b.integrity);
             assert_eq!(a.pos, b.pos);
