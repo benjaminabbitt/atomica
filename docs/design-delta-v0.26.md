@@ -262,10 +262,24 @@ The **Rep + gear faucet.** Alongside standard battles (which pay currency / surv
 - **Forgoes** the standard currency win-reward — a Job is taken *instead of* a normal fight. **Take-the-dive** goes further: you give up the win itself, trading the match for the payout.
 - The offerer's **rivals may sour** on you (the Rep web, §2.5).
 
-### 9.4 Factoring
+### 9.4 Casualties & the downtime economy ◆
+
+Death is **per-battle, not permanent.** A KO'd / dead unit (Integrity 0) is **resurrected to full for the next battle** — the run ends only on a *battle* loss (army eliminated), never on losing individual units. (In-battle death triggers — Detonate / Legacy / Data-spill, §7G — still fire; the KO is real *for that battle*.)
+
+The one persistent cost of a KO is **economic, in the non-PvP segments that follow** (Jobs / shop / downtime) before the next battle: that segment's economy & Rep generation scales with your **surviving** units; **KO'd units contribute nothing** while recovering. So —
+
+- **Clean wins pay more** — fewer casualties → more contributors in the following segment.
+- **Pyrrhic victories are taxed** — heavy losses still *win the fight*, but you collect less Rep / economy after, without losing the units themselves.
+- **Take-the-dive (§9.1) compounds** — throwing a match KOs your units, so the very segment you took the Job for pays out leaner; price it in.
+- Soft attrition that rewards menders (Doctor / Ripperdoc keep contributors up), defense, and positioning — *without* permadeath.
+
+**Faction hook:** **Insurance** (§2.1) is the natural offset — a coverage policy could let a KO'd unit still pay out (death benefit) or recover faster, turning a casualty into a claim. *(Open: §11.)*
+
+### 9.5 Factoring
 
 - **Engine:** generalize the verdict into an injected **`Objective`** (eliminate / survive-N / hold-hex / extract / protect / margin-loss / time) the orchestrator checks each tick — one more IoC seam (Phase 4). **Margin-loss** compares the army-strength differential against X.
 - **Run:** `atomica-run` owns the **Job** (offerer, requirements, Rep + gear, run-map node); loadout **requirements validate at deploy time**, keeping the sim objective-only (Phase 10).
+- **Casualties:** the battle reports its end-state **KO list**; `atomica-run` zeroes those units' downtime contribution, then **resurrects** them at the next battle. The sim stays oblivious to the run economy.
 - **Resolves** the taxonomy's §10.1 "alternate objective" TBD.
 
 ---
@@ -301,3 +315,4 @@ None of it breaks the crate split or phase ordering.
 10. **Naming pass** — confirm corp / clan placeholder names; lock the street-name register across the roster.
 11. **Generic vs. faction gear** — how much edge branded gear buys over the generic 1.0× baseline; the licit/illicit split and its Notoriety cost; whether *any* gear (vs. only specialist depth) is ever truly faction-exclusive.
 12. **Jobs** — run-map availability / frequency; how margin-loss "X" is measured (army-strength differential? surviving units?); does *failing* a Job cost Rep or just forfeit the reward; can you abandon mid-Job; how endorsement requirements interact with the generic tier.
+13. **Casualty economy** — each unit's downtime contribution model (flat? by tier/cost?); whether Insurance coverage offsets a KO'd unit's lost contribution; do **mid-battle revives** (a mender bringing a unit back up before battle's end) count as "survived" for downtime; multi-segment downtime — do KO'd units stay out until the *next battle* resurrection, or recover across segments.
