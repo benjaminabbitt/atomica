@@ -231,7 +231,46 @@ Coverage: all 3 chassis, the full Link dial, both contagions, both initiative le
 
 ---
 
-## 9. Where it lands (factoring)
+## 9. Jobs — faction contracts (PvE) ◆
+
+The **Rep + gear faucet.** Alongside standard battles (which pay currency / survival), the run map offers **Jobs**: PvE contracts a faction posts, with a **non-standard objective** and often **oddball requirements**, paying **Rep + gear** instead of the usual win-rewards. Jobs are *how you build per-faction Rep and acquire branded gear* — the **Fixer** (§2.4) is the broker.
+
+**Not PvP, objective-driven.** The opposition is scripted; the goal isn't "wipe them," it's the contract — and several objectives are **board-space** (hold / reach / escort a hex or node), not elimination.
+
+### 9.1 Objective types (replace "eliminate the enemy")
+
+| Objective | Win when… |
+|---|---|
+| **Survive** | you last **N** rounds |
+| **Hold** | you control a target **hex / node** for N rounds *(board-space)* |
+| **Extract / Heist** | a unit reaches a target space and exits *(board-space)* |
+| **Escort / Protect** | a VIP / cargo / vehicle survives to its goal |
+| **Assassinate** | a specific enemy dies (ignore the rest) |
+| **Take the dive** | you **lose** — but by **no more than X** (a controlled, convincing loss) |
+| **Time attack** | you win within **N** rounds |
+
+### 9.2 Requirements (the oddball entry / run conditions)
+
+- **Endorsement** — field **≥X gear from a named vendor** (a sponsorship / proving-ground deal → builds *that* vendor's Rep).
+- **Handicap** — melee-only · no netrunning · no chrome · a named unit must field.
+- **Preserve** — a named unit (or all allies) must survive.
+- **Budget cap** — a weight / Link / cost ceiling.
+
+### 9.3 Rewards & cost
+
+- Pays **Rep** (with the offerer — primary) **+ gear** (often branded, otherwise gated) + occasional unlocks.
+- **Forgoes** the standard currency win-reward — a Job is taken *instead of* a normal fight. **Take-the-dive** goes further: you give up the win itself, trading the match for the payout.
+- The offerer's **rivals may sour** on you (the Rep web, §2.5).
+
+### 9.4 Factoring
+
+- **Engine:** generalize the verdict into an injected **`Objective`** (eliminate / survive-N / hold-hex / extract / protect / margin-loss / time) the orchestrator checks each tick — one more IoC seam (Phase 4). **Margin-loss** compares the army-strength differential against X.
+- **Run:** `atomica-run` owns the **Job** (offerer, requirements, Rep + gear, run-map node); loadout **requirements validate at deploy time**, keeping the sim objective-only (Phase 10).
+- **Resolves** the taxonomy's §10.1 "alternate objective" TBD.
+
+---
+
+## 10. Where it lands (factoring)
 
 | Addition | Layer | New engine? | Touches phase |
 |---|---|---|---|
@@ -242,12 +281,13 @@ Coverage: all 3 chassis, the full Link dial, both contagions, both initiative le
 | Vehicles (multi-hex + crew) | `sim` | **yes — the big one** | extends Phase 1 + new phase |
 | **PAN** (segmentation, Mesh, Cascade road) | `sim` | implant-graph state + a spread channel | Phase 7 + 8 |
 | **AR** (perception layer; targeting/IFF/Mark read it) | `sim` | a visibility/IFF lens over targeting | Phase 5 + 8 |
+| **Jobs / Objectives** (alt win conditions + contracts) | `sim` (Objective seam) + `atomica-run` (contracts) | injected `Objective` | Phase 4 + 10 |
 
 None of it breaks the crate split or phase ordering.
 
 ---
 
-## 10. Open questions added this session
+## 11. Open questions added this session
 
 1. **Per-faction Rep math** — how standing maps to price / access tiers; how the Fixer / Media convert Rep across the web.
 2. **Notoriety** — how criminal dealings raise it and how it seeds cop-faction enemies in the run.
@@ -260,3 +300,4 @@ None of it breaks the crate split or phase ordering.
 9. **Faction rosters** — fill Runner / Corp archetypes; finalize clan list; cop subdivisions in or out.
 10. **Naming pass** — confirm corp / clan placeholder names; lock the street-name register across the roster.
 11. **Generic vs. faction gear** — how much edge branded gear buys over the generic 1.0× baseline; the licit/illicit split and its Notoriety cost; whether *any* gear (vs. only specialist depth) is ever truly faction-exclusive.
+12. **Jobs** — run-map availability / frequency; how margin-loss "X" is measured (army-strength differential? surviving units?); does *failing* a Job cost Rep or just forfeit the reward; can you abandon mid-Job; how endorsement requirements interact with the generic tier.
