@@ -41,7 +41,7 @@ They **compete**: a Rep portfolio is a balancing act, and cozying up to one sect
 | **Military-Industrial** | maker | *Bastion Defense* | guns, armor, EMP, war-drones / mechs | firepower, armor, EMP |
 | **Vehicles** | maker | *Velocity Motors* | transports, mobility, ramming rigs | vehicle armies, mobility |
 | **Financial** | service | *Meridian Capital* | currency, income, interest | buy-power, mercs |
-| **Insurance** | service | *Sentinel Assurance* | **no gear of its own** — **pre-combat** coverage (a downed insured unit is **recovered, not lost**, and still earns next phase; loss compensation); **resells** makers' gear at a **discount** | death-insurance, economic defense |
+| **Insurance** | service | *Sentinel Assurance* | **no gear of its own** — **pre-combat** coverage: a **money payout** when an insured unit dies (it still earns next phase via the payout — but insurance **never prevents the death**); **resells** makers' gear at a **discount** | death-payout, economic defense |
 | **Media** | service | *Sygnal* | Rep, intel, info-war (vendors spoof / signals *software*) | signals, spoof offense, Rep manipulation |
 | **Real Estate** | service | *Bedrock Holdings* | **not the battle board** — safe-houses, roster / stash capacity, between-battle recovery, run-map holdings | logistics & staying power |
 
@@ -266,29 +266,29 @@ The **Rep + gear faucet.** Alongside standard battles (which pay currency / surv
 
 ### 9.4 Death, extraction & the downtime economy ◆
 
-**Downed, then decided.** A unit at 0 Integrity is **downed** (a Death's-Door grace state, §6.4), not instantly gone; its fate resolves by whether you got it out:
+**Downed, then extracted — or dead.** A unit at 0 Integrity is **downed** (a Death's-Door grace state, §6.4), not instantly gone. **Extraction is the *only* thing that prevents death:**
 
 | Outcome | Condition | Result |
 |---|---|---|
-| **Recovered** | **extracted** (pulled off the field) *or* **insured** (pre-paid policy) | survives → returns next battle |
-| **Dead + salvage** | downed, *not* extracted, *not* insured | **permanently lost** — but you **salvage** it: detachable gear / chrome (Ripperdoc) + biomatter / **Medical benefit** (Doctor) |
+| **Recovered** | **extracted** (pulled off the field in time) | survives → returns next battle |
+| **Dead** | *not* extracted | **permanently lost** — collect its death-offsets (below); only extraction would have saved it |
 
-Death is **conditional, not automatic** — you choose how much to spend (extraction tempo/risk, or an insurance premium) to keep a unit; the consolation for losing one is its salvage. The **run still ends only on a battle loss** (army wiped), but you can now **bleed units permanently across a run while winning** — real stakes. *(Revises the earlier "always resurrect next battle" rule.)*
+The **run still ends only on a battle loss** (army wiped), but you can now **bleed units permanently across a run while winning** — real stakes. *(Revises the earlier "always resurrect next battle" rule.)*
+
+**On death — two offsets, neither prevents the death ◆:**
+- **Insurance is *money*** (pre-paid, financial) — a **payout** when an insured unit dies, standing in for its **next-phase economic contribution** (a dead insured unit still "earns" via the payout). A bet on who falls; it **never saves the unit.**
+- **Salvage / Medical** is *materials* — harvest the dead unit's detachable gear / chrome (Ripperdoc) + biomatter / **Medical benefit** (Doctor); more loss pays more.
+
+A dead unit can be **both insured and salvaged** (money + materials), but it's still **dead** — extraction is the lone survival lever.
 
 **Two-tier stakes ◆:**
-- **Generic units are fungible** — salvage recovers most of their value; losing one is a resource hit, then you re-buy. Don't over-invest saving them.
-- **Characters carry *unsalvageable* essence** — their **signature skill + inbuilt identity** (§7F inbuilt equipment) can't be harvested. You get their detachable gear back, but **the character is gone for good.** That's what makes named units worth extracting, insuring, and protecting.
+- **Generic units are fungible** — salvage + insurance recover most of their value; losing one is a resource hit, then re-buy. Don't over-invest saving them.
+- **Characters carry *unsalvageable* essence** — their **signature skill + inbuilt identity** (§7F) can't be harvested *or insured back*. Money and gear return; **the character is gone for good.** **Extraction is the only way to keep a character** — which is what makes named units worth pulling out at any cost.
 
-**The two service offsets map to the two outcomes ◆:**
-- **Insurance** (pre-combat) → the **Recovered** path: an insured downed unit is **saved, not lost**, *and* still earns the next economy phase (the payout = its contribution). A **bet on who might fall**, committed before the fight.
-- **Medical** (Doctor / Medical corp) → the **salvage** value on the **Dead** path: a casualty converts to healing / Doctor discounts / Medical Rep; **more loss pays more**.
-
-So **Insurance buys survival + earning (pre-paid); Medical turns the body into benefit when survival fails.**
-
-**Downtime economy** (the live unit-summation, §2): a downed unit contributes **nothing** to the segment it fell in unless **insured**; whether it later returns (Recovered) or is gone (Dead) just sets whether it rejoins the sum. So —
+**Downtime economy** (the live unit-summation, §2): a downed unit contributes **nothing** to the segment it fell in unless **insured** (the payout subs in); a Recovered unit rejoins the sum next battle, a Dead one never does. So —
 - **Clean wins pay more** — fewer casualties → more contributors next segment.
 - **Pyrrhic victories are taxed** — and now can cost you *units*, not just income.
-- **Take-the-dive (§9.1) compounds** — throwing a match downs your units; without extraction/insurance you bleed roster *and* collect a leaner payout. Price it in.
+- **Take-the-dive (§9.1) compounds** — throwing a match downs your units; without extraction you bleed roster (insurance softens the *money*, not the loss). Price it in.
 
 *(Extraction mechanics, salvage tables, and the unsalvageable-essence model: §11.)*
 
@@ -296,7 +296,7 @@ So **Insurance buys survival + earning (pre-paid); Medical turns the body into b
 
 - **Engine:** generalize the verdict into an injected **`Objective`** (eliminate / survive-N / hold-hex / extract / protect / margin-loss / time) the orchestrator checks each tick — one more IoC seam (Phase 4). **Margin-loss** compares the army-strength differential against X.
 - **Run:** `atomica-run` owns the **Job** (offerer, requirements, Rep + gear, run-map node); loadout **requirements validate at deploy time**, keeping the sim objective-only (Phase 10).
-- **Casualties:** the sim handles **downing + extraction** (who fell, who got pulled out); `atomica-run` resolves **Recovered** (extracted / insured) vs **Dead + salvage**, applies salvage, drops downtime contributions per §9.4, and carries survivors forward. The sim owns the *event*; the run owns death's *consequences*.
+- **Casualties:** the sim handles **downing + extraction** (who fell, who got pulled out); `atomica-run` resolves **Recovered** (extracted) vs **Dead**, then applies the death-offsets — **Insurance** payout + **salvage** — drops downtime contributions per §9.4, and carries survivors forward. The sim owns the *event*; the run owns death's *consequences*.
 - **Resolves** the taxonomy's §10.1 "alternate objective" TBD.
 
 ---
