@@ -41,7 +41,7 @@ They **compete**: a Rep portfolio is a balancing act, and cozying up to one sect
 | **Military-Industrial** | maker | *Bastion Defense* | guns, armor, EMP, war-drones / mechs | firepower, armor, EMP |
 | **Vehicles** | maker | *Velocity Motors* | transports, mobility, ramming rigs | vehicle armies, mobility |
 | **Financial** | service | *Meridian Capital* | currency, income, interest | buy-power, mercs |
-| **Insurance** | service | *Sentinel Assurance* | **no gear of its own** — risk *coverage* (revive / payout on a lost unit, loss compensation); **resells** makers' gear at a **discount** | death-insurance, economic defense |
+| **Insurance** | service | *Sentinel Assurance* | **no gear of its own** — **pre-combat** coverage (a KO'd insured unit still earns next economy phase; loss compensation); **resells** makers' gear at a **discount** | death-insurance, economic defense |
 | **Media** | service | *Sygnal* | Rep, intel, info-war (vendors spoof / signals *software*) | signals, spoof offense, Rep manipulation |
 | **Real Estate** | service | *Bedrock Holdings* | **not the battle board** — safe-houses, roster / stash capacity, between-battle recovery, run-map holdings | logistics & staying power |
 
@@ -275,7 +275,12 @@ The one persistent cost of a KO is **economic, in the non-PvP segments that foll
 - **Take-the-dive (§9.1) compounds** — throwing a match KOs your units, so the very segment you took the Job for pays out leaner; price it in.
 - Soft attrition that rewards menders (Doctor / Ripperdoc keep contributors up), defense, and positioning — *without* permadeath.
 
-**Faction hook:** **Insurance** (§2.1) is the natural offset — a coverage policy could let a KO'd unit still pay out (death benefit) or recover faster, turning a casualty into a claim. *(Open: §11.)*
+**Casualty offsets ◆ — two channels:**
+
+- **Insurance** (the Insurance corp) is a **pre-combat purchase**: insure a unit *before* the battle and, if it's KO'd, it **still participates in the next economy phase** (the payout *is* its contribution) — negating the casualty penalty for that unit. You must commit before the fight, so it's a **bet on who might fall**, not a retroactive fix.
+- **Medical** (the Medical corp / Doctor): **unit loss yields medical benefits** — a casualty is converted (salvaged biomatter / harvested augments / a medical claim) into healing, Doctor-service discounts, or Medical Rep for the rest of the roster. The **more** you lose, the more this stream pays — casualties feed the medical economy.
+
+So **Insurance hedges the *economic* loss (pre-paid); Medical turns the *body* into benefit (after the fact).** Either softens the casualty tax without removing the incentive to keep units up. *(Dials open: §11.)*
 
 ### 9.5 Factoring
 
@@ -319,3 +324,4 @@ None of it breaks the crate split or phase ordering.
 12. **Jobs** — run-map availability / frequency; how margin-loss "X" is measured (army-strength differential? surviving units?); does *failing* a Job cost Rep or just forfeit the reward; can you abandon mid-Job; how endorsement requirements interact with the generic tier.
 13. **Casualty economy** — each unit's downtime contribution model (flat? by tier/cost?); whether Insurance coverage offsets a KO'd unit's lost contribution; do **mid-battle revives** (a mender bringing a unit back up before battle's end) count as "survived" for downtime; multi-segment downtime — do KO'd units stay out until the *next battle* resurrection, or recover across segments.
 14. **Economy as flow vs. stock** — since economy & Rep are a live unit-summation (§2): is spendable currency a per-segment **flow** (set by current roster, use-it-or-lose-it) or does it **bank** into an accumulated stock? Does Rep **drop** when a contributing unit leaves the roster (pure live sum), or **ratchet** (units build a standing that persists)? The dial sets how punishing roster churn is.
+15. **Casualty-offset dials (§9.4)** — Insurance pre-combat: premium cost, per-unit vs. blanket, and the purchase window; Medical-benefit conversion: salvage vs. claim model, what "more loss → more benefit" curves to, and whether it harvests the lost unit's *gear*; can a unit carry **both** offsets, and do they stack?
