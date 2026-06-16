@@ -273,6 +273,8 @@ The **Rep + gear faucet.** Alongside standard battles (which pay currency / surv
 | **Recovered** | **extracted** (pulled off the field in time) | survives → returns next battle |
 | **Dead** | *not* extracted | **permanently lost** — collect its death-offsets (below); only extraction would have saved it |
 
+**Extraction comes from two sources ◆:** **Nomads** (the Haul clan / a Nomad unit or the **Rig** vehicle, §8) physically pull downed units off the field — your people don't leave anyone behind; or an **Extraction membership** — a pre-paid medevac service (Nomad-run or independent) that lifts your downed out within a response window. *Bring your own wheels, or subscribe.*
+
 The **run still ends only on a battle loss** (army wiped), but you can now **bleed units permanently across a run while winning** — real stakes. *(Revises the earlier "always resurrect next battle" rule.)*
 
 **On death — two offsets, neither prevents the death ◆:**
@@ -283,7 +285,7 @@ A dead unit can be **both insured and salvaged** (money + materials), but it's s
 
 **Two-tier stakes ◆:**
 - **Generic units are fungible** — salvage + insurance recover most of their value; losing one is a resource hit, then re-buy. Don't over-invest saving them.
-- **Characters carry *unsalvageable* essence** — their **signature skill + inbuilt identity** (§7F) can't be harvested *or insured back*. Money and gear return; **the character is gone for good.** **Extraction is the only way to keep a character** — which is what makes named units worth pulling out at any cost.
+- **Characters carry *unsalvageable* essence** — their **signature, inbuilt identity (§7F), and earned skill levels (§10)** can't be harvested *or insured back*. Money, gear, and chips return; **the character — and its mastery — is gone for good.** **Extraction is the only way to keep a character** — which is what makes named units worth pulling out at any cost.
 
 **Downtime economy** (the live unit-summation, §2): a downed unit contributes **nothing** to the segment it fell in unless **insured** (the payout subs in); a Recovered unit rejoins the sum next battle, a Dead one never does. So —
 - **Clean wins pay more** — fewer casualties → more contributors next segment.
@@ -301,7 +303,32 @@ A dead unit can be **both insured and salvaged** (money + materials), but it's s
 
 ---
 
-## 10. Where it lands (factoring)
+## 10. Skills & character progression ◆
+
+The **RPG layer** — what a unit *knows*, separate from what it *is* (chassis) or *carries* (gear). A fourth identity dimension, and the engine behind the character/fungible split.
+
+**Skills modify rolls ◆.** A skill shifts the **stochastic rolls** (§3.5) in its domain — hacking bends the hack-power-vs-Firewall margin, medical the cure / heal roll, a blade the crit / contagion-catch roll. Skills sit beside the resist stats (Immunity / Firewall) as the per-character roll-modifiers; deterministic effects (a flat Burn) ignore them, rolled ones don't.
+
+**Two sources, asymmetric ◆:**
+
+| | **Character skill** (earned) | **Skill chip** (chipware) |
+|---|---|---|
+| Bound to | the **character** — innate / earned | the **chip** — equipment |
+| Transferable | **no** | **yes** (strip & re-install) |
+| Level ceiling | **high** (mastery) | **low** (basics only) |
+| Grows | **yes** — use earns **XP** → raise the skill | no — fixed at the chip's level |
+| On death | **unsalvageable** — dies with the character | **salvageable** — recover the chip |
+
+- **Character skills grow with use:** a unit that *uses* a skill earns **XP**, and XP **raises the skill** → bigger roll modifiers. A leveled character is **irreplaceable progression** you can't buy back.
+- **Skill chips democratize the basics:** slot a chip to give *any* unit low-level competence (a hacking chip on a bruiser for basic netrunning) — transferable and salvageable, but **capped low.** Mastery is earned-only.
+
+**The engine of the two-tier stakes (§9.4) ◆.** A character's **earned skill levels are the core of its unsalvageable essence** — lose a leveled character and that mastery is *gone* (money and chips return; the skill doesn't). So skills are *why* characters are worth extracting at any cost, and chips are the fungible counterpart. The investment compounds: the more a character grows, the more it's worth pulling out.
+
+**Factoring:** skills live on the unit in `sim` — one more input to the seeded roll check, beside resists. The sim emits **skill-use events**; `atomica-run` persists **XP / level-ups** on the unit's record between battles. Chips are equipment (content + shop), salvageable on death. (Phase 3 roll-modifier hook; Phase 10 progression.)
+
+---
+
+## 11. Where it lands (factoring)
 
 | Addition | Layer | New engine? | Touches phase |
 |---|---|---|---|
@@ -313,12 +340,13 @@ A dead unit can be **both insured and salvaged** (money + materials), but it's s
 | **PAN** (segmentation, Mesh, Cascade road) | `sim` | implant-graph state + a spread channel | Phase 7 + 8 |
 | **AR** (perception layer; targeting/IFF/Mark read it) | `sim` | a visibility/IFF lens over targeting | Phase 5 + 8 |
 | **Jobs / Objectives** (alt win conditions + contracts) | `sim` (Objective seam) + `atomica-run` (contracts) | injected `Objective` | Phase 4 + 10 |
+| **Skills** (roll-modifiers) + XP / chips | `sim` (roll hook) + `atomica-run` (XP / levels) | roll-modifier input + progression | Phase 3 + 10 |
 
 None of it breaks the crate split or phase ordering.
 
 ---
 
-## 11. Open questions added this session
+## 12. Open questions added this session
 
 1. **Per-faction Rep math** — how standing maps to price / access tiers; how the Fixer / Media convert Rep across the web.
 2. **Notoriety** — how criminal dealings raise it and how it seeds cop-faction enemies in the run.
@@ -335,4 +363,5 @@ None of it breaks the crate split or phase ordering.
 13. **Casualty economy** — each unit's downtime contribution model (flat? by tier/cost?); do **mid-battle revives** (a mender standing a downed unit back up before battle's end) count as "survived" for downtime; multi-segment downtime — do Recovered units sit out one segment or several.
 14. **Economy as flow vs. stock** — since economy & Rep are a live unit-summation (§2): is spendable currency a per-segment **flow** (set by current roster, use-it-or-lose-it) or does it **bank** into an accumulated stock? Does Rep **drop** when a contributing unit leaves the roster (pure live sum), or **ratchet** (units build a standing that persists)? The dial sets how punishing roster churn is.
 15. **Casualty-offset dials (§9.4)** — Insurance pre-combat: premium cost, per-unit vs. blanket, and the purchase window; Medical-benefit conversion: salvage vs. claim model, what "more loss → more benefit" curves to, and whether it harvests the lost unit's *gear*; can a unit carry **both** offsets, and do they stack?
-16. **Death model (§9.4)** — the **extraction** mechanic: reach a board edge? carried out by a unit / vehicle (the Rig)? a stabilize-window the Doctor extends (Death's Door, §6.4)? Its difficulty sets the **permadeath rate** (easy ≈ resurrect, hard ≈ brutal). Plus the **salvage tables** (what gear / biomatter a death returns) and the **unsalvageable** model — is it the signature skill, the inbuilt gear, or the whole character that's lost for good?
+16. **Extraction & salvage dials (§9.4)** — *sources resolved* (Nomad units / the Rig, or an extraction membership). Remaining: the **downed→dead window** (how long a downed unit survives awaiting pickup — the Death's Door clock); how many extractions per battle; membership cost / limits / response time; whether extraction costs tactical tempo / risk. This window sets the **permadeath rate**. Plus the **salvage tables** (what gear / biomatter a death returns).
+17. **Skills & progression (§10)** — the skill list and which rolls each modifies; the **XP curve** and whether levels persist across *runs* (meta-progression) or reset each run; the **skill-chip level cap** and slot cost; when a character's own skill and a chip cover the same domain, do they **stack or take the max**?
