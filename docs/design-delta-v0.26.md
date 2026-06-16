@@ -353,20 +353,22 @@ None of it breaks the crate split or phase ordering.
 
 ## 12. Open questions added this session
 
-1. **Per-faction Rep math** — how standing maps to price / access tiers; how the Fixer / Media convert Rep across the web.
-2. **Notoriety** — how criminal dealings raise it and how it seeds cop-faction enemies in the run.
-3. **Corp rivalry graph** — which sectors are enemies; does courting one *cost* Rep with its rival, or are they independent?
-4. **Cross-pool ability costs** — the magnitude→scope curve; what a 2- vs 3-pool heal should cost.
-5. **Morale tuning** — Resolve pool sizes, Stress magnitudes, Break thresholds, rout-vs-berserk split, Rally radius; Machine morale-immunity confirmed.
-6. **Vehicle rules** — occupancy footprint shapes, crew capacity, disembark / spill-damage on death, ram resolution.
-7. **PAN segmentation** — the synergy bonuses you forfeit to compartmentalize; throughput penalty; is it a software toggle or a build commitment?
-8. **AR detection** — visible-in-AR rules, sensor range, what Jammer / Blind / Scramble do to the AR picture numerically; Heat→AR signature curve.
-9. **Faction rosters** — fill Runner / Corp archetypes; finalize clan list; cop subdivisions in or out.
-10. **Naming pass** — confirm corp / clan placeholder names; lock the street-name register across the roster.
-11. **Generic vs. faction gear** — how much edge branded gear buys over the generic 1.0× baseline; the licit/illicit split and its Notoriety cost; whether *any* gear (vs. only specialist depth) is ever truly faction-exclusive.
-12. **Jobs** — run-map availability / frequency; how margin-loss "X" is measured (army-strength differential? surviving units?); does *failing* a Job cost Rep or just forfeit the reward; can you abandon mid-Job; how endorsement requirements interact with the generic tier.
-13. **Casualty economy** — each unit's downtime contribution model (flat? by tier/cost?); do **mid-battle revives** (a mender standing a downed unit back up before battle's end) count as "survived" for downtime; multi-segment downtime — do Recovered units sit out one segment or several.
-14. **Economy as flow vs. stock** — since economy & Rep are a live unit-summation (§2): is spendable currency a per-segment **flow** (set by current roster, use-it-or-lose-it) or does it **bank** into an accumulated stock? Does Rep **drop** when a contributing unit leaves the roster (pure live sum), or **ratchet** (units build a standing that persists)? The dial sets how punishing roster churn is.
-15. **Casualty-offset dials (§9.4)** — Insurance pre-combat: premium cost, per-unit vs. blanket, and the purchase window; Medical-benefit conversion: salvage vs. claim model, what "more loss → more benefit" curves to, and whether it harvests the lost unit's *gear*; can a unit carry **both** offsets, and do they stack?
-16. **Extraction & salvage dials (§9.4)** — *sources resolved* (a **vehicle** exiting the board — removing it *and* the rescued — or an extraction membership); *reward gradient resolved* (kills > extraction, slightly). **⏳ Deferred to playtest (needs code):** the **permadeath-rate dial** — the **downed→dead window** (how long a downed unit survives awaiting pickup — the Death's Door clock), extractions-per-battle, membership response time, and whether extraction costs tempo/risk. These are *feel* numbers, untunable on paper. Plus the **salvage tables** (what gear / biomatter a death returns).
-17. **Skills & progression (§10)** — the skill list and which rolls each modifies; the **XP curve** and whether levels persist across *runs* (meta-progression) or reset each run; the **skill-chip level cap** and slot cost; when a character's own skill and a chip cover the same domain, do they **stack or take the max**?
+*Tagged by how each resolves — **🎯 Design** (decide on paper now) · **◑ Mixed** (settle the structure now, tune the numbers later) · **⏳ Playtest** (feel numbers — need the built game). Tally: **7 design-now · 8 mixed · 2 playtest-only.***
+
+1. **[◑ Mixed]** **Per-faction Rep math** — how standing maps to price / access tiers; how the Fixer / Media convert Rep across the web.
+2. **[◑ Mixed]** **Notoriety** — how criminal dealings raise it and how it seeds cop-faction enemies in the run.
+3. **[🎯 Design]** **Corp rivalry graph** — which sectors are enemies; does courting one *cost* Rep with its rival, or are they independent?
+4. **[⏳ Playtest]** **Cross-pool ability costs** — the magnitude→scope curve; what a 2- vs 3-pool heal should cost.
+5. **[◑ Mixed]** **Morale tuning** — Resolve pool sizes, Stress magnitudes, Break thresholds, rout-vs-berserk split, Rally radius; Machine morale-immunity confirmed.
+6. **[🎯 Design]** **Vehicle rules** — occupancy footprint shapes, crew capacity, disembark / spill-damage on death, ram resolution.
+7. **[◑ Mixed]** **PAN segmentation** — the synergy bonuses you forfeit to compartmentalize; throughput penalty; is it a software toggle or a build commitment?
+8. **[◑ Mixed]** **AR detection** — visible-in-AR rules, sensor range, what Jammer / Blind / Scramble do to the AR picture numerically; Heat→AR signature curve.
+9. **[🎯 Design]** **Faction rosters** — fill Runner / Corp archetypes; finalize clan list; cop subdivisions in or out.
+10. **[🎯 Design]** **Naming pass** — confirm corp / clan placeholder names; lock the street-name register across the roster.
+11. **[◑ Mixed]** **Generic vs. faction gear** — how much edge branded gear buys over the generic 1.0× baseline; the licit/illicit split and its Notoriety cost; whether *any* gear (vs. only specialist depth) is ever truly faction-exclusive.
+12. **[🎯 Design]** **Jobs** *(frequency ⏳)* — run-map availability / frequency; how margin-loss "X" is measured (army-strength differential? surviving units?); does *failing* a Job cost Rep or just forfeit the reward; can you abandon mid-Job; how endorsement requirements interact with the generic tier.
+13. **[🎯 Design]** **Casualty economy** — each unit's downtime contribution model (flat? by tier/cost?); do **mid-battle revives** (a mender standing a downed unit back up before battle's end) count as "survived" for downtime; multi-segment downtime — do Recovered units sit out one segment or several.
+14. **[🎯 Design]** **Economy as flow vs. stock** — since economy & Rep are a live unit-summation (§2): is spendable currency a per-segment **flow** (set by current roster, use-it-or-lose-it) or does it **bank** into an accumulated stock? Does Rep **drop** when a contributing unit leaves the roster (pure live sum), or **ratchet** (units build a standing that persists)? The dial sets how punishing roster churn is.
+15. **[◑ Mixed]** **Casualty-offset dials (§9.4)** — Insurance pre-combat: premium cost, per-unit vs. blanket, and the purchase window; Medical-benefit conversion: salvage vs. claim model, what "more loss → more benefit" curves to, and whether it harvests the lost unit's *gear*; can a unit carry **both** offsets, and do they stack?
+16. **[⏳ Playtest]** **Extraction & salvage dials (§9.4)** — *sources resolved* (a **vehicle** exiting the board — removing it *and* the rescued — or an extraction membership); *reward gradient resolved* (kills > extraction, slightly). **⏳ Deferred to playtest (needs code):** the **permadeath-rate dial** — the **downed→dead window** (how long a downed unit survives awaiting pickup — the Death's Door clock), extractions-per-battle, membership response time, and whether extraction costs tempo/risk. These are *feel* numbers, untunable on paper. Plus the **salvage tables** (what gear / biomatter a death returns).
+17. **[◑ Mixed]** **Skills & progression (§10)** — the skill list and which rolls each modifies; the **XP curve** and whether levels persist across *runs* (meta-progression) or reset each run; the **skill-chip level cap** and slot cost; when a character's own skill and a chip cover the same domain, do they **stack or take the max**?
