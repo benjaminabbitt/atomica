@@ -379,6 +379,13 @@ None of it breaks the crate split or phase ordering.
 
 *Resolutions from the design-working session; these **supersede** the matching §12 items. Specifics marked ◆ are my fill on the user's call — override freely. Numbers still ⏳ where noted.*
 
+**Roll resolution — the core mechanic: `3d6 + skill + equipment` vs. TN, no stats.** ◆
+- **When you roll:** only **contested / stochastic** actions — hacks, spoofs, contagion (tick / build / spread), skill-gated abilities. **Basic attacks auto-hit** (the deterministic damage pipeline, §10.5 of the taxonomy); the dice live in the digital / contagion / skill layer, keeping the auto-battler fast.
+- **The roll:** `3d6 + skill + equipment` vs. a **Target Number**. **Margin = total − TN**; **margin > 0 succeeds**, and the **margin's size = degree of success** (scales the effect — a bigger hack margin trips a stronger effect; a bigger contagion margin pushes a higher tier / harder-to-resist). This **subsumes** the old `margin = hack-power − Firewall` and the contagion **T1/T2/T3** roll into one rule.
+- **Skills attack, stats defend.** The *only* additive bonus is **skill** (character or chip — take-the-max, chips capped, §10) **+ equipment** (deck hack-rating, weapon mod, …). **No chassis stat is added to a roll.** Instead the defender's stat line *is* the TN: **Firewall** (hacks / Worm / spoof), **Immunity** (Virus), a control-resist — thresholds you roll *against*, never bonuses to your own roll.
+- **Why 3d6 — the bell curve.** Mean 10.5, tight spread → **skill dominates, luck is a small nudge**, big upsets rare (~0.5% each extreme). Fits the seeded-RNG, replayable, low-swing feel over d20 randomness.
+- **Defaults ◆ (tunable):** succeed on **≥ TN**; **nat 3 = fumble, nat 18 = crit** (rare, splashy). **Calibration ⏳** — skill ranges, equipment bonuses, and TN bands set so a matched contest (skill + equip ≈ TN − 10.5) sits near 50%. *(Also closes the taxonomy's "resolution math" TBD, §8 #5.)*
+
 **Economy & Rep (#14) — currency banks, Rep is live.** Currency accumulates into a spendable wallet (save for big buys); **Rep is a live unit-summation that drops when a contributing unit leaves** the roster. You can stockpile money, never standing — fire the earners and your Rep falls. Reconciles "spending must work" with "Rep isn't banked" (§2).
 
 **Corp politics (#3) — coupled rivals.** Courting a corp **costs Rep with its rival**; the market forces alignment and your standing picks your enemies. Rival graph (◆, tunable):
