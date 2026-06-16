@@ -353,7 +353,7 @@ None of it breaks the crate split or phase ordering.
 
 ## 12. Open questions added this session
 
-*Tagged by how each resolves — **🎯 Design** (decide on paper now) · **◑ Mixed** (settle the structure now, tune the numbers later) · **⏳ Playtest** (feel numbers — need the built game). Tally: **7 design-now · 8 mixed · 2 playtest-only.***
+*Tagged by how each resolves — **🎯 Design** (decide on paper now) · **◑ Mixed** (settle the structure now, tune the numbers later) · **⏳ Playtest** (feel numbers — need the built game). Tally: **7 design-now · 8 mixed · 2 playtest-only.** **→ Working-pass resolutions in §13 now supersede #1–3, 5–8, 11–15, 17 (structure decided; ⏳ numbers remain). Still fully open: #4, #16 (playtest) · #9, #10 (authoring).***
 
 1. **[◑ Mixed]** **Per-faction Rep math** — how standing maps to price / access tiers; how the Fixer / Media convert Rep across the web.
 2. **[◑ Mixed]** **Notoriety** — how criminal dealings raise it and how it seeds cop-faction enemies in the run.
@@ -372,3 +372,42 @@ None of it breaks the crate split or phase ordering.
 15. **[◑ Mixed]** **Casualty-offset dials (§9.4)** — Insurance pre-combat: premium cost, per-unit vs. blanket, and the purchase window; Medical-benefit conversion: salvage vs. claim model, what "more loss → more benefit" curves to, and whether it harvests the lost unit's *gear*; can a unit carry **both** offsets, and do they stack?
 16. **[⏳ Playtest]** **Extraction & salvage dials (§9.4)** — *sources resolved* (a **vehicle** exiting the board — removing it *and* the rescued — or an extraction membership); *reward gradient resolved* (kills > extraction, slightly). **⏳ Deferred to playtest (needs code):** the **permadeath-rate dial** — the **downed→dead window** (how long a downed unit survives awaiting pickup — the Death's Door clock), extractions-per-battle, membership response time, and whether extraction costs tempo/risk. These are *feel* numbers, untunable on paper. Plus the **salvage tables** (what gear / biomatter a death returns).
 17. **[◑ Mixed]** **Skills & progression (§10)** — the skill list and which rolls each modifies; the **XP curve** and whether levels persist across *runs* (meta-progression) or reset each run; the **skill-chip level cap** and slot cost; when a character's own skill and a chip cover the same domain, do they **stack or take the max**?
+
+---
+
+## 13. Decisions — working pass (v0.26) ◆
+
+*Resolutions from the design-working session; these **supersede** the matching §12 items. Specifics marked ◆ are my fill on the user's call — override freely. Numbers still ⏳ where noted.*
+
+**Economy & Rep (#14) — currency banks, Rep is live.** Currency accumulates into a spendable wallet (save for big buys); **Rep is a live unit-summation that drops when a contributing unit leaves** the roster. You can stockpile money, never standing — fire the earners and your Rep falls. Reconciles "spending must work" with "Rep isn't banked" (§2).
+
+**Corp politics (#3) — coupled rivals.** Courting a corp **costs Rep with its rival**; the market forces alignment and your standing picks your enemies. Rival graph (◆, tunable):
+- **Cyberware ↔ Medical** — chrome vs flesh (the signature axis)
+- **Military-Industrial ↔ Insurance** — cause damage vs cover it
+- **Vehicles ↔ Real Estate** — the road vs the tower (nomad vs landed)
+- **Media ↔ Financial** — soft influence vs hard capital
+- category-level: **Cops ↔ the street** (clans / independents) via Notoriety (#2).
+
+**Morale Break (#5) — by unit trait.** Each unit's Break is a trait ◆: **Steadfast → rout** (flee: forced Kite/Disperse, can't attack) vs **Feral → berserk** (attack nearest, incl. allies). Machines immune (no mind, §4). Disciplined archetypes (Steel Lotus) resist Break and lean rout; feral ones berserk.
+
+**Skills (#17) — hybrid progression, survival-earned; take-the-max.** Skills/XP **mostly reset each run**, with a small **meta-unlock earned by survival ◆:** a character that **lives through a full run** banks a permanent fraction (a starting skill level, or graduates to a recruitable **veteran** template). So meta-progression is *earned by keeping veterans alive across a whole run* — the extraction fantasy at run scale. **Character skill vs chip in the same domain → take the max** (chips are a floor, not additive; redundant once innate exceeds the chip cap).
+
+**Jobs (#12) — resolved (frequency ⏳).** Margin-loss "X" = **the enemy's remaining army-strength at your defeat** (lose, but leave them ≤ X — a costly, convincing loss). **Failing forfeits the reward** + a **minor Rep ding** (unreliability). **Abandoning** = a fail. **Endorsement requires the named vendor's gear** — generic doesn't satisfy it (that's the sponsorship).
+
+**Casualty economy (#13) — contribution by tier; up-at-end contributes.** Downtime contribution **scales with unit tier/cost** (veterans worth more — losing them stings more). A unit contributes **only if it ended the battle *up* (not downed)** — a clean **mid-battle revive that holds counts**; any downed unit (extracted/recovered *or* dead) contributes nothing that segment **unless insured** (§9.4). Recovered units sit out **one** segment, full next battle.
+
+**Vehicles (#6) — resolved.** Occupancy **2 hexes** (heavy = 3). **Ram** = a move-attack dealing **Bludgeoning/Contact** scaled by mass + **knockback**; friendly-fire on. **Crew spill** on destruction → adjacent free hexes with minor damage; **no free hex → the occupant is downed**. Capacity is a per-vehicle stat (content).
+
+**PAN segmentation (#7) — a build commitment.** Meshed (synergy, Cascade-vulnerable) vs segmented (no cross-implant synergy, Cascade-proof) is **chosen at loadout, not a free in-battle toggle** — a build identity, not a panic button.
+
+**Gear exclusivity (#11) — access-gated, with signature exclusives.** Affiliation gates **access/price, not capability** — nearly all gear is buyable (high Rep, or grey-market at a Notoriety cost). Exception: each faction keeps a few **signature / inbuilt** items that *are* exclusive (a corp's flagship implant, a clan's signature blade).
+
+**Rep mapping (#1, structure) — tiers.** **Hostile → Neutral → Trusted → Inner-circle**, gating access (locked → available → discounted → exclusive stock), price scaling down as Rep rises. Thresholds ⏳.
+
+**Notoriety (#2, structure) — escalating interdiction.** Illicit gear, anti-cop actions, and certain Jobs raise Notoriety; tiers trigger escalating **cop raids** (forced Job-like encounters) in the run. Rates ⏳.
+
+**AR (#8, structure) — visibility rules.** **Visible-in-AR = targetable by smart/IFF effects**; low/zero-Link or **Blinded/Scrambled = off-AR** → dumb nearest-targeting. **Jammer** collapses AR in-area; **sensors** expand it; **Heat** raises a unit's AR signature. Ranges/curves ⏳.
+
+**Casualty offsets (#15, structure) — per-unit insurance, salvage-as-claim, stackable.** Insurance is **per-unit, pre-combat** (pick who to insure — the bet). Salvage is a **tier-scaled claim** (payout per lost unit by value), not gear-by-gear harvesting. A dead unit can be **both** insured and salvaged (money + materials stack). Premiums/curves ⏳.
+
+**Still genuinely open after this pass:** #4 cross-pool costs (⏳), #16 permadeath-rate (⏳), #9 faction rosters (authoring), #10 naming (authoring).
