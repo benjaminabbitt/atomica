@@ -166,8 +166,9 @@ Two genuinely new **engine** mechanics (everything else this delta was content):
 
 - **Multi-hex occupancy** — a vehicle spans 2–3 hexes. Board / adjacency / footprint (Phase 1) must handle a unit covering multiple hexes: bigger contagion surface, easier blast target, blocks more lanes.
 - **Containment (crew / transport)** — units ride *inside*; the vehicle is their outer armor layer. On destruction, crew **spill** into adjacent hexes (a death-trigger), possibly damaged. Mounted weapons are crewed by occupants.
+- **Extraction (= the survival lever, §9.4)** — a transport **loads a downed unit and drives off the board**, which **removes both the vehicle and the rescued from the battle.** The tactical cost: you pull the wheels (and their guns) out of the fight to save your people. **Nomad == vehicle** — the extraction route *is* the vehicle, not a separate ability.
 
-**Vehicle chassis** (heavy Machine variant): high Integrity + Plating, big weight → low physical Initiative, **Virus-immune** (no flesh) but **EMP / Worm-exposed** if networked, **bright signature** (draws fire, AoE magnet — ties to Heat). Mobility: high move, can **ram** (kinetic + knockback). This is the Clan **Haul** / Nomad fantasy.
+**Vehicle chassis** (heavy Machine variant): high Integrity + Plating, big weight → low physical Initiative, **Virus-immune** (no flesh) but **EMP / Worm-exposed** if networked, **bright signature** (draws fire, AoE magnet — ties to Heat). Mobility: high move, can **ram** (kinetic + knockback). The Clan **Haul** vendors them; the vehicle *is* the nomad fantasy.
 
 ---
 
@@ -273,7 +274,7 @@ The **Rep + gear faucet.** Alongside standard battles (which pay currency / surv
 | **Recovered** | **extracted** (pulled off the field in time) | survives → returns next battle |
 | **Dead** | *not* extracted | **permanently lost** — collect its death-offsets (below); only extraction would have saved it |
 
-**Extraction comes from two sources ◆:** **Nomads** (the Haul clan / a Nomad unit or the **Rig** vehicle, §8) physically pull downed units off the field — your people don't leave anyone behind; or an **Extraction membership** — a pre-paid medevac service (Nomad-run or independent) that lifts your downed out within a response window. *Bring your own wheels, or subscribe.*
+**Extraction comes from two sources ◆:** a **vehicle** (the Rig, §5) — it loads the downed unit and **drives off the field**, which **removes both the vehicle *and* the extracted character(s) from the battle** (the cost: you pull the wheels out of the fight to save your people); or an **Extraction membership** — a pre-paid medevac outfit that lifts your downed out within a response window, no vehicle committed. *Commit the wheels, or subscribe.*
 
 The **run still ends only on a battle loss** (army wiped), but you can now **bleed units permanently across a run while winning** — real stakes. *(Revises the earlier "always resurrect next battle" rule.)*
 
@@ -363,5 +364,5 @@ None of it breaks the crate split or phase ordering.
 13. **Casualty economy** — each unit's downtime contribution model (flat? by tier/cost?); do **mid-battle revives** (a mender standing a downed unit back up before battle's end) count as "survived" for downtime; multi-segment downtime — do Recovered units sit out one segment or several.
 14. **Economy as flow vs. stock** — since economy & Rep are a live unit-summation (§2): is spendable currency a per-segment **flow** (set by current roster, use-it-or-lose-it) or does it **bank** into an accumulated stock? Does Rep **drop** when a contributing unit leaves the roster (pure live sum), or **ratchet** (units build a standing that persists)? The dial sets how punishing roster churn is.
 15. **Casualty-offset dials (§9.4)** — Insurance pre-combat: premium cost, per-unit vs. blanket, and the purchase window; Medical-benefit conversion: salvage vs. claim model, what "more loss → more benefit" curves to, and whether it harvests the lost unit's *gear*; can a unit carry **both** offsets, and do they stack?
-16. **Extraction & salvage dials (§9.4)** — *sources resolved* (Nomad units / the Rig, or an extraction membership). Remaining: the **downed→dead window** (how long a downed unit survives awaiting pickup — the Death's Door clock); how many extractions per battle; membership cost / limits / response time; whether extraction costs tactical tempo / risk. This window sets the **permadeath rate**. Plus the **salvage tables** (what gear / biomatter a death returns).
+16. **Extraction & salvage dials (§9.4)** — *sources resolved* (a **vehicle** exiting the board — removing it *and* the rescued — or an extraction membership). Remaining: the **downed→dead window** (how long a downed unit survives awaiting pickup — the Death's Door clock); how many extractions per battle; membership cost / limits / response time; whether extraction costs tactical tempo / risk. This window sets the **permadeath rate**. Plus the **salvage tables** (what gear / biomatter a death returns).
 17. **Skills & progression (§10)** — the skill list and which rolls each modifies; the **XP curve** and whether levels persist across *runs* (meta-progression) or reset each run; the **skill-chip level cap** and slot cost; when a character's own skill and a chip cover the same domain, do they **stack or take the max**?
