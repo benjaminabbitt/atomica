@@ -129,8 +129,9 @@ pub struct Unit {
 
     /// Physical Initiative — turn order in the world (higher acts first).
     pub initiative: f32,
-    /// Digital Initiative / net presence. `0.0` ⇒ immune to all digital attack.
-    pub link: f32,
+    /// Digital Initiative / net presence (Link, §7D). Integer **bandwidth tiers**;
+    /// `0` ⇒ immune to all digital attack. Feeds the hack channel + digital init.
+    pub link: i32,
     /// Resist vs Worm + hacks — the Target Number a digital stochastic roll must
     /// beat (`3d6 + power` vs this), §13.
     pub firewall: i32,
@@ -202,7 +203,7 @@ impl Unit {
     /// with its Hacking. (Defense is Link-blind; zero Link is the separate hard
     /// reachability gate.)
     fn digital_band(&self) -> i32 {
-        self.link.max(0.0).floor() as i32
+        self.link.max(0)
     }
 
     /// Incoming-damage multiplier from Breach-style vulnerabilities.
@@ -468,15 +469,12 @@ impl<R: RandomSource> Battle<R> {
         let mut order: Vec<usize> = (0..self.units.len())
             .filter(|&i| {
                 let u = &self.units[i];
-                u.is_alive() && u.hack.is_some() && u.link > 0.0
+                u.is_alive() && u.hack.is_some() && u.link > 0
             })
             .collect();
         order.sort_by(|&a, &b| {
             let (ua, ub) = (&self.units[a], &self.units[b]);
-            ub.link
-                .partial_cmp(&ua.link)
-                .unwrap_or(std::cmp::Ordering::Equal)
-                .then(ua.id.cmp(&ub.id))
+            ub.link.cmp(&ua.link).then(ua.id.cmp(&ub.id))
         });
 
         for i in order {
@@ -500,10 +498,10 @@ impl<R: RandomSource> Battle<R> {
             return HackResult::NoHack;
         };
         // Hard gate (§7D/§7F): a runner needs net presence; the target a surface.
-        if self.units[attacker].link <= 0.0 {
+        if self.units[attacker].link <= 0 {
             return HackResult::Offline;
         }
-        if self.units[target].link <= 0.0 {
+        if self.units[target].link <= 0 {
             return HackResult::NoSurface;
         }
         // The connection runs at the weaker endpoint's bandwidth (the channel);
@@ -531,7 +529,7 @@ impl<R: RandomSource> Battle<R> {
                 *j != i
                     && u.is_alive()
                     && u.team == me.team.enemy()
-                    && u.link > 0.0
+                    && u.link > 0
                     && me.pos.distance(u.pos) <= range
             })
             .min_by_key(|(_, u)| (me.pos.distance(u.pos), u.id))
@@ -585,7 +583,7 @@ mod tests {
             chassis: Chassis::Augmented,
             skills: Chassis::Augmented.baseline_skills(),
             initiative: 5.0,
-            link: 0.0,
+            link: 0,
             firewall: 0,
             immunity: 0,
             attack: Attack {
@@ -604,7 +602,7 @@ mod tests {
     /// Its hack strength comes from its own Link & Hacking — set those per test.
     fn runner(id: u32, team: Team, q: i32, range: i32) -> Unit {
         let mut u = unit(id, team, q);
-        u.link = 3.0;
+        u.link = 3;
         u.hack = Some(Hack::new(range, StatusSpec::lockware(), 1, 5));
         u
     }
@@ -612,7 +610,7 @@ mod tests {
     /// A unit with a hackable digital surface: Link > 0 and a Firewall TN.
     fn networked(id: u32, team: Team, q: i32, firewall: i32) -> Unit {
         let mut u = unit(id, team, q);
-        u.link = 2.0;
+        u.link = 2;
         u.firewall = firewall;
         u
     }
@@ -856,7 +854,7 @@ mod tests {
     fn zero_link_target_is_immune_to_hacks() {
         let atk = runner(0, Team::A, 0, 1);
         let mut tgt = networked(1, Team::B, 0, 8);
-        tgt.link = 0.0; // air-gapped — no surface to reach
+        tgt.link = 0; // air-gapped — no surface to reach
                         // Empty RNG: a roll here would panic, proving the gate short-circuits.
         let mut b = Battle::with_rng(vec![atk, tgt], ScriptedRng::default());
         assert_eq!(b.resolve_hack(0, 1), HackResult::NoSurface);
@@ -866,7 +864,7 @@ mod tests {
     #[test]
     fn offline_attacker_cannot_hack() {
         let mut atk = runner(0, Team::A, 0, 1);
-        atk.link = 0.0; // dark — no presence to reach with
+        atk.link = 0; // dark — no presence to reach with
         let tgt = networked(1, Team::B, 0, 8);
         let mut b = Battle::with_rng(vec![atk, tgt], ScriptedRng::default());
         assert_eq!(b.resolve_hack(0, 1), HackResult::Offline);
@@ -878,10 +876,10 @@ mod tests {
         // Attacker Link 6, target Link 2 → channel 2 (the target bottlenecks it);
         // rating avg(Hacking 4, 2) = 3.
         let mut atk = runner(0, Team::A, 0, 1);
-        atk.link = 6.0;
+        atk.link = 6;
         atk.skills.set(Skill::Hacking, 4);
         let mut tgt = networked(1, Team::B, 0, 0);
-        tgt.link = 2.0;
+        tgt.link = 2;
         let mut b = Battle::with_rng(vec![atk, tgt], ScriptedRng::from_d6([4, 4, 4])); // 12
         let HackResult::Rolled { outcome, .. } = b.resolve_hack(0, 1) else { panic!() };
         assert_eq!(outcome.total, 12 + 3);
@@ -891,10 +889,10 @@ mod tests {
     fn a_thin_runner_link_bottlenecks_the_channel() {
         // Mirror: attacker Link 2, target Link 6 → channel 2; same rating 3.
         let mut atk = runner(0, Team::A, 0, 1);
-        atk.link = 2.0;
+        atk.link = 2;
         atk.skills.set(Skill::Hacking, 4);
         let mut tgt = networked(1, Team::B, 0, 0);
-        tgt.link = 6.0;
+        tgt.link = 6;
         let mut b = Battle::with_rng(vec![atk, tgt], ScriptedRng::from_d6([4, 4, 4])); // 12
         let HackResult::Rolled { outcome, .. } = b.resolve_hack(0, 1) else { panic!() };
         assert_eq!(outcome.total, 12 + 3); // channel min(2, 6) = 2
@@ -903,9 +901,9 @@ mod tests {
     #[test]
     fn a_darker_target_is_harder_to_hack() {
         // Same runner; only the target's Link (the channel) changes.
-        let total_vs = |target_link: f32| {
+        let total_vs = |target_link: i32| {
             let mut atk = runner(0, Team::A, 0, 1);
-            atk.link = 6.0;
+            atk.link = 6;
             atk.skills.set(Skill::Hacking, 6);
             let mut tgt = networked(1, Team::B, 0, 0);
             tgt.link = target_link;
@@ -914,9 +912,9 @@ mod tests {
             outcome.total
         };
         // Fat channel (Link 6): avg(6, 6) = 6. Dark (Link 1): avg(6, 1) = 3.
-        assert!(total_vs(6.0) > total_vs(1.0));
-        assert_eq!(total_vs(6.0), 12 + 6);
-        assert_eq!(total_vs(1.0), 12 + 3);
+        assert!(total_vs(6) > total_vs(1));
+        assert_eq!(total_vs(6), 12 + 6);
+        assert_eq!(total_vs(1), 12 + 3);
     }
 
     #[test]
@@ -924,10 +922,10 @@ mod tests {
         // Defense is the Firewall wall in full — target Link feeds the channel,
         // not the TN (if Link capped the TN here it would be 4, not 12).
         let mut atk = runner(0, Team::A, 0, 1);
-        atk.link = 4.0;
+        atk.link = 4;
         atk.skills.set(Skill::Hacking, 6);
         let mut tgt = networked(1, Team::B, 0, 12);
-        tgt.link = 4.0;
+        tgt.link = 4;
         let mut b = Battle::with_rng(vec![atk, tgt], ScriptedRng::from_d6([4, 4, 4])); // 12
         let HackResult::Rolled { outcome, .. } = b.resolve_hack(0, 1) else { panic!() };
         // channel min(4, 4) = 4; rating avg(6, 4) = 5; total 17 vs full Firewall 12.
@@ -939,10 +937,10 @@ mod tests {
     #[test]
     fn margin_scales_the_landed_stacks() {
         let mut atk = runner(0, Team::A, 0, 1);
-        atk.link = 4.0;
+        atk.link = 4;
         atk.skills.set(Skill::Hacking, 6); // channel min(4, 4) = 4 → rating avg(6, 4) = 5
         let mut tgt = networked(1, Team::B, 0, 2);
-        tgt.link = 4.0;
+        tgt.link = 4;
         // 3d6 = 9, + rating 5 = 14 vs Firewall 2 → margin 12 → 1 + 12/3 = 5 stacks.
         let mut b = Battle::with_rng(vec![atk, tgt], ScriptedRng::from_d6([3, 3, 3]));
         assert!(b.resolve_hack(0, 1).landed());
@@ -953,12 +951,12 @@ mod tests {
     #[test]
     fn digital_phase_hacks_the_nearest_reachable_enemy() {
         let mut atk = runner(0, Team::A, 0, 4); // antenna range 4
-        atk.link = 4.0;
+        atk.link = 4;
         atk.skills.set(Skill::Hacking, 4);
         let mut near = networked(1, Team::B, 2, 2); // distance 2 ≤ range 4
-        near.link = 4.0;
+        near.link = 4;
         let mut far = networked(2, Team::B, 9, 2); // out of range
-        far.link = 4.0;
+        far.link = 4;
         let mut b = Battle::with_rng(vec![atk, near, far], ScriptedRng::from_d6([4, 4, 4]));
         b.digital_phase();
         assert!(!b.units[1].statuses.is_empty()); // near got hacked
@@ -980,10 +978,10 @@ mod tests {
     fn hacking_resolution_is_deterministic() {
         let setup = || {
             let mut atk = runner(0, Team::A, 0, 4);
-            atk.link = 4.0;
+            atk.link = 4;
             atk.skills.set(Skill::Hacking, 4);
             let mut tgt = networked(1, Team::B, 2, 4);
-            tgt.link = 4.0;
+            tgt.link = 4;
             Battle::new(vec![atk, tgt], 99)
         };
         let mut x = setup();

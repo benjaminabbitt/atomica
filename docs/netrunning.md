@@ -23,10 +23,9 @@ parallel). *Skills attack, stats defend* (§13) — so the offense is a **skill*
 | **Hacking** | `unit.skills[Hacking]` | int | The **sole offensive additive** on a digital roll. No defensive net-skill exists — you buy Firewall (the stat), not a skill. | ✅ |
 | *Immunity* | `unit.immunity` | int | The **bio** parallel (Virus TN) — separate track, not digital. | ✅ |
 
-**Link is an integer ◆.** It is only ever used as a gate (`> 0`), an ordering
+**Link is an integer ✅.** It is only ever used as a gate (`> 0`), an ordering
 key, and a channel floor (`min` of the two endpoints) — it carries no fractional
-meaning, so it models cleanly as `i32` bandwidth tiers. *(Currently `f32` in
-code; the int migration is a 🔭 cleanup, §6.)*
+meaning, so it models cleanly as `i32` **bandwidth tiers** (migrated from `f32`).
 
 **Chassis floors (✅).** Only **Augmented** ships innate Hacking (1); Flesh and
 Machine have 0 — they **cannot hack without a skill-chip**. Faithful to "digital
@@ -156,12 +155,36 @@ Spike / Leech — loadout choices that shape the Link number and its exposure. �
 
 ---
 
-## 6. Open numbers & calibration ⏳
+## 6. Calibration — first pass ◆
+
+**`Link` is `i32` ✅** — bandwidth tiers, migrated from `f32`.
+
+**The even-odds anchor ◆.** 3d6 is symmetric about 10.5, so `P(3d6 ≥ 11) = 0.5`
+*exactly*. ⇒ **Firewall 11 is the baseline:** a runner with no net advantage
+(`avg = 0`) cracks it on a coin-flip, and every point of wall above 11 must be
+bought back by the attack additive. The matched-contest line is the clean integer
+
+```text
+avg(Hacking, channel) = Firewall − 11
+```
+
+**First-cut bands ◆ (TBD):**
+
+| Stat | 0 | low | mid | high | max |
+|---|---|---|---|---|---|
+| **Firewall** (the TN) | — | **11** soft | **13** standard | **15** hardened | **17+** bulwark |
+| **Link** (tiers) | 0 dark | 1–2 | 3–4 | 5–6 | 7–8 |
+| **Hacking** | 0 none | 1–2 chip | 3–4 competent | 5–6 pro | 7–8 master |
+
+The additive `avg(Hacking, channel)` lands **0–8**, offsetting Firewall **11–19**.
+Even-odds additive per wall: `11→0 · 13→2 · 15→4 · 17→6 · 19→8`. So a mid runner
+(Hacking 4, Link 5) is favored vs a standard wall (13), a coin-flip vs hardened
+(15), and an underdog vs a bulwark (17+) — exactly the intended spread.
+
+**Still open ⏳:**
 
 | Knob | Question |
 |---|---|
-| **Link → `i32`** | migrate the field; set typical **bands** (0–N tiers). |
-| **Contest calibration** | set **Hacking / Link / Firewall** ranges so a *matched* contest sits near **50%**. 3d6 mean = 10.5, so `avg(Hacking, channel) ≈ Firewall − 10.5` is the even-odds line. |
 | **`MARGIN_PER_STACK`** (=3) | the margin→stacks curve; `base_stacks`; per-payload stack caps. |
 | **Antenna range** | reach bands for the digital pass; beam (line) vs single delivery. |
 | **Hack-effect severity** | how punishing each tripped liability is — the "chrome is a real-but-fair gamble" dial. |
@@ -172,7 +195,8 @@ Spike / Leech — loadout choices that shape the Link number and its exposure. �
 
 The road from "the contest works" to "the digital realm is whole":
 
-1. **Calibration + `Link → i32`** ⏳ — make the existing layer *feel* right (small).
+1. ~~**Calibration + `Link → i32`**~~ ✅ — done (§6): Link is `i32`, Firewall 11
+   is the even-odds baseline, first-cut bands set.
 2. **Implant model → hack-effect roster** 🔭 — the keystone (§4); gives hacks teeth
    and worms their payloads. *(Delta Phase 6/7.)*
 3. **Equipment-condition** (Online→Degraded→Offline→Destroyed) 🔭 — what "disable"

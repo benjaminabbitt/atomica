@@ -37,7 +37,7 @@ fn demo_battle() -> Battle {
         chassis: Chassis::Augmented,
         skills: Chassis::Augmented.baseline_skills(),
         initiative: init,
-        link: 0.0,
+        link: 0,
         firewall: 0,
         immunity: 0,
         attack: Attack { damage: dmg, dtype, pen, range },
@@ -57,14 +57,14 @@ fn demo_battle() -> Battle {
     // Wire the Runner as a netrunner: Hacking + the connection channel drive the
     // hack (3d6 + avg(Hacking, channel), channel = weaker endpoint's Link); the
     // Lockware deck sets the payload + reach. Give the enemy line a digital surface
-    // (Link + Firewall) so it's hackable.
-    units[1].link = 5.0;
+    // (Link + Firewall ≥ 11, the even-odds baseline) so it's hackable but not free.
+    units[1].link = 5;
     units[1].skills.set(Skill::Hacking, 4);
     units[1].hack = Some(Hack::new(6, StatusSpec::lockware(), 1, 6));
-    units[2].link = 3.0;
-    units[2].firewall = 6;
-    units[3].link = 3.0;
-    units[3].firewall = 6;
+    units[2].link = 4;
+    units[2].firewall = 13;
+    units[3].link = 4;
+    units[3].firewall = 13;
     // Seed a couple of statuses so the pipeline is visible on first run.
     units[2].add_status(StatusSpec::burn(), 6, 3);
     units[3].add_status(StatusSpec::lag(), 6, 1);
@@ -167,7 +167,7 @@ async fn main() {
                         .join(", ");
                     let deck = if u.hack.is_some() { "⚡" } else { " " };
                     ui.label(format!(
-                        "{:?}  {:<7}{} {:>4.0}/{:<3.0}  [{:?}]  L{:<2.0} {}",
+                        "{:?}  {:<7}{} {:>4.0}/{:<3.0}  [{:?}]  L{:<2} {}",
                         u.team, u.name, deck, u.integrity, u.max_integrity, u.armor_class, u.link,
                         statuses
                     ));
