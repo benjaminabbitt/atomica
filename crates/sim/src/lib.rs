@@ -32,7 +32,8 @@ mod status;
 pub use armor::ArmorClass;
 pub use hex::Hex;
 pub use objective::{
-    MarginLoss, Objective, ObjectiveStatus, Reach, Survive, TimeAttack, WinFight, PLAYER,
+    Goal, MarginLoss, Objective, ObjectiveStatus, Objectives, Reach, Survive, TimeAttack, WinFight,
+    PLAYER,
 };
 pub use rng::{RandomSource, ScriptedRng, SplitMix64};
 pub use roll::{resolve_contest, Contest, RollOutcome};
@@ -226,7 +227,7 @@ pub struct Battle<R: RandomSource = SplitMix64> {
     pub units: Vec<Unit>,
     pub tick: u32,
     rng: R,
-    objectives: Vec<Box<dyn Objective>>,
+    objectives: Objectives,
 }
 
 impl Battle<SplitMix64> {
@@ -240,26 +241,35 @@ impl<R: RandomSource> Battle<R> {
     /// Build a battle over any [`RandomSource`] — inject a `ScriptedRng` in tests.
     /// Defaults to the [`Eliminate`] objective.
     pub fn with_rng(units: Vec<Unit>, rng: R) -> Self {
-        Self { units, tick: 0, rng, objectives: vec![Box::new(WinFight) as Box<dyn Objective>] }
+        let objectives = Objectives::new(vec![Goal::new(Box::new(WinFight), 1, 1)]);
+        Self { units, tick: 0, rng, objectives }
     }
 
     /// Replace the scored objectives (default: just [`WinFight`], the node's
     /// standard fight). A Flight can carry any number; each is scored independently.
-    pub fn with_objectives(mut self, objectives: Vec<Box<dyn Objective>>) -> Self {
+    pub fn with_objectives(mut self, objectives: Objectives) -> Self {
         self.objectives = objectives;
         self
     }
 
-    /// The status of each scored objective at the current state — a fight can meet
-    /// **any number** of them, with commensurate (run-layer) rewards.
+    /// The status of each scored objective at the current state.
     pub fn objectives_report(&self) -> Vec<ObjectiveStatus> {
-        let over = self.fight_over();
-        self.objectives.iter().map(|o| o.status(&self.units, self.tick, over)).collect()
+        self.objectives.report(&self.units, self.tick, self.fight_over())
     }
 
-    /// How many scored objectives are currently met.
-    pub fn achieved(&self) -> usize {
-        self.objectives_report().iter().filter(|s| **s == ObjectiveStatus::Achieved).count()
+    /// Sum of rewards from achieved objectives (the run-layer winnings).
+    pub fn winnings(&self) -> i32 {
+        self.objectives.winnings(&self.units, self.tick, self.fight_over())
+    }
+
+    /// Sum of penalties from failed objectives.
+    pub fn losses(&self) -> i32 {
+        self.objectives.losses(&self.units, self.tick, self.fight_over())
+    }
+
+    /// Objectives still pending — unachieved, but **not** failed.
+    pub fn unachieved(&self) -> Vec<usize> {
+        self.objectives.unachieved(&self.units, self.tick, self.fight_over())
     }
 
     /// Has the standard fight terminated (one army wiped)?
@@ -651,17 +661,36 @@ mod tests {
     }
 
     #[test]
-    fn a_fight_can_meet_multiple_objectives() {
+    fn objectives_sum_winnings_and_surface_unachieved() {
         let mut us = vec![unit(0, Team::A, 0)]; // no enemy ⇒ fight won
-        us[0].pos = Hex::new(5, 0); // and standing on the target hex
-        let b = Battle::with_rng(us, SplitMix64::new(1)).with_objectives(vec![
-            Box::new(WinFight) as Box<dyn Objective>,
-            Box::new(Reach { hex: Hex::new(5, 0) }),
+        us[0].pos = Hex::new(5, 0); // standing on the target hex
+        let objs = Objectives::new(vec![
+            Goal::new(Box::new(WinFight), 10, 5),
+            Goal::new(Box::new(Reach { hex: Hex::new(5, 0) }), 3, 0), // reached
+            Goal::new(Box::new(Reach { hex: Hex::new(9, 9) }), 3, 0), // not reached
         ]);
-        assert_eq!(
-            b.objectives_report(),
-            vec![ObjectiveStatus::Achieved, ObjectiveStatus::Achieved]
-        );
-        assert_eq!(b.achieved(), 2);
+        let b = Battle::with_rng(us, SplitMix64::new(1)).with_objectives(objs);
+        assert_eq!(b.winnings(), 13); // WinFight 10 + reached 3
+        assert_eq!(b.losses(), 0);
+        assert_eq!(b.unachieved(), vec![2]); // far hex pending, not failed
+    }
+
+    #[test]
+    fn losing_the_simple_objective_counts_as_a_loss() {
+        let mut us = vec![unit(0, Team::A, 0), unit(1, Team::B, 1)];
+        us[0].alive = false; // player wiped → WinFight Failed
+        let objs = Objectives::new(vec![Goal::new(Box::new(WinFight), 10, 5)]);
+        let b = Battle::with_rng(us, SplitMix64::new(1)).with_objectives(objs);
+        assert_eq!(b.winnings(), 0);
+        assert_eq!(b.losses(), 5);
+        assert!(b.unachieved().is_empty());
+    }
+
+    #[test]
+    fn satisfied_until_fail_condition() {
+        // Pending and Achieved are "satisfied"; only Failed is not.
+        assert!(ObjectiveStatus::Pending.is_satisfied());
+        assert!(ObjectiveStatus::Achieved.is_satisfied());
+        assert!(!ObjectiveStatus::Failed.is_satisfied());
     }
 }

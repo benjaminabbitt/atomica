@@ -254,7 +254,7 @@ The **Rep + gear faucet.** Alongside standard battles (which pay currency / surv
 | **Take the dive** | you **lose** — but by **no more than X** (a controlled, convincing loss) |
 | **Time attack** | you win within **N** rounds |
 
-A Flight carries a **list** of these — the node's standard **WinFight** (awarded for winning the fight) plus any bonus goals — and can **meet any number** of them independently; rewards are **commensurate** with what's achieved. The standard fight still drives termination.
+A Flight carries a **list** of these in an objectives container — the simple **WinFight** (the node's standard fight) plus any bonus goals — and can **meet any number** independently. The container **sums winnings** (rewards from met goals) and **losses** (penalties from failed ones) and surfaces the **unachieved**. A goal is *satisfied* (not failed) until its explicit **fail condition** fires — being merely unachieved is not a failure. The standard fight still drives termination.
 
 ### 9.2 Requirements (the oddball entry / run conditions)
 
