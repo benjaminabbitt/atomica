@@ -37,6 +37,20 @@ impl Encounter {
     }
 }
 
+/// A planned **run**: a *named* series of [`Encounter`]s (length ≥ 1) — the unit
+/// of work a [`Game`] plays, resting between one and the next. (Every run is a
+/// series; some have length one.)
+pub struct RunPlan {
+    pub name: String,
+    pub encounters: Vec<Encounter>,
+}
+
+impl RunPlan {
+    pub fn new(name: impl Into<String>, encounters: Vec<Encounter>) -> Self {
+        Self { name: name.into(), encounters }
+    }
+}
+
 /// Where the run stands.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum RunOutcome {
@@ -55,6 +69,13 @@ pub struct BattleReport {
     pub losses: Vec<String>,
     /// How many roster units remain.
     pub survivors: usize,
+}
+
+/// What one played run did — the named run plus its per-combat [`BattleReport`]s.
+#[derive(Clone, Debug)]
+pub struct RunReport {
+    pub run: String,
+    pub battles: Vec<BattleReport>,
 }
 
 /// A run in progress: a persistent player **roster** marching through an ordered
@@ -183,16 +204,16 @@ pub enum GameOutcome {
 /// wipes the army, `Won` when every run is cleared.
 pub struct Game {
     roster: Vec<Unit>,
-    runs: Vec<Vec<Encounter>>,
+    runs: Vec<RunPlan>,
     index: usize,
     seed: u64,
     outcome: GameOutcome,
 }
 
 impl Game {
-    /// Start a game. Each entry in `runs` is one run's encounters (length ≥ 1).
-    /// An empty roster is an instant loss; no runs is an instant win.
-    pub fn new(roster: Vec<Unit>, runs: Vec<Vec<Encounter>>, seed: u64) -> Self {
+    /// Start a game from a roster and the ordered [`RunPlan`]s to play. An empty
+    /// roster is an instant loss; no runs is an instant win.
+    pub fn new(roster: Vec<Unit>, runs: Vec<RunPlan>, seed: u64) -> Self {
         let outcome = if roster.is_empty() {
             GameOutcome::Lost
         } else if runs.is_empty() {
@@ -219,16 +240,17 @@ impl Game {
 
     /// Play the next **run** to its end (an attrition gauntlet, no rest within),
     /// then — if the army survives — **R&R** (full heal + chrome repair) before the
-    /// next run. Returns the run's battle reports, or `None` if the game is over.
-    pub fn play_run(&mut self) -> Option<Vec<BattleReport>> {
+    /// next run. Returns the named [`RunReport`], or `None` if the game is over.
+    pub fn play_run(&mut self) -> Option<RunReport> {
         if self.outcome != GameOutcome::Ongoing {
             return None;
         }
-        let encounters = std::mem::take(&mut self.runs[self.index]);
+        let name = self.runs[self.index].name.clone();
+        let encounters = std::mem::take(&mut self.runs[self.index].encounters);
         let roster = std::mem::take(&mut self.roster);
         let run_seed = self.seed ^ (self.index as u64).wrapping_mul(0xD1B5_4A32_D192_ED03);
         let mut run = Run::new(roster, encounters, run_seed);
-        let reports = run.resolve();
+        let battles = run.resolve();
 
         let mut survivors = run.into_survivors();
         if survivors.is_empty() {
@@ -241,11 +263,11 @@ impl Game {
             }
         }
         self.roster = survivors;
-        Some(reports)
+        Some(RunReport { run: name, battles })
     }
 
-    /// Play through to the end (Won or Lost), collecting each run's reports.
-    pub fn play(&mut self) -> Vec<Vec<BattleReport>> {
+    /// Play through to the end (Won or Lost), collecting each run's report.
+    pub fn play(&mut self) -> Vec<RunReport> {
         let mut all = Vec::new();
         while let Some(r) = self.play_run() {
             all.push(r);
@@ -379,8 +401,8 @@ mod tests {
         // full Integrity for run 2 — R&R happens *between* runs.
         let roster = vec![fighter("Vet", 9.0, 50.0, 6.0)];
         let runs = vec![
-            vec![Encounter::new("R1", vec![fighter("F1", 8.0, 22.0, 5.0)])],
-            vec![Encounter::new("R2", vec![fighter("F2", 4.0, 10.0, 3.0)])],
+            RunPlan::new("First", vec![Encounter::new("R1", vec![fighter("F1", 8.0, 22.0, 5.0)])]),
+            RunPlan::new("Second", vec![Encounter::new("R2", vec![fighter("F2", 4.0, 10.0, 3.0)])]),
         ];
         let mut game = Game::new(roster, runs, 11);
         game.play_run().unwrap(); // run 1 wounds the Vet...
@@ -393,17 +415,20 @@ mod tests {
     fn a_run_may_be_a_single_encounter() {
         // Every run is a series; some have length one.
         let roster = vec![fighter("Solo", 30.0, 60.0, 9.0)];
-        let runs = vec![vec![Encounter::new("OneShot", vec![fighter("Mook", 2.0, 8.0, 1.0)])]];
+        let runs =
+            vec![RunPlan::new("Sortie", vec![Encounter::new("OneShot", vec![fighter("Mook", 2.0, 8.0, 1.0)])])];
         let mut game = Game::new(roster, runs, 2);
-        let reports = game.play_run().unwrap();
-        assert_eq!(reports.len(), 1); // a single combat
+        let report = game.play_run().unwrap();
+        assert_eq!(report.run, "Sortie"); // the wrapper's name flows through
+        assert_eq!(report.battles.len(), 1); // a single combat
         assert_eq!(game.outcome(), GameOutcome::Won);
     }
 
     #[test]
     fn a_game_is_lost_when_a_run_wipes_the_army() {
         let roster = vec![fighter("Rookie", 3.0, 12.0, 4.0)];
-        let runs = vec![vec![Encounter::new("Doom", vec![fighter("Killer", 30.0, 120.0, 9.0)])]];
+        let runs =
+            vec![RunPlan::new("Doomed", vec![Encounter::new("Doom", vec![fighter("Killer", 30.0, 120.0, 9.0)])])];
         let mut game = Game::new(roster, runs, 7);
         game.play();
         assert_eq!(game.outcome(), GameOutcome::Lost);
@@ -416,11 +441,14 @@ mod tests {
             Game::new(
                 vec![fighter("A", 12.0, 40.0, 6.0), fighter("B", 11.0, 40.0, 5.0)],
                 vec![
-                    vec![Encounter::new("R1E1", vec![fighter("X", 12.0, 40.0, 7.0)])],
-                    vec![
-                        Encounter::new("R2E1", vec![fighter("Y", 10.0, 30.0, 6.0)]),
-                        Encounter::new("R2E2", vec![fighter("Z", 12.0, 45.0, 6.0)]),
-                    ],
+                    RunPlan::new("One", vec![Encounter::new("R1E1", vec![fighter("X", 12.0, 40.0, 7.0)])]),
+                    RunPlan::new(
+                        "Two",
+                        vec![
+                            Encounter::new("R2E1", vec![fighter("Y", 10.0, 30.0, 6.0)]),
+                            Encounter::new("R2E2", vec![fighter("Z", 12.0, 45.0, 6.0)]),
+                        ],
+                    ),
                 ],
                 42,
             )
