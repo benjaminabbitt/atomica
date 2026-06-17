@@ -57,9 +57,9 @@ This is the architectural expression of two design throughlines:
 
 **`Modifier` — the standard interface ◆.** Every modifying component a generator
 puts on a character implements **one `Modifier` interface**, so the `Character` holds
-them **uniformly** and — crucially — can **find and remove** them. Each carries
-identity so it's **referenceable**:
-- **`id`** — a stable handle;
+them **uniformly** and — crucially — can **find and remove** them. The modifier is a
+**transient projection** (regenerated each `realize`), so its durable referent is its
+**`source`**, not an id of its own:
 - **`source`** — a **link to the id of the `chargen` (decorator) that spawned it**,
   so removing/expiring a decorator drops exactly the modifiers it spawned (a deck
   going Offline, a buff ending);
@@ -154,10 +154,13 @@ base ─▶ generate ─▶ generate ─▶ … ─▶ Character { base, factors
 
 Generators **add factors**; the `Character`'s **accessors fold the relevant factors
 per stat** on query. For numeric stats they sum/multiply by the buckets below; for
-behavior /
-capability it takes the **last `Override`** (top wins). Folding is order-
-independent for the numeric buckets (sum/product), so only `Override` cares about
-order — last-applied generator wins.
+behavior / capability it takes the **highest-priority `Override`**. The gen is a
+**priority-ordered vec** (sorted by `(priority, install-order)`), so only `Override`
+cares about order, and it's settled by **priority, not install luck** — a
+`CORRUPTION`-priority spoof beats `GEAR` however the loadout was equipped. Numeric
+buckets are order-independent (sum/product). **Removal (`removes`) is a standing ward
+— order-independent**: a decorator strips matching modifiers from the whole set,
+whether the infection arrived before or after it.
 
 ### Combining numbers — the bucket model ◆ (additive vs. multiplicative)
 

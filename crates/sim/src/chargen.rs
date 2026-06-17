@@ -30,9 +30,29 @@ use crate::{Hex, MovementProfile, TargetingProfile};
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub struct GenId(pub u32);
 
-/// A modifier's own stable handle (referenceable within a realized set).
-#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
-pub struct ModId(pub u32);
+/// Where a decorator sits in the **priority-ordered gen** (§2). The gen is kept
+/// sorted ascending by `(priority, install-order)`, so composition is
+/// priority-ordered regardless of *install* order: the **highest-priority
+/// `Override` wins** (corruption outranks gear), while numeric factors fold
+/// order-independently. Equal priorities keep install order.
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
+pub struct Priority(pub i32);
+
+impl Priority {
+    /// Worn / installed gear and implants — the baseline.
+    pub const GEAR: Priority = Priority(0);
+    /// Transient buffs / debuffs — over gear.
+    pub const BUFF: Priority = Priority(10);
+    /// Hostile overrides (spoof / Lockware) — outrank everything, so the enemy's
+    /// hack of your script wins however your loadout happens to be ordered.
+    pub const CORRUPTION: Priority = Priority(100);
+}
+
+impl Default for Priority {
+    fn default() -> Self {
+        Priority::GEAR
+    }
+}
 
 /// The numeric stats a [`Factor`] can compose. Behavior (targeting / movement) is
 /// not numeric — it composes via [`Override`].
@@ -110,12 +130,13 @@ pub enum ModifierKind {
     Override(Override),
 }
 
-/// The **standard interface** every modifying component shares (§1): identity so the
-/// realized set can find / remove it. `source` links it to the [`Decorator`] that
-/// spawned it.
+/// The **standard interface** every modifying component shares (§1). Its `source` is
+/// the durable referent — the [`Decorator`] that spawned it — so the realized set is
+/// referenceable / removable **by decorator** (`source`) or category (`tag`). The
+/// modifier itself is a transient projection, regenerated each `realize`, so it
+/// carries no id of its own.
 #[derive(Clone, Copy, Debug)]
 pub struct Modifier {
-    pub id: ModId,
     pub source: GenId,
     pub tag: Tag,
     pub kind: ModifierKind,
@@ -160,11 +181,14 @@ impl Remove {
 #[derive(Clone, Debug)]
 pub struct Decorator {
     pub tag: Tag,
+    /// Slot in the priority-ordered gen — higher wins overrides (default
+    /// [`Priority::GEAR`]).
+    pub priority: Priority,
     pub expiration: Expiration,
     pub factors: Vec<Factor>,
     pub overrides: Vec<Override>,
-    /// Modifiers this decorator strips from those applied **before** it (cleanse,
-    /// counter-spoof, Ripperdoc).
+    /// Modifiers this decorator strips from the set — a **standing ward**, applied
+    /// order-independently (cleanse, counter-spoof, Ripperdoc).
     pub removes: Vec<Remove>,
     /// Set on install — its own [`GenId`], stamped onto every modifier it spawns.
     pub id: GenId,
@@ -175,6 +199,7 @@ impl Decorator {
     pub fn gear(tag: Tag, factors: Vec<Factor>) -> Self {
         Self {
             tag,
+            priority: Priority::GEAR,
             expiration: Expiration::Permanent,
             factors,
             overrides: Vec::new(),
@@ -187,6 +212,7 @@ impl Decorator {
     pub fn timed(tag: Tag, turns: u32, factors: Vec<Factor>) -> Self {
         Self {
             tag,
+            priority: Priority::BUFF,
             expiration: Expiration::Duration(turns),
             factors,
             overrides: Vec::new(),
@@ -201,9 +227,17 @@ impl Decorator {
         self
     }
 
-    /// Builder: this decorator strips matching modifiers from earlier ones.
+    /// Builder: this decorator is a standing ward — it strips matching modifiers
+    /// from the set, order-independently.
     pub fn with_remove(mut self, r: Remove) -> Self {
         self.removes.push(r);
+        self
+    }
+
+    /// Builder: set composition priority (higher wins overrides; default
+    /// [`Priority::GEAR`]). A spoof uses [`Priority::CORRUPTION`].
+    pub fn with_priority(mut self, p: Priority) -> Self {
+        self.priority = p;
         self
     }
 }
@@ -385,7 +419,12 @@ impl Character {
         let id = GenId(self.next_gen);
         self.next_gen += 1;
         dec.id = id;
-        self.gen.push(dec);
+        // The gen is a priority-ordered vec: insert by `(priority, id)`. Since `id`
+        // increases monotonically, equal priorities keep install order, and the vec
+        // stays sorted ascending — `realize` then composes low → high priority.
+        let key = (dec.priority, id.0);
+        let idx = self.gen.partition_point(|d| (d.priority, d.id.0) < key);
+        self.gen.insert(idx, dec);
         id
     }
 
@@ -422,31 +461,31 @@ impl Character {
     /// fresh each call; a dirty-flag cache (§4) is a pure optimization to add only if
     /// the fold ever shows up hot.
     pub fn realize(&self) -> Realized {
+        // Passive face: contribute every decorator's modifiers, in priority order
+        // (low → high, so the last `Override` seen — highest priority — wins).
         let mut mods: Vec<Modifier> = Vec::new();
-        let mut next_mod = 0u32;
         for dec in &self.gen {
-            // active face: strip earlier modifiers this decorator counters.
-            for r in &dec.removes {
-                mods.retain(|m| !r.matches(m));
-            }
-            // passive face: contribute this decorator's modifiers.
             for &f in &dec.factors {
                 mods.push(Modifier {
-                    id: ModId(next_mod),
                     source: dec.id,
                     tag: dec.tag,
                     kind: ModifierKind::Factor(f),
                 });
-                next_mod += 1;
             }
             for &o in &dec.overrides {
                 mods.push(Modifier {
-                    id: ModId(next_mod),
                     source: dec.id,
                     tag: dec.tag,
                     kind: ModifierKind::Override(o),
                 });
-                next_mod += 1;
+            }
+        }
+        // Active face: standing wards. Each decorator's `removes` strips matching
+        // modifiers from the whole set — order-independent (a ward cleanses whether
+        // the infection arrived before or after it), but never its own.
+        for dec in &self.gen {
+            for r in &dec.removes {
+                mods.retain(|m| m.source == dec.id || !r.matches(m));
             }
         }
         Realized { base: self.base, mods }
@@ -599,6 +638,24 @@ mod tests {
     }
 
     #[test]
+    fn override_priority_beats_install_order() {
+        let mut c = Character::new(base());
+        // install the hostile spoof FIRST...
+        c.install(
+            Decorator::timed(Tag::Spoof, 2, vec![])
+                .with_priority(Priority::CORRUPTION)
+                .with_override(Override::Targeting(TargetingProfile::WeakestArmor)),
+        );
+        // ...then the smartgun gear AFTER (lower priority, later install).
+        c.install(
+            Decorator::gear(Tag::Gear, vec![])
+                .with_override(Override::Targeting(TargetingProfile::Backline)),
+        );
+        // priority, not install order, decides: the corruption still wins.
+        assert_eq!(c.realize().targeting(), TargetingProfile::WeakestArmor);
+    }
+
+    #[test]
     fn removing_a_decorator_drops_its_modifiers() {
         let mut c = Character::new(base());
         let deck = c.install(Decorator::gear(Tag::Implant, vec![Factor::add(Stat::Link, 5.0)]));
@@ -608,14 +665,19 @@ mod tests {
     }
 
     #[test]
-    fn cleanse_decorator_strips_earlier_tagged_modifiers() {
+    fn standing_ward_cleanses_regardless_of_order() {
+        // ward installed FIRST, infection AFTER — the standing ward still cleanses.
         let mut c = Character::new(base());
-        // a Virus debuff: -3 firewall.
-        c.install(Decorator::timed(Tag::Virus, 3, vec![Factor::add(Stat::Firewall, -3.0)]));
-        assert_eq!(c.realize().firewall(), 6);
-        // Antivirus: a decorator that removes Virus-tagged modifiers applied before it.
         c.install(Decorator::gear(Tag::Gear, vec![]).with_remove(Remove::Tag(Tag::Virus)));
-        assert_eq!(c.realize().firewall(), 9); // cleansed
+        c.install(Decorator::timed(Tag::Virus, 3, vec![Factor::add(Stat::Firewall, -3.0)]));
+        assert_eq!(c.realize().firewall(), 9); // cleansed despite arriving later
+
+        // and the other order: infection first, ward after.
+        let mut d = Character::new(base());
+        d.install(Decorator::timed(Tag::Virus, 3, vec![Factor::add(Stat::Firewall, -3.0)]));
+        assert_eq!(d.realize().firewall(), 6);
+        d.install(Decorator::gear(Tag::Gear, vec![]).with_remove(Remove::Tag(Tag::Virus)));
+        assert_eq!(d.realize().firewall(), 9);
     }
 
     #[test]
