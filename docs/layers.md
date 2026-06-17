@@ -63,8 +63,27 @@ shapes a character (gear · weapons · armor · augments · consumables · buffs
 spoof). `generate(character) → character` **decorates** it: it **adds** its modifiers
 and **may remove** others' (a Vaccinated cleanse removes `Virus`-tagged modifiers; a
 Ripperdoc removes a breach's disable), then **returns the character**. Its output *is
-a character*, not modifiers. It carries **no math** — it only declares what it
-adds/removes, gated by its condition (Online/Degraded/Offline → full / half / none).
+a character*, not modifiers.
+
+**A decorator is a stateful component ◆**, not a one-shot factory. Beyond the
+modifiers it contributes, it carries:
+- **`expiration`** — its lifecycle: `Permanent` (gear) · `Duration(n)` · `Until(cond)`.
+  On **expiry** the decorator is removed and its modifiers drop with it (matched by
+  `source` id).
+- an **event handler** — it **receives events** and reacts. On a battle event —
+  `TickStart` · `OnHit` · `OnDeath` · `OnBreach` · … (the taxonomy's §6.6 trigger
+  set) — it can tick its expiration, deal a DoT, fire a death-trigger, add/remove
+  modifiers, or **spread** (a contagion adds a decorator to a neighbour).
+
+So a decorator has a **passive face** (the modifiers the `Character` composes into
+stats — *no math of its own*) and an **active face** (its lifecycle + event
+reactions). Static gear is just a `Permanent` decorator with no reactions.
+
+**This subsumes the status system ◆.** The 9-axis status schema *is* a decorator:
+`trigger` → which events it handles · `timing` → event order · `decay` → `expiration`
+· `effect`/`magnitude` → its modifiers + reactions. So **statuses and equipment are
+one component type** — a buff is a `Duration` decorator emitting factors; a **DoT** a
+decorator that damages on `TickStart`; an implant a `Permanent` one.
 
 **`Character`** — holds `base` + the **referenceable modifier set**, plus the
 **accessors** the `sim` queries. Mutating API: `add(m) → id` · `remove(id)` ·
@@ -83,13 +102,12 @@ operations** (§2) over the base. Generators never compute; only the accessors d
 
 > **Narrative vs. type ◆.** The domain language calls these things **modifiers** —
 > they "modify the character." But the **type is `chargen`**: a modifier doesn't
-> mutate the character, it **generates** the (composed) one via factors. So **every
-> modifier is `chargen`** — *permanent* (gear / augments) **and** *transient*
-> (buffs, debuffs like Lag/Breach, a spoof) alike; a transient modifier is just a
-> generator whose factors are active for a duration. *(Boundary: pure
-> **tick-effects** — DoTs, plating-shred — **act** each tick rather than modify
-> stats, so they stay their own mechanism; a status may carry both a chargen
-> modifier and a ticker.)*
+> mutate the character, it **generates** the (composed) one. So **every modifier is
+> `chargen`** — *permanent* (gear / augments) **and** *transient* (buffs, debuffs
+> like Lag/Breach, a spoof) alike; a transient one is just a decorator with a
+> `Duration` `expiration`. *(A pure **tick-effect** — a DoT, plating-shred — is the
+> same decorator's **active face** reacting on `TickStart`, not a separate
+> mechanism.)*
 
 | Group | Queries (on the `Character`) |
 |---|---|
@@ -230,10 +248,11 @@ not a blocker.
 
 | Step | Does | Touches |
 |---|---|---|
-| **L1** | the architecture: **`Modifier`** interface (`id` / `source`→decorator-id / `tag`; `Factor` kind) + **`CharacterGenerator`** (`generate`, add/**remove**) + the **`Character`** (base + keyed modifier set + `add`/`remove`/`remove_where` + **accessors** that sum factors, Add/Increased; dirty-flag cache optional) | `sim` stat reads |
-| **L2** | port **implants → generators** (Contribution/condition → emitted factors); keep breach / EMP / PAN / Cascade behavior | the implant model + ~10 tests re-expressed on the factor API |
+| **L1** | the architecture: **`Modifier`** interface (`id` / `source`→decorator-id / `tag`; `Factor` kind) + the **decorator** (`generate` add/**remove**, **`expiration`**, **event handler**) + the **`Character`** (base + keyed modifier set + `add`/`remove`/`remove_where` + **accessors** that sum factors; dirty-flag cache optional) | `sim` stat reads |
+| **L2** | port **implants → decorators** (Contribution/condition → factors); keep breach / EMP / PAN / Cascade behavior | the implant model + ~10 tests re-expressed |
+| **L2b** | port the **status pool → decorators** — `trigger`→events, `decay`→`expiration`, DoTs→`TickStart` reactions; unifies statuses + equipment | the `Status` system + its tests |
 | **L3** | **behavior factors** (movement / targeting compose from factors) → finishes combat **Phase 1** on this model; a smartgun adds an `Override(targeting)` | combat Phase 1 |
-| **L4+** | **weapon** generators, **armor** generators, **corruption** generators (spoof/Lockware) | new content |
+| **L4+** | **weapon** decorators, **armor** decorators, **corruption** decorators (spoof/Lockware) | new content |
 
 **Test impact:** the implant tests (install / disable / degrade / EMP / cascade)
 re-express on the factor API — the breach/condition **semantics are unchanged**, so
