@@ -24,6 +24,7 @@
 //! statuses), IFF/spoof, and Heat.
 
 pub mod armor;
+mod chargen;
 mod hack;
 mod hex;
 mod implant;
@@ -35,6 +36,10 @@ mod skills;
 mod status;
 
 pub use armor::ArmorClass;
+pub use chargen::{
+    BaseLine, Character, Decorator, DamageEvent, Expiration, Factor, FactorKind, GenId, ModId,
+    Modifier, ModifierKind, Override, Realized, Remove, Stat, Tag,
+};
 pub use hack::{hack_rating, Hack, HackResult};
 pub use hex::Hex;
 pub use implant::{Condition, Contribution, Implant, Pan};

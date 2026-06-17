@@ -270,12 +270,11 @@ question: there's **no query chain** at all.
   `base` produces a flat, **keyed** modifier set (`id → Modifier`, indexed by `source`
   / `tag` for removal); its **accessors** then sum the relevant factors per stat (§2).
   No per-method delegation, no `Box<dyn>` chain to walk.
-- **Caching is a pure optimization** — in the deterministic hot loop, hold the realized
-  view behind a **dirty flag** and **re-`realize` only on a change to the gen**:
-  **loadout / condition / event**. A breach / EMP that flips a generator's condition,
-  an `expiration` ticking out, an event that mutates a decorator — each **marks dirty**,
-  and the next read re-runs the generators. The cache never moves the math out of the
-  accessors.
+- **Caching is a pure optimization — omitted for now** — `realize()` composes the
+  view **fresh each call**; for the current small gen the fold is cheap, so there's no
+  dirty flag. If it ever shows up hot, hold the realized view behind a dirty flag and
+  re-`realize` only on a change to the gen (loadout / condition / event) — a pure
+  optimization that never moves the math out of the accessors.
 
 The **public shape**: `character.realize().link()` reads a composed value,
 `character.integrity` a pool; nothing outside cares that the former came from a freshly
