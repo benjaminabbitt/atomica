@@ -293,8 +293,9 @@ kind of generator**, with its meaning intact:
 | Cyberware concept | In the generator/factor model |
 |---|---|
 | `Contribution` fold / `refold` | a generator **adding** `Add`/`Increased` factors; effective = the `Character`'s accessors summing them |
-| Condition (Online/Degraded/Offline) | gates/scales the **factors it adds** (Degraded = half, Offline = none), unchanged |
-| benefit ↔ liability, hack-effects | the generator carries them; breach disables it → re-add (zero) → mark dirty |
+| Condition (Online/Degraded/Offline) | the decorator's **`scale`** (Online `1.0`, Degraded `0.5`, Offline `0.0`) multiplies its factors; at `0.0` it's gated off entirely — *built* (`set_scale`, in-place, keeps identity) |
+| benefit ↔ liability, hack-effects | the generator carries them; breach **degrades** it (`set_scale`) — identity kept, so repair restores |
+| deck **grants** the hack | a `Capability::Hack` on the decorator; highest-priority active grant wins, drops when Offline — *built* |
 | EMP / PAN / Cascade | operate on the generator set (disable all / cascade), unchanged semantics |
 
 Then it **extends**: **weapons** and **armor** become further generator kinds
@@ -319,8 +320,8 @@ not a blocker.
 
 | Step | Does | Touches |
 |---|---|---|
-| **L1** | the architecture: **`Modifier`** interface (`id` / `source`→decorator-id / `tag`; `Factor` kind) + the **decorator** (`generate` add/**remove**, **`expiration`**, **event handler**) + the **`Character`** wrapping the gen + **pools**: `add`/`remove`/`remove_where` on the gen, **`realize()`** → keyed modifier set whose **accessors** sum factors (dirty-flag cache), pools read direct | `sim` stat reads |
-| **L2** | port **implants → decorators** (Contribution/condition → factors); keep breach / EMP / PAN / Cascade behavior | the implant model + ~10 tests re-expressed |
+| **L1 ✅** | the architecture: **`Modifier`** (`source`→decorator-id / `tag`; `Factor { Add/Increased/More }` · `Override`) + the **`Decorator`** (priority · **`scale`** (condition) · `expiration` · factors · overrides · **`grants` `Capability`** · `removes` ward) + the **`Character`** wrapping the **priority-ordered gen** + **pools**: `install`/`remove`/`remove_where`/`set_scale` on the gen, **`realize()`** → modifier set whose **accessors** fold the bucket model; pools (`apply_damage`/`heal`) read/written direct (`crates/sim/src/chargen.rs`) | parallel to `Unit` |
+| **L2** | port **implants → decorators**: `Contribution` → `Add` factors, `Condition` → `scale` (`benefit_factor`), deck → `grants: Capability::Hack`; keep breach / EMP / PAN / Cascade behavior | the implant model + ~10 tests re-expressed |
 | **L2b** | port the **status pool → decorators** — `trigger`→events, `decay`→`expiration`, DoTs→`TickStart` reactions; unifies statuses + equipment | the `Status` system + its tests |
 | **L3** | **behavior factors** (movement / targeting compose from factors) → finishes combat **Phase 1** on this model; a smartgun adds an `Override(targeting)` | combat Phase 1 |
 | **L4+** | **weapon** decorators, **armor** decorators, **corruption** decorators (spoof/Lockware) | new content |

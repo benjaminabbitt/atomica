@@ -37,8 +37,8 @@ mod status;
 
 pub use armor::ArmorClass;
 pub use chargen::{
-    BaseLine, Character, Decorator, DamageEvent, Expiration, Factor, FactorKind, GenId, Modifier,
-    ModifierKind, Override, Priority, Realized, Remove, Stat, Tag,
+    BaseLine, Capability, Character, Decorator, DamageEvent, Expiration, Factor, FactorKind, GenId,
+    Modifier, ModifierKind, Override, Priority, Realized, Remove, Stat, Tag,
 };
 pub use hack::{hack_rating, Hack, HackResult};
 pub use hex::Hex;

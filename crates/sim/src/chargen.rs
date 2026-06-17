@@ -111,6 +111,16 @@ pub enum Override {
     Movement(MovementProfile),
 }
 
+/// A **capability** a decorator grants — not a number on the stat line but a whole
+/// action the character can now take (§1 "capability"). A cyberdeck grants a
+/// [`Hack`]; breach the deck (or take it Offline) and the capability drops with it.
+/// The **highest-priority** active grant wins.
+#[derive(Clone, Copy, Debug)]
+pub enum Capability {
+    /// The netrunning loadout (`docs/netrunning.md`) — granted by a deck.
+    Hack(crate::Hack),
+}
+
 /// A modifier's category, for matching on removal (a cleanse strips `Virus`-tagged).
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Tag {
@@ -184,9 +194,17 @@ pub struct Decorator {
     /// Slot in the priority-ordered gen — higher wins overrides (default
     /// [`Priority::GEAR`]).
     pub priority: Priority,
+    /// The fraction of its benefit the decorator currently delivers — the cyberware
+    /// **condition ladder** (`docs/cyberware.md` §6): Online `1.0`, **Degraded `0.5`**,
+    /// Offline/Destroyed `0.0`. Scales every numeric factor; at `0.0` the decorator
+    /// contributes **nothing** (factors, overrides, grant, ward all gated off) without
+    /// losing its identity (`id`/`source`) — so a breach can degrade then repair it.
+    pub scale: f32,
     pub expiration: Expiration,
     pub factors: Vec<Factor>,
     pub overrides: Vec<Override>,
+    /// A capability this decorator grants (a deck's [`Hack`]). Gated by `scale > 0`.
+    pub grants: Option<Capability>,
     /// Modifiers this decorator strips from the set — a **standing ward**, applied
     /// order-independently (cleanse, counter-spoof, Ripperdoc).
     pub removes: Vec<Remove>,
@@ -200,9 +218,11 @@ impl Decorator {
         Self {
             tag,
             priority: Priority::GEAR,
+            scale: 1.0,
             expiration: Expiration::Permanent,
             factors,
             overrides: Vec::new(),
+            grants: None,
             removes: Vec::new(),
             id: GenId(0),
         }
@@ -213,9 +233,11 @@ impl Decorator {
         Self {
             tag,
             priority: Priority::BUFF,
+            scale: 1.0,
             expiration: Expiration::Duration(turns),
             factors,
             overrides: Vec::new(),
+            grants: None,
             removes: Vec::new(),
             id: GenId(0),
         }
@@ -239,6 +261,23 @@ impl Decorator {
     pub fn with_priority(mut self, p: Priority) -> Self {
         self.priority = p;
         self
+    }
+
+    /// Builder: grant a [`Capability`] (a deck's [`Hack`]).
+    pub fn with_grant(mut self, cap: Capability) -> Self {
+        self.grants = Some(cap);
+        self
+    }
+
+    /// Builder: set the initial benefit fraction (default `1.0` = Online).
+    pub fn with_scale(mut self, scale: f32) -> Self {
+        self.scale = scale;
+        self
+    }
+
+    /// Does the decorator deliver (some of) its benefit right now? (`scale > 0`.)
+    pub fn is_active(&self) -> bool {
+        self.scale > 0.0
     }
 }
 
@@ -280,6 +319,7 @@ impl BaseLine {
 pub struct Realized {
     base: BaseLine,
     mods: Vec<Modifier>,
+    capability: Option<Capability>,
 }
 
 impl Realized {
@@ -351,6 +391,15 @@ impl Realized {
                 _ => None,
             })
             .unwrap_or(self.base.movement)
+    }
+
+    /// The netrunning loadout this character can run, if any active decorator grants
+    /// one (the highest-priority deck wins). `None` ⇒ no deck ⇒ can't hack.
+    pub fn hack(&self) -> Option<crate::Hack> {
+        match self.capability {
+            Some(Capability::Hack(h)) => Some(h),
+            None => None,
+        }
     }
 
     /// The flat modifier set, for inspection / referencing (look-up by `source` or
@@ -439,6 +488,15 @@ impl Character {
         self.gen.retain(|d| d.tag != tag);
     }
 
+    /// Set a decorator's benefit fraction in place — the breach / repair path
+    /// (`docs/cyberware.md` §6): Degraded `0.5`, Offline `0.0`, repaired back to
+    /// `1.0`. Keeps the decorator's identity (`id`/`source`) so it can recover.
+    pub fn set_scale(&mut self, id: GenId, scale: f32) {
+        if let Some(d) = self.gen.iter_mut().find(|d| d.id == id) {
+            d.scale = scale;
+        }
+    }
+
     /// Tick all `Duration` expirations down one; drop any that reach zero (§1).
     pub fn tick_expirations(&mut self) {
         for d in &mut self.gen {
@@ -461,15 +519,23 @@ impl Character {
     /// fresh each call; a dirty-flag cache (§4) is a pure optimization to add only if
     /// the fold ever shows up hot.
     pub fn realize(&self) -> Realized {
-        // Passive face: contribute every decorator's modifiers, in priority order
-        // (low → high, so the last `Override` seen — highest priority — wins).
+        // Passive face: contribute every **active** decorator's modifiers, in priority
+        // order (low → high, so the last seen — highest priority — wins for `Override`
+        // and the granted `Capability`). Numeric factors are scaled by the decorator's
+        // benefit fraction (Degraded = half); an inactive decorator (scale 0) is gated
+        // off entirely.
         let mut mods: Vec<Modifier> = Vec::new();
+        let mut capability: Option<Capability> = None;
         for dec in &self.gen {
+            if !dec.is_active() {
+                continue;
+            }
             for &f in &dec.factors {
+                let scaled = Factor { value: f.value * dec.scale, ..f };
                 mods.push(Modifier {
                     source: dec.id,
                     tag: dec.tag,
-                    kind: ModifierKind::Factor(f),
+                    kind: ModifierKind::Factor(scaled),
                 });
             }
             for &o in &dec.overrides {
@@ -479,16 +545,22 @@ impl Character {
                     kind: ModifierKind::Override(o),
                 });
             }
+            if let Some(cap) = dec.grants {
+                capability = Some(cap);
+            }
         }
-        // Active face: standing wards. Each decorator's `removes` strips matching
-        // modifiers from the whole set — order-independent (a ward cleanses whether
-        // the infection arrived before or after it), but never its own.
+        // Active face: standing wards. Each active decorator's `removes` strips
+        // matching modifiers from the whole set — order-independent (a ward cleanses
+        // whether the infection arrived before or after it), but never its own.
         for dec in &self.gen {
+            if !dec.is_active() {
+                continue;
+            }
             for r in &dec.removes {
                 mods.retain(|m| m.source == dec.id || !r.matches(m));
             }
         }
-        Realized { base: self.base, mods }
+        Realized { base: self.base, mods, capability }
     }
 
     // -- the pools (live state, §3c) --
@@ -548,7 +620,7 @@ mod tests {
 
     #[test]
     fn empty_character_reads_base() {
-        let mut c = Character::new(base());
+        let c = Character::new(base());
         let r = c.realize();
         assert_eq!(r.link(), 4);
         assert_eq!(r.firewall(), 9);
@@ -709,6 +781,59 @@ mod tests {
         let r = c.realize();
         assert!(r.modifiers().iter().all(|m| m.source == deck));
         assert_eq!(r.modifiers().len(), 1);
+    }
+
+    // -- condition / scale (cyberware ladder, L1.1) --
+
+    #[test]
+    fn condition_scales_then_gates_factors_keeping_identity() {
+        let mut c = Character::new(base()); // max_integrity 30
+        let imp = c.install(Decorator::gear(
+            Tag::Implant,
+            vec![Factor::add(Stat::MaxIntegrity, 20.0)],
+        ));
+        assert_eq!(c.realize().max_integrity(), 50.0); // Online: full +20
+        c.set_scale(imp, 0.5);
+        assert_eq!(c.realize().max_integrity(), 40.0); // Degraded: +10
+        c.set_scale(imp, 0.0);
+        assert_eq!(c.realize().max_integrity(), 30.0); // Offline: nothing
+        c.set_scale(imp, 1.0);
+        assert_eq!(c.realize().max_integrity(), 50.0); // repaired — same decorator
+    }
+
+    // -- capability grant (L1.1) --
+
+    fn a_deck(range: i32) -> Capability {
+        Capability::Hack(crate::Hack::new(range, crate::StatusSpec::lockware(), 1, range as u32))
+    }
+
+    #[test]
+    fn deck_grants_hack_gated_by_condition() {
+        let mut c = Character::new(base());
+        assert!(c.realize().hack().is_none()); // no deck → can't hack
+        let deck = c.install(
+            Decorator::gear(Tag::Implant, vec![Factor::add(Stat::Link, 5.0)]).with_grant(a_deck(6)),
+        );
+        assert!(c.realize().hack().is_some()); // Online → can hack
+        c.set_scale(deck, 0.0); // breach → Offline
+        assert!(c.realize().hack().is_none()); // hack drops with the deck
+        c.set_scale(deck, 0.5); // Degraded still grants
+        assert!(c.realize().hack().is_some());
+        c.remove(deck);
+        assert!(c.realize().hack().is_none()); // removed entirely
+    }
+
+    #[test]
+    fn highest_priority_deck_grant_wins() {
+        let mut c = Character::new(base());
+        // a strong deck at BUFF priority, a weak one at GEAR.
+        c.install(
+            Decorator::gear(Tag::Implant, vec![])
+                .with_grant(a_deck(9))
+                .with_priority(Priority::BUFF),
+        );
+        c.install(Decorator::gear(Tag::Implant, vec![]).with_grant(a_deck(2)));
+        assert_eq!(c.realize().hack().unwrap().range, 9); // priority decides
     }
 
     // -- pools (§3c) --
