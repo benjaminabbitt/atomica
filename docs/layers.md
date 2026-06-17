@@ -17,6 +17,13 @@ ordered stack of **layers** (implants · weapons · armor · …), each implemen
 **same `Layer` interface** as the base and **decorating** it. The effective unit is
 the result of querying the top of the stack.
 
+**The character is the orchestrator ◆.** The unit/character object owns the
+**base** + the ordered **layer stack** and **composes** the effective surface
+(cached, recomputed on loadout / condition change — the dirty-flag pattern §5).
+Layers are inert contributions; the **character drives composition** and owns the
+combination rules below. *(This is the shipped "`Statistic { base, modifiers[],
+dirty }`" pattern — see Precedents.)*
+
 This is the architectural expression of two design throughlines:
 - *"Chrome composes onto the body"* — every piece of kit is a layer over what's
   beneath, summing/overriding cleanly.
@@ -53,6 +60,47 @@ base ─◄ implant ─◄ implant ─◄ weapon ─◄ armor ─◄ [corruption
 
 The effective query **folds/walks the stack from the base up**; **order matters**
 for overrides — a spoof layer on top wins `targeting` over everything beneath.
+
+### Combining numbers — the bucket model ◆ (additive vs. multiplicative)
+
+*How layers' numbers combine is a **balance lever**, not an implementation detail.
+Shipped ARPGs converged independently on a **bucket** model (Path of Exile's
+`Added / Increased / More`; Diablo 4's additive-vs-`x%` buckets) — adopt it.* A
+layer's contribution to a numeric stat declares its **kind**:
+
+| Kind | Combine | Use | Feel |
+|---|---|---|---|
+| **Add** (flat) | summed: `Σadd` | the **default** — most gear (+5 Link, +6 Plating) | predictable, composable |
+| **Increased** (additive %) | summed into one: `1 + Σincreased` | build-shaping % (a stim's +20%) | **diminishing** — each new % is a smaller *relative* gain → self-limiting, easy to balance |
+| **More** (multiplicative %) | producted: `Π(1 + moreᵢ)` | **rare / signature** only | **compounds** — always a full % gain; powerful, so **gated by rarity** |
+
+Plus **Override** (non-numeric): for behavior/capability (`targeting`, `hack`,
+`movement`) the **top layer wins** (a spoof *replaces* targeting; not a number).
+
+**The composition formula** (PoE / D4 order, per stat, independently):
+
+```text
+effective = (base + Σadd) × (1 + Σincreased) × Π(1 + moreᵢ)
+```
+
+**Our calls ◆:**
+- **Default to `Add`.** Today's implant contributions are all flat adds — they stay
+  `Add`, so the current model *is* the Add bucket; nothing to change there.
+- **`Increased` for build-shapers** (stims, % buffs) — the abundant %-bucket whose
+  **diminishing returns** keep stacking in check (the design's "needs a runaway
+  brake" instinct, for free).
+- **`More` is rare and gated** — a marquee implant, the PAN-mesh synergy, a
+  signature weapon. One or two on a build, never free-stacked.
+- **Condition scales the *layer*, not the bucket.** A Degraded layer
+  ([`cyberware.md`](cyberware.md) §6) delivers **half its contribution** — applied
+  to that layer's Add/Increased/More *before* bucketing (its `benefit_factor`).
+- **Per-stat buckets.** Link, Firewall, damage, … each compose independently.
+
+**Why this answers the additive-vs-multiplicative concern ◆:** additive is the
+**safe, legible default that can't run away** (diminishing returns); multiplicative
+is the **rare premium that compounds** — and keeping them in **separate buckets**
+*is* the balance knob (Diablo's "spread across buckets" lesson). Investing across
+buckets beats spamming one, so no single modifier type dominates.
 
 ---
 
@@ -144,3 +192,19 @@ straight into the interface. After L3, the "smartgun decorates targeting" and
 
 🔭 **planned.** The codebase keeps the cyberware **fold** model until L1/L2 land;
 this doc is the **target**. Open to flip §4 to a literal `Box` chain if preferred.
+
+---
+
+## Precedents (the bucket model)
+
+- **Path of Exile** — the canonical buckets: `Added` (flat) · `Increased/Reduced`
+  (sum additively, one multiplier, diminishing) · `More/Less` (each its own
+  multiplier, compounding, mostly from rare sources). [PoE Wiki — Stat](https://pathofexile.fandom.com/wiki/Stat)
+- **Diablo 4** — additive (`Value%`, one bucket, sums) vs. multiplicative (`x%`,
+  separate, multiplies); "invest across buckets beats stacking one." [Mobalytics — Damage Buckets](https://mobalytics.gg/diablo-4/guides/damage-buckets-deep-dive)
+- **Implementation pattern** — `Statistic { base, current, modifiers[], altered }`;
+  modifiers are `{ value, op: Add|Multiply }`; recompute only when `altered`
+  (the cached dirty-flag the §0 orchestrator uses). [RefresherTowel — Modifiable Stats](https://refreshertowelgames.wordpress.com/2024/02/17/how-to-comfortably-deal-with-modifiable-stats/)
+- **Design wisdom** — additive = legible, self-limiting (diminishing returns),
+  easy to balance; multiplicative = powerful, compounding, must be rare. The
+  bucket separation is the balance lever. [Paradox forums discussion](https://forum.paradoxplaza.com/forum/threads/additive-bonuses-vs-multiplicative-bonuses.1144836/)
