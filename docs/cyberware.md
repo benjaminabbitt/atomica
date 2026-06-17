@@ -43,7 +43,7 @@ Each implant carries six things, plus run-layer tags:
 | **Link** | net-presence contribution: digital initiative **+ the hackable surface** (§7D) | + capability, **+ exposure** |
 | **Firewall** | digital defense it adds to the unit | + defense |
 | **Weight** | mass → **−physical Initiative** (§7C) | − tempo |
-| **Hack-effect** | the **named liability** that fires *on the owner* when the implant is breached | **conditional risk** |
+| **Hack-effect(s)** | one **or more** named liabilities that fire *on the owner* when the implant is breached (loaded chrome carries several) | **conditional risk** |
 | **Condition** | `Online → Degraded → Offline → Destroyed` (delta §3.1) | live state |
 
 Run-layer tags (engine-blind): **affiliation** (generic / corp / clan, §2.6),
@@ -76,10 +76,19 @@ This does three things at once:
 
 **Symmetry is the default, not a law ◆.** Most implants mirror (benefit ↔ inverted
 benefit); **some carry an orthogonal liability** instead — a deck whose breach
-**Sheds** your plating — where that makes better content. What's mechanically
+**Sheds** your plating — **where it makes sense** thematically or mechanically
+(it's a deliberate content choice, not just an escape hatch). What's mechanically
 load-bearing isn't the symmetry but the **severity class** of the hack-effect:
 whether a breach merely **disables**, fires a **magnified liability**, or delivers
 a **knockout** (§6) — and that is gated by the *roll*, not the implant.
+
+**Loaded chrome carries multiple hack-effects ◆.** An implant is a **list** of
+liabilities, not one — and the most powerful chrome carries **several** (its
+bigger benefit hangs a bigger, multi-pronged sign). A war-deck might breach into
+**Lockout** (stun, crit-gated) *and* a **Drain** DoT (margin-scaled) *and* an
+orthogonal **Shed**. Which of them fire is the severity ladder (§6), applied
+**per effect**: the degrade-class ones scale with margin, the stun-class ones are
+crit-gated, and a **Cascade**/worm can trip the whole list at once.
 
 ### The implant roster (first pass ◆)
 
@@ -209,6 +218,11 @@ not a reliable hard-disable. *Rule of thumb ◆: any hack-effect that **stuns**
 *(Knockout-gate width — strict nat-18 vs a margin ≥ K "decisive" tier — is a knob,
 netrunning §6.)*
 
+When an implant carries **several** hack-effects (§2), the ladder runs **per
+effect**: one breach can disable the slot, land its margin-scaled liabilities, and
+— on a crit — fire its stun-class one(s) on top. A **Cascade**/worm trips the
+whole list regardless of margin (that's what makes it the finisher).
+
 **Condition ladder** (delta §3.1): `Online → Degraded → Offline → Destroyed`.
 Plating-shred / physical wear **Degrades** (reduced benefit); breaches knock
 **Offline** (benefit gone); enough damage **Destroys** (salvage on death).
@@ -233,17 +247,18 @@ pub struct Implant {
     pub slot: Slot,                 // Reflex | Deck | Security | Armor | ...
     pub link: i32,                  // folded into Unit.link
     pub firewall: i32,              // folded into Unit.firewall
-    pub benefit: Benefit,           // +Plating | +Init | grant Hack | grant Skill | ...
-    pub hack_effect: StatusSpec,    // fires on the owner when breached (§2 roster)
-    pub condition: Condition,       // Online → Degraded → Offline → Destroyed
-    pub removable: bool,            // inbuilt = false
+    pub benefit: Benefit,             // +Plating | +Init | grant Hack | grant Skill | ...
+    pub hack_effects: Vec<StatusSpec>,// one or more liabilities; the §6 ladder runs per effect
+    pub condition: Condition,         // Online → Degraded → Offline → Destroyed
+    pub removable: bool,              // inbuilt = false
 }
 // Unit { … , implants: Vec<Implant> }  →  derive stats from base + Σ Online
 ```
 
-A hack/worm/EMP that **breaches** an implant: apply its `hack_effect` to the
-owner, set `condition = Offline`, **re-derive** the unit's stats (the benefit
-drops out). The Ripperdoc reverses it.
+A hack/worm/EMP that **breaches** an implant: set `condition = Offline` and
+**re-derive** the unit's stats (the benefit drops out — the disable floor), then
+apply its `hack_effects` per the §6 severity ladder (margin-scaled degrade,
+crit-gated stun; Cascade fires all). The Ripperdoc reverses the disable.
 
 **Build order** (this is netrunning §7 step 2, unpacked):
 
