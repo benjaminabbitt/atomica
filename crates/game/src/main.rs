@@ -4,7 +4,9 @@
 //! a snapshot of it each frame, and drives ticks from a step button / auto-play
 //! timer. All game rules live in the sim crate.
 
-use atomica_sim::{ArmorClass, Attack, Battle, DamageType, Defense, Hex, Outcome, StatusSpec, Team, Unit};
+use atomica_sim::{
+    ArmorClass, Attack, Battle, DamageType, Defense, Hex, Outcome, StatusSpec, Team, Unit, UnitId,
+};
 use egui_macroquad::egui;
 use macroquad::prelude::*;
 
@@ -22,8 +24,8 @@ fn hex_to_pixel(h: Hex, origin: Vec2) -> Vec2 {
 
 /// A tiny demo encounter so the window shows something real on first run.
 fn demo_battle() -> Battle {
-    let mk = |id, name: &str, team, q, r, dmg, init, range, dtype, pen, armor_class| Unit {
-        id,
+    let mk = |id: u32, name: &str, team, q, r, dmg, init, range, dtype, pen, armor_class| Unit {
+        id: UnitId(id),
         name: name.to_string(),
         team,
         pos: Hex::new(q, r),

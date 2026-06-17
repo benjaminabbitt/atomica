@@ -5,7 +5,7 @@
 //! [`Battle`] state each frame and draws it; nothing here knows about a screen.
 //!
 //! ## Determinism
-//! All randomness flows through [`Rng`] (seeded). Given the same seed and the same
+//! All randomness flows through a [`RandomSource`] (seeded). Given the same seed and the same
 //! initial [`Battle`], [`Battle::step`] always produces the same result. That is
 //! what makes the design's *async / replayable auto-resolution* possible.
 //!
@@ -24,11 +24,13 @@
 pub mod armor;
 mod hex;
 mod rng;
+mod roll;
 mod status;
 
 pub use armor::ArmorClass;
 pub use hex::Hex;
-pub use rng::Rng;
+pub use rng::{RandomSource, ScriptedRng, SplitMix64};
+pub use roll::{resolve_contest, Contest, RollOutcome};
 pub use status::{
     Behavior, Decay, Effect, Magnitude, Resist, Stacking, Status, StatusSpec, Targeting, Timing,
     Trigger,
@@ -49,6 +51,10 @@ impl Team {
         }
     }
 }
+
+/// A stable unit identifier.
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
+pub struct UnitId(pub u32);
 
 /// The 3-tier armor matrix axis carried by an attack.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -94,7 +100,7 @@ pub struct Attack {
 /// A combatant. The stat line mirrors the design's "Unit anatomy".
 #[derive(Clone, Debug)]
 pub struct Unit {
-    pub id: u32,
+    pub id: UnitId,
     pub name: String,
     pub team: Team,
     pub pos: Hex,
@@ -185,17 +191,28 @@ pub enum Outcome {
     Draw,
 }
 
-/// A full battle: the units, the seeded RNG, and a tick counter.
+/// A full battle: the units, an injected [`RandomSource`], and a tick counter.
+///
+/// Generic over the RNG (defaulting to [`SplitMix64`]) so tests can inject a
+/// [`ScriptedRng`] via [`Battle::with_rng`] and force every roll.
 #[derive(Clone, Debug)]
-pub struct Battle {
+pub struct Battle<R: RandomSource = SplitMix64> {
     pub units: Vec<Unit>,
     pub tick: u32,
-    rng: Rng,
+    rng: R,
 }
 
-impl Battle {
+impl Battle<SplitMix64> {
+    /// Build a battle with the production RNG seeded by `seed`.
     pub fn new(units: Vec<Unit>, seed: u64) -> Self {
-        Self { units, tick: 0, rng: Rng::new(seed) }
+        Self::with_rng(units, SplitMix64::new(seed))
+    }
+}
+
+impl<R: RandomSource> Battle<R> {
+    /// Build a battle over any [`RandomSource`] — inject a `ScriptedRng` in tests.
+    pub fn with_rng(units: Vec<Unit>, rng: R) -> Self {
+        Self { units, tick: 0, rng }
     }
 
     /// Advance one tick:
@@ -379,7 +396,7 @@ mod tests {
 
     fn unit(id: u32, team: Team, q: i32) -> Unit {
         Unit {
-            id,
+            id: UnitId(id),
             name: format!("U{id}"),
             team,
             pos: Hex::new(q, 0),
@@ -501,5 +518,27 @@ mod tests {
             assert_eq!(a.integrity, b.integrity);
             assert_eq!(a.pos, b.pos);
         }
+    }
+
+    #[test]
+    fn injected_scripted_rng_forces_poison_to_fire() {
+        let mut u = unit(0, Team::A, 0);
+        u.add_status(StatusSpec::poison(), 5, 1); // stochastic 0.6, PctCurrent softener
+        // next_f32 == 0.0 < 0.6 ⇒ the roll fires.
+        let mut b = Battle::with_rng(vec![u], ScriptedRng::new([0]));
+        let before = b.units[0].integrity;
+        b.status_phase();
+        assert!(b.units[0].integrity < before);
+    }
+
+    #[test]
+    fn injected_scripted_rng_forces_poison_to_whiff() {
+        let mut u = unit(0, Team::A, 0);
+        u.add_status(StatusSpec::poison(), 5, 1);
+        // next_f32 ≈ 1.0 ≥ 0.6 ⇒ the roll whiffs.
+        let mut b = Battle::with_rng(vec![u], ScriptedRng::new([u64::MAX]));
+        let before = b.units[0].integrity;
+        b.status_phase();
+        assert_eq!(b.units[0].integrity, before);
     }
 }
