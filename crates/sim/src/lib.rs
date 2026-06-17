@@ -21,7 +21,7 @@
 //!   resolution plus a digital pass.
 //!
 //! Not yet built: the two contagion families (a spreading special case of
-//! statuses), IFF/spoof, and Heat.
+//! statuses) and IFF/spoof. (Heat — a thermal layer — was dropped from scope.)
 
 pub mod armor;
 mod board;
