@@ -56,15 +56,17 @@ fn demo_battle() -> Battle {
     ];
     // Wire the Runner as a netrunner: Hacking + the connection channel drive the
     // hack (3d6 + avg(Hacking, channel), channel = weaker endpoint's Link); the
-    // Lockware deck sets the payload + reach. Give the enemy line a digital surface
-    // (Link + Firewall ≥ 11, the even-odds baseline) so it's hackable but not free.
+    // Lockware deck sets the payload + reach. The enemy line shows the spread
+    // (§ netrunning calibration): Bulwark is a hardened, connected "fortress"
+    // (high Firewall + high Link → deep if cracked), SMG a soft, low-Link "mook"
+    // (easy to land but the thin channel keeps it shallow).
     units[1].link = 5;
     units[1].skills.set(Skill::Hacking, 4);
     units[1].hack = Some(Hack::new(6, StatusSpec::lockware(), 1, 6));
-    units[2].link = 4;
-    units[2].firewall = 13;
-    units[3].link = 4;
-    units[3].firewall = 13;
+    units[2].link = 5;
+    units[2].firewall = 15; // hardened + connected
+    units[3].link = 2;
+    units[3].firewall = 9; // soft + dark
     // Seed a couple of statuses so the pipeline is visible on first run.
     units[2].add_status(StatusSpec::burn(), 6, 3);
     units[3].add_status(StatusSpec::lag(), 6, 1);

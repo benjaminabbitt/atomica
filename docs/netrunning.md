@@ -170,16 +170,29 @@ avg(Hacking, channel) = Firewall − 11
 
 **First-cut bands ◆ (TBD):**
 
-| Stat | 0 | low | mid | high | max |
-|---|---|---|---|---|---|
-| **Firewall** (the TN) | — | **11** soft | **13** standard | **15** hardened | **17+** bulwark |
-| **Link** (tiers) | 0 dark | 1–2 | 3–4 | 5–6 | 7–8 |
-| **Hacking** | 0 none | 1–2 chip | 3–4 competent | 5–6 pro | 7–8 master |
+- **Firewall** (the TN) — soft **8–10** · even-odds ref **11** · standard **12–14**
+  · hardened **15–16** · bulwark **17+**.
+- **Link** (tiers) — 0 dark · 1–2 low · 3–4 mid · 5–6 high · 7–8 max.
+- **Hacking** — 0 none · 1–2 chip floor · 3–4 competent · 5–6 pro · 7–8 master.
 
-The additive `avg(Hacking, channel)` lands **0–8**, offsetting Firewall **11–19**.
-Even-odds additive per wall: `11→0 · 13→2 · 15→4 · 17→6 · 19→8`. So a mid runner
-(Hacking 4, Link 5) is favored vs a standard wall (13), a coin-flip vs hardened
-(15), and an underdog vs a bulwark (17+) — exactly the intended spread.
+The additive `avg(Hacking, channel)` lands **0–8**. Even-odds additive per wall:
+`11→0 · 13→2 · 15→4 · 17→6 · 19→8` — soft walls (8–10) sit below the floor, so a
+net-even runner already beats them. A mid runner (Hacking 4, Link 5) rolls over
+soft targets, is favored vs standard (13), a coin-flip vs hardened (15), and an
+underdog vs a bulwark (17+).
+
+**Link gates *depth* as well as reach ◆.** Because the additive *averages* Hacking
+with the channel (`min` of the two Links), a target's Link caps how much skill can
+be brought against it: against a **dark** target (Link 1) even a master is held to
+`avg(skill, 1) ≈ skill/2`. So **Firewall is the hit-gate, Link is the depth-gate**
+— a soft-but-dark mook (low Firewall *and* low Link) is **easy to land but shallow**
+(small margin ⇒ few payload stacks, little to own), and going dark defends against
+*skill*, not just reach. The two dials give a clean 2×2 of target identities:
+
+| | dark (low Link) | loud (high Link) |
+|---|---|---|
+| **soft** (low FW) | easy, shallow — *mook* | easy, deep — *juicy* |
+| **hard** (high FW) | hard, shallow — *bunker* | hard but deep if cracked — *fortress* |
 
 **Still open ⏳:**
 
