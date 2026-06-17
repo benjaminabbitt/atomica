@@ -165,6 +165,12 @@ pub struct Unit {
     pub pan: Pan,
     /// Active à-la-carte statuses.
     pub statuses: Vec<Status>,
+    /// The **behavior layer** ([`layers.md`](../../docs/layers.md) L3): a `Character`
+    /// whose realized `targeting` / `movement` [`Override`]s drive the action phase
+    /// (§7J). The unit's *program*; a spoof installs a `CORRUPTION`-priority override
+    /// that wins — "the enemy hacks your script". Stats still read the flat fields
+    /// above (the stat read-through is the remaining migration).
+    pub character: Character,
     pub alive: bool,
 }
 
@@ -199,6 +205,7 @@ impl Unit {
             implants: Vec::new(),
             pan: Pan::Meshed,
             statuses: Vec::new(),
+            character: Character::new(BaseLine::default()),
             alive: true,
         }
     }
@@ -226,6 +233,45 @@ impl Unit {
     pub fn with_attack(mut self, attack: Attack) -> Self {
         self.attack = attack;
         self
+    }
+
+    /// Builder: program the **targeting** profile (§7J) — a `GEAR`-priority override
+    /// on the behavior layer, so a `CORRUPTION` spoof still beats it.
+    pub fn with_targeting(mut self, p: TargetingProfile) -> Self {
+        self.character.install(
+            Decorator::gear(Tag::Gear, vec![]).with_override(Override::Targeting(p)),
+        );
+        self
+    }
+
+    /// Builder: program the **movement** profile (§7J).
+    pub fn with_movement(mut self, p: MovementProfile) -> Self {
+        self.character.install(
+            Decorator::gear(Tag::Gear, vec![]).with_override(Override::Movement(p)),
+        );
+        self
+    }
+
+    /// The unit's effective targeting profile — the behavior layer composed (a spoof
+    /// overrides the program).
+    pub fn targeting(&self) -> TargetingProfile {
+        self.character.realize().targeting()
+    }
+
+    /// The unit's effective movement profile.
+    pub fn movement(&self) -> MovementProfile {
+        self.character.realize().movement()
+    }
+
+    /// **Spoof** the unit's behavior (§7J) — install a `CORRUPTION`-priority override
+    /// that outranks its program for `turns` ticks. Returns the [`GenId`] so a
+    /// counter-spoof / cleanse can remove it. "The enemy hacks your script."
+    pub fn spoof(&mut self, targeting: TargetingProfile, turns: u32) -> GenId {
+        self.character.install(
+            Decorator::timed(Tag::Spoof, turns, vec![])
+                .with_priority(Priority::CORRUPTION)
+                .with_override(Override::Targeting(targeting)),
+        )
     }
 
     pub fn is_alive(&self) -> bool {
@@ -605,20 +651,87 @@ impl<R: RandomSource> Battle<R> {
             if !self.units[i].is_alive() || self.units[i].is_stunned() {
                 continue;
             }
-            let Some(target) = self.nearest_enemy(i) else {
+            // §7J: pick the target by the unit's **targeting profile**, then either
+            // attack (in range) or take one step by its **movement profile**.
+            let Some(target) = self.select_target(i) else {
                 continue;
             };
-            let (pos, atk) = {
+            let (pos, range) = {
                 let u = &self.units[i];
-                (u.pos, u.attack)
+                (u.pos, u.attack.range)
             };
-            let tpos = self.units[target].pos;
-            if pos.distance(tpos) <= atk.range {
+            if pos.distance(self.units[target].pos) <= range {
                 self.resolve_attack(i, target);
             } else {
-                self.units[i].pos = pos.step_toward(tpos);
+                self.units[i].pos = self.movement_step(i, target);
             }
         }
+    }
+
+    /// Pick a target among living enemies by unit `i`'s **targeting profile** (§7J),
+    /// `id` as the deterministic tiebreak.
+    fn select_target(&self, i: usize) -> Option<usize> {
+        let me = &self.units[i];
+        let enemies = || {
+            self.units
+                .iter()
+                .enumerate()
+                .filter(move |(j, u)| *j != i && u.is_alive() && u.team == me.team.enemy())
+        };
+        let by_f32 = |key: fn(&Unit) -> f32, want_max: bool| {
+            enemies()
+                .min_by(|(ja, a), (jb, b)| {
+                    let (ka, kb) = (key(a), key(b));
+                    let ord = ka.partial_cmp(&kb).unwrap_or(std::cmp::Ordering::Equal);
+                    let ord = if want_max { ord.reverse() } else { ord };
+                    ord.then(ja.cmp(jb))
+                })
+                .map(|(j, _)| j)
+        };
+        match me.targeting() {
+            TargetingProfile::Nearest => enemies()
+                .min_by_key(|(_, u)| (me.pos.distance(u.pos), u.id))
+                .map(|(j, _)| j),
+            TargetingProfile::Backline => enemies()
+                .max_by_key(|(_, u)| (me.pos.distance(u.pos), std::cmp::Reverse(u.id)))
+                .map(|(j, _)| j),
+            TargetingProfile::LowestIntegrity => by_f32(|u| u.integrity, false),
+            TargetingProfile::HighestThreat => by_f32(|u| u.attack.damage, true),
+            TargetingProfile::WeakestArmor => {
+                by_f32(|u| u.defense.barrier + u.defense.plating, false)
+            }
+        }
+    }
+
+    /// One step for unit `i` toward what its **movement profile** wants (§7J). Phase 1
+    /// keeps the single-hex step; the `move` stat / move-then-act is Phase 2.
+    fn movement_step(&self, i: usize, target: usize) -> Hex {
+        let me = &self.units[i];
+        let tpos = self.units[target].pos;
+        match me.movement() {
+            MovementProfile::Advance => me.pos.step_toward(tpos),
+            MovementProfile::Hold => me.pos,
+            MovementProfile::Flank => me.pos.step_flank(tpos),
+            MovementProfile::Swarm => self
+                .nearest_enemy(i)
+                .map_or(me.pos, |e| me.pos.step_toward(self.units[e].pos)),
+            MovementProfile::Kite => self
+                .nearest_enemy(i)
+                .map_or(me.pos, |e| me.pos.step_away(self.units[e].pos)),
+            MovementProfile::Disperse => self
+                .nearest_ally(i)
+                .map_or(me.pos, |a| me.pos.step_away(self.units[a].pos)),
+        }
+    }
+
+    fn nearest_ally(&self, i: usize) -> Option<usize> {
+        let me = &self.units[i];
+        self.units
+            .iter()
+            .enumerate()
+            .filter(|(j, u)| *j != i && u.is_alive() && u.team == me.team)
+            .min_by_key(|(_, u)| (me.pos.distance(u.pos), u.id))
+            .map(|(j, _)| j)
     }
 
     fn decay_phase(&mut self) {
@@ -848,6 +961,7 @@ mod tests {
             implants: Vec::new(),
             pan: Pan::Meshed,
             statuses: Vec::new(),
+            character: Character::new(BaseLine::default()),
             alive: true,
         }
     }
@@ -1567,5 +1681,67 @@ mod tests {
         let mut b = Battle::with_rng(vec![atk, tgt], ScriptedRng::from_d6([4, 4, 4]));
         b.digital_phase();
         assert!(!b.units[1].statuses.is_empty()); // hacked via the installed deck
+    }
+
+    // -- L3: behavior profiles drive the action phase (§7J) -------------------
+
+    #[test]
+    fn targeting_lowest_integrity_finishes_the_wounded() {
+        let a = unit(0, Team::A, 0).with_targeting(TargetingProfile::LowestIntegrity);
+        let healthy = unit(1, Team::B, 2); // nearer, full HP
+        let mut wounded = unit(2, Team::B, 4); // farther, low HP
+        wounded.integrity = 5.0;
+        let b = Battle::new(vec![a, healthy, wounded], 1);
+        assert_eq!(b.select_target(0), Some(2)); // the wounded, despite the distance
+    }
+
+    #[test]
+    fn targeting_backline_reaches_past_the_front() {
+        let a = unit(0, Team::A, 0).with_targeting(TargetingProfile::Backline);
+        let front = unit(1, Team::B, 2);
+        let back = unit(2, Team::B, 6);
+        let b = Battle::new(vec![a, front, back], 1);
+        assert_eq!(b.select_target(0), Some(2)); // the farthest enemy
+    }
+
+    #[test]
+    fn a_spoof_overrides_the_program_in_battle() {
+        let a = unit(0, Team::A, 0).with_targeting(TargetingProfile::Nearest);
+        let near = unit(1, Team::B, 2);
+        let far = unit(2, Team::B, 6);
+        let mut b = Battle::new(vec![a, near, far], 1);
+        assert_eq!(b.select_target(0), Some(1)); // program: Nearest
+        b.units[0].spoof(TargetingProfile::Backline, 3); // the enemy hacks the script
+        assert_eq!(b.units[0].targeting(), TargetingProfile::Backline);
+        assert_eq!(b.select_target(0), Some(2)); // now strikes the backline
+    }
+
+    #[test]
+    fn movement_hold_stays_and_kite_retreats() {
+        // Hold: never close, even out of range.
+        let holder = unit(0, Team::A, 0).with_movement(MovementProfile::Hold);
+        let enemy = unit(1, Team::B, 5);
+        let b = Battle::new(vec![holder, enemy], 1);
+        assert_eq!(b.movement_step(0, 1), Hex::new(0, 0));
+
+        // Kite: step to keep distance from the nearest enemy.
+        let kiter = unit(0, Team::A, 3).with_movement(MovementProfile::Kite);
+        let foe = unit(1, Team::B, 4); // adjacent (distance 1)
+        let b2 = Battle::new(vec![kiter, foe], 1);
+        let step = b2.movement_step(0, 1);
+        assert!(step.distance(Hex::new(4, 0)) > 1); // backed off
+    }
+
+    #[test]
+    fn default_behavior_is_attack_nearest_advance() {
+        // The pre-L3 baseline still holds with no program set.
+        let a = unit(0, Team::A, 0);
+        let near = unit(1, Team::B, 2);
+        let far = unit(2, Team::B, 6);
+        let b = Battle::new(vec![a, near, far], 1);
+        assert_eq!(b.units[0].targeting(), TargetingProfile::Nearest);
+        assert_eq!(b.units[0].movement(), MovementProfile::Advance);
+        assert_eq!(b.select_target(0), Some(1)); // nearest
+        assert_eq!(b.movement_step(0, 1), Hex::new(0, 0).step_toward(Hex::new(2, 0)));
     }
 }

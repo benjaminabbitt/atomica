@@ -17,9 +17,10 @@ In [`crates/sim`](../crates/sim/src/lib.rs) today:
   distance, neighbours, `within` (blast disc), `ring`, `line` (beam), `step_toward`.
 - **The tick loop** (`Battle::step`): **status** (DoTs / shred, may kill) →
   **action** (physical) → **digital** (hacks) → **decay**.
-- **Action**: units act in **effective-initiative order** (desc, id tiebreak);
-  each non-stunned unit attacks the **nearest** enemy in range, else **steps one
-  hex** toward it.
+- **Action**: units act in **effective-initiative order** (desc, id tiebreak); each
+  non-stunned unit picks a target by its **targeting profile** and, if out of range,
+  steps one hex by its **movement profile** (§7J, L3) — programmable + spoofable, not
+  hardwired to "nearest / advance".
 - **Damage pipeline**: penetration tiers (External → Barrier, Contact → Plating,
   Internal → straight to Integrity), the **armor matrix** (type × class), **Breach**
   vulnerability, the **softener** floor; layered Barrier → Plating → Integrity.
@@ -54,8 +55,8 @@ The designed round:
 
 | System | Designed | Now | Status |
 |---|---|---|---|
-| **Movement profiles** (§7J) | Advance · Hold · Kite · Flank · Swarm · Disperse | only "advance to nearest" | 🔭 |
-| **Targeting profiles** (§7J) | Nearest · Lowest-Integrity · Highest-threat · Backline · Weakest-armor | only Nearest | 🔭 |
+| **Movement profiles** (§7J) | Advance · Hold · Kite · Flank · Swarm · Disperse | **all six**, read each activation | ✅ |
+| **Targeting profiles** (§7J) | Nearest · Lowest-Integrity · Highest-threat · Backline · Weakest-armor | **all five**, read each activation | ✅ |
 | **Move stat + move-then-act** (§10.4) | move up to `move` hexes, then act | 1 hex/tick *or* attack | 🔭 |
 | **Occupancy / pathing / boxed-in** (§10.5a) | occupied hexes block; no free hex ⇒ no move | units can overlap | 🔭 |
 | **Woven initiative** (§7C/§10.3) | one interleaved physical+digital order | two discrete phases | 🔭 |
@@ -75,12 +76,13 @@ The designed round:
 
 Sequenced so each phase is shippable and test-first, hardest-leverage first:
 
-1. **Behavior profiles** — **movement** + **targeting** profiles on the unit, read
-   each activation. *The keystone:* it makes units *programmable* (and thus
-   hackable, §7J), and turns "walk to nearest" into real tactics. Pure logic,
-   deterministic, no new spatial rules. *(Composes from **factors** on the
-   `Character` ([`layers.md`](layers.md)) — a smartgun emits an `Override(targeting)`
-   factor, a spoof emits a corrupting one; see layers.md L3.)*
+1. **Behavior profiles ✅** — **movement** + **targeting** profiles drive the action
+   phase, read each activation (`Battle::select_target` / `movement_step`). Units are
+   *programmable* (and thus hackable, §7J): the profiles **compose from the
+   `Character`** ([`layers.md`](layers.md) L3) — `Unit::with_targeting` installs a
+   `GEAR`-priority `Override`, and `Unit::spoof` a `CORRUPTION` one that wins, so "the
+   enemy hacks your script" falls out. Default Nearest/Advance preserves the old
+   baseline. *(Still Phase 1's single-hex step; the `move` stat is Phase 2.)*
 2. **Movement model** — a **move** stat (move up to N/turn), **move-then-act** per
    activation, and **occupancy / pathing** (free-hex pathing, boxed-in). Units stop
    overlapping; positioning becomes real.
