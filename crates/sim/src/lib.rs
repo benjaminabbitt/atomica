@@ -108,6 +108,20 @@ pub struct Defense {
     pub plating: f32,
 }
 
+/// The area an attack covers (§7G). **Physical AoE has friendly fire on** — it hits
+/// *every* living unit in the footprint, allies included; only the attacker is spared.
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
+pub enum Footprint {
+    /// Just the chosen target hex.
+    #[default]
+    Single,
+    /// A disc of `radius` centred on the target hex (a grenade / blast).
+    Blast(i32),
+    /// A `length`-hex line from the attacker along the bearing to the target (a beam
+    /// / sweep), the attacker's own hex excluded.
+    Beam(i32),
+}
+
 /// A single attack profile. (Weapons/loadouts will compose these later.)
 #[derive(Clone, Copy, Debug)]
 pub struct Attack {
@@ -119,6 +133,8 @@ pub struct Attack {
     /// EMP weapon: a *physical* pulse that also fries the target's cyberware,
     /// **bypassing Firewall** (§7I) — the physical counter to digital builds.
     pub emp: bool,
+    /// The area struck (§7G) — `Single` by default; `Blast`/`Beam` hit allies too.
+    pub footprint: Footprint,
 }
 
 /// A combatant. The stat line mirrors the design's "Unit anatomy".
@@ -204,6 +220,7 @@ impl Unit {
                 pen: PenTier::Internal,
                 range: 1,
                 emp: false,
+                footprint: Footprint::Single,
             },
             hack: None,
             implants: Vec::new(),
@@ -807,14 +824,40 @@ impl<R: RandomSource> Battle<R> {
 
     fn resolve_attack(&mut self, attacker: usize, target: usize) {
         let atk = self.units[attacker].attack;
-        // Armor matrix (type vs class) × Breach vulnerability.
-        let mult = armor::matrix(atk.dtype, self.units[target].armor_class)
-            * self.units[target].vuln_mult();
-        let dmg = atk.damage * mult;
-        apply_damage(&mut self.units[target], dmg, atk.pen, true);
-        if atk.emp && self.units[target].is_alive() {
-            self.apply_emp(target);
+        // Resolve the footprint to the set of struck units (friendly fire on for
+        // physical AoE), then run the damage pipeline per target — the armor matrix
+        // (type vs class) × that unit's Breach vulnerability.
+        for t in self.footprint_targets(attacker, target) {
+            let mult =
+                armor::matrix(atk.dtype, self.units[t].armor_class) * self.units[t].vuln_mult();
+            let dmg = atk.damage * mult;
+            apply_damage(&mut self.units[t], dmg, atk.pen, true);
+            if atk.emp && self.units[t].is_alive() {
+                self.apply_emp(t);
+            }
         }
+    }
+
+    /// The living units an attack strikes (§7G). `Single` is just the target;
+    /// `Blast` is the disc around the target hex; `Beam` is the line from the attacker
+    /// along the bearing to the target. AoE includes **allies** (friendly fire) — only
+    /// the attacker is spared. Returned in ascending index order (deterministic).
+    fn footprint_targets(&self, attacker: usize, target: usize) -> Vec<usize> {
+        use std::collections::HashSet;
+        let hexes: HashSet<Hex> = match self.units[attacker].attack.footprint {
+            Footprint::Single => return vec![target],
+            Footprint::Blast(radius) => self.units[target].pos.within(radius).into_iter().collect(),
+            Footprint::Beam(length) => {
+                let from = self.units[attacker].pos;
+                let dir = from.direction_to(self.units[target].pos);
+                from.line(dir, length + 1).into_iter().skip(1).collect() // skip the attacker's own hex
+            }
+        };
+        (0..self.units.len())
+            .filter(|&j| {
+                j != attacker && self.units[j].is_alive() && hexes.contains(&self.units[j].pos)
+            })
+            .collect()
     }
 
     /// An **EMP** pulse on `target` (§7I) — a *physical* breach that **bypasses
@@ -1003,6 +1046,7 @@ mod tests {
                 pen: PenTier::Internal,
                 range: 1,
                 emp: false,
+                footprint: Footprint::Single,
             },
             hack: None,
             implants: Vec::new(),
@@ -1847,5 +1891,53 @@ mod tests {
                 }
             }
         }
+    }
+
+    // -- Phase 3: AoE footprints + friendly fire (§7G) -------------------------
+
+    #[test]
+    fn blast_friendly_fires_everyone_in_the_radius() {
+        let mut atk = unit(0, Team::A, 0);
+        atk.attack.footprint = Footprint::Blast(1); // disc around the target hex
+        let enemy = unit(1, Team::B, 3); // target at (3,0)
+        let enemy_mate = unit(2, Team::B, 4); // (4,0), adjacent to target
+        let our_own = unit(3, Team::A, 2); // (2,0), adjacent to target — our ally
+        let mut b = Battle::new(vec![atk, enemy, enemy_mate, our_own], 1);
+        let hp: Vec<f32> = b.units.iter().map(|u| u.integrity).collect();
+        b.resolve_attack(0, 1);
+        assert!(b.units[1].integrity < hp[1]); // the target
+        assert!(b.units[2].integrity < hp[2]); // its neighbour
+        assert!(b.units[3].integrity < hp[3]); // OUR unit — friendly fire is on
+        assert_eq!(b.units[0].integrity, hp[0]); // the attacker is spared
+    }
+
+    #[test]
+    fn beam_strikes_every_unit_along_the_line() {
+        let mut atk = unit(0, Team::A, 0);
+        atk.attack.footprint = Footprint::Beam(4); // line of 4 from the attacker
+        let on1 = unit(1, Team::B, 1); // (1,0) — the target, on the beam
+        let on2 = unit(2, Team::A, 2); // (2,0) — ally on the beam (friendly fire)
+        let on3 = unit(3, Team::B, 3); // (3,0) — on the beam
+        let mut off = unit(4, Team::B, 1);
+        off.pos = Hex::new(1, 1); // off the +q axis — spared
+        let mut b = Battle::new(vec![atk, on1, on2, on3, off], 1);
+        let hp: Vec<f32> = b.units.iter().map(|u| u.integrity).collect();
+        b.resolve_attack(0, 1);
+        assert!(b.units[1].integrity < hp[1]);
+        assert!(b.units[2].integrity < hp[2]);
+        assert!(b.units[3].integrity < hp[3]);
+        assert_eq!(b.units[4].integrity, hp[4]); // off the line
+    }
+
+    #[test]
+    fn single_footprint_spares_bystanders() {
+        let atk = unit(0, Team::A, 0); // default Single
+        let target = unit(1, Team::B, 1);
+        let bystander = unit(2, Team::B, 2);
+        let mut b = Battle::new(vec![atk, target, bystander], 1);
+        let hp: Vec<f32> = b.units.iter().map(|u| u.integrity).collect();
+        b.resolve_attack(0, 1);
+        assert!(b.units[1].integrity < hp[1]);
+        assert_eq!(b.units[2].integrity, hp[2]); // untouched
     }
 }

@@ -103,6 +103,18 @@ impl Hex {
             .min_by_key(|h| (h.distance(goal), -(h.r - goal.r).abs(), h.q, h.r))
             .unwrap_or(self)
     }
+
+    /// The axial **direction index** (`0..6`) whose one-hex step best closes on
+    /// `goal` — the bearing a beam fires along. Ties break to the lower index for
+    /// determinism.
+    pub fn direction_to(self, goal: Hex) -> usize {
+        (0..6)
+            .min_by_key(|&d| {
+                let (dq, dr) = DIRECTIONS[d];
+                Hex::new(self.q + dq, self.r + dr).distance(goal)
+            })
+            .unwrap_or(0)
+    }
 }
 
 #[cfg(test)]

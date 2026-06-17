@@ -21,9 +21,11 @@ In [`crates/sim`](../crates/sim/src/lib.rs) today:
   non-stunned unit picks a target by its **targeting profile**, **moves** up to its
   `speed` through free hexes by its **movement profile**, **then attacks** if in range
   (§7J/§10.4, L3 + Phase 2) — programmable + spoofable, occupancy-aware.
-- **Damage pipeline**: penetration tiers (External → Barrier, Contact → Plating,
-  Internal → straight to Integrity), the **armor matrix** (type × class), **Breach**
-  vulnerability, the **softener** floor; layered Barrier → Plating → Integrity.
+- **Damage pipeline**: per-target over the attack's **footprint** (`Single` /
+  `Blast` / `Beam`, **friendly fire on**), penetration tiers (External → Barrier,
+  Contact → Plating, Internal → straight to Integrity), the **armor matrix** (type ×
+  class), **Breach** vulnerability, the **softener** floor; layered Barrier → Plating
+  → Integrity.
 - **Digital pass**: Link-ordered hacks (see [`netrunning.md`](netrunning.md)).
 - **Statuses** (the 9-axis pool) and **objectives** ([`progression.md`](progression.md)).
 
@@ -60,7 +62,7 @@ The designed round:
 | **Move stat + move-then-act** (§10.4) | move up to `move` hexes, then act | **`speed` hexes, then act** | ✅ |
 | **Occupancy / pathing / boxed-in** (§10.5a) | occupied hexes block; no free hex ⇒ no move | **free-hex stepping + boxed-in** (greedy, no A*) | ✅ |
 | **Woven initiative** (§7C/§10.3) | one interleaved physical+digital order | two discrete phases | 🔭 |
-| **AoE footprints + friendly fire** (§7G) | blast (radius) · beam (line/width); physical hits allies | single-target | 🔭 (hex math ✅) |
+| **AoE footprints + friendly fire** (§7G) | blast (radius) · beam (line/width); physical hits allies | **`Blast`/`Beam` wired, friendly fire on** | ✅ (width = 1) |
 | **Range bands / reach** (§10.5) | gun bands · polearm reach | one `range` value | ◑ |
 | **Multiple weapons / selection** | per-target weapon choice | one attack profile | 🔭 |
 | **Smartgun / IFF targeting** (§7F) | smart profiles, fires on Link | — | 🔭 |
@@ -89,9 +91,12 @@ Sequenced so each phase is shippable and test-first, hardest-leverage first:
    greedy free-hex stepping; **boxed in** ⇒ no move). Units no longer overlap;
    positioning is real. *(Greedy single-hex pathing — full A* around obstacles is a
    later refinement.)*
-3. **AoE footprints + friendly fire** — wire **blast** (`within`) and **beam**
-   (`line`) into attacks; **physical AoE hits allies**. The hex math is already
-   there — this is attack-resolution plumbing + a footprint on the weapon.
+3. **AoE footprints + friendly fire ✅** — `Attack.footprint`: `Single` ·
+   `Blast(radius)` (disc via `within`, centred on the target hex) · `Beam(length)`
+   (line via `line`, along `direction_to` the target). `resolve_attack` runs the
+   damage pipeline over `footprint_targets` — **every living unit in the area, allies
+   included** (only the attacker is spared). *(Beam width is 1; multi-width is a later
+   refinement.)*
 4. **Woven initiative** — collapse the two phases into **one interleaved order**
    (physical Initiative + Link), the §10.3 model. Affects timing/tie-breaks.
 5. **Weapons & reach** — range bands, polearm reach, multi-weapon selection, the
