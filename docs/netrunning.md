@@ -106,6 +106,10 @@ substrate that doesn't exist yet:
 
 ## 4. The implant model 🔭 — the keystone
 
+> **Designed in full in [`cyberware.md`](cyberware.md)** — the benefit ↔ liability
+> symmetry, the value equation, slots/PAN, breach & repair, and the sim data
+> model + build order. The summary below is the netrunning-facing view.
+
 The single highest-leverage unbuilt piece: it turns hacks from "land a DoT" into
 the **chrome-is-liability** core, and simultaneously gives **worms** their
 payloads.

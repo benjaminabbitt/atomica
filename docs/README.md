@@ -8,6 +8,7 @@ Async auto-battler / roguelike-deckbuilder. Cyberpunk, neo-Japan cyber-samurai.
 3. **[design-delta-v0.26.md](design-delta-v0.26.md)** — post-v0.25 synthesis **+ decisions**: three-axis identity, factions & the live-summation economy, the mender triad, morale, vehicles, PAN/AR, Jobs, skills, the **3d6 + skill + equipment** roll mechanic, shops, the run tree, and the §13 decisions log.
 4. **[rosters.md](rosters.md)** — authored content: named corps / clans / law + the archetype roster.
 5. **[netrunning.md](netrunning.md)** — the digital-attack system: the hack contest (`3d6 + avg(Hacking, channel)` vs Firewall, channel = weaker endpoint's Link), the stat/skill line, payloads, the implant model, and the build order. Marks **built vs planned**.
+6. **[cyberware.md](cyberware.md)** — the augmentation economy: the implant bundle (benefit ↔ liability symmetry), the value equation that makes chrome worth its risk, slots/PAN, breach & repair, and the sim data model. The keystone the netrunning payloads plug into.
 
 ## Status
 - **Design:** decided down to playtest numbers; remaining open items are tuning (⏳) — see delta §12/§13.
