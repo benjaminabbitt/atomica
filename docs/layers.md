@@ -321,8 +321,8 @@ not a blocker.
 | Step | Does | Touches |
 |---|---|---|
 | **L1 ✅** | the architecture: **`Modifier`** (`source`→decorator-id / `tag`; `Factor { Add/Increased/More }` · `Override`) + the **`Decorator`** (priority · **`scale`** (condition) · `expiration` · factors · overrides · **`grants` `Capability`** · `removes` ward) + the **`Character`** wrapping the **priority-ordered gen** + **pools**: `install`/`remove`/`remove_where`/`set_scale` on the gen, **`realize()`** → modifier set whose **accessors** fold the bucket model; pools (`apply_damage`/`heal`) read/written direct (`crates/sim/src/chargen.rs`) | parallel to `Unit` |
-| **L2** | port **implants → decorators**: `Contribution` → `Add` factors, `Condition` → `scale` (`benefit_factor`), deck → `grants: Capability::Hack`; keep breach / EMP / PAN / Cascade behavior | the implant model + ~10 tests re-expressed |
-| **L2b** | port the **status pool → decorators** — `trigger`→events, `decay`→`expiration`, DoTs→`TickStart` reactions; unifies statuses + equipment | the `Status` system + its tests |
+| **L2 ✅** (structural) | **`Implant::to_decorator`**: `Contribution` → `Add` factors, `Condition` → `scale` (`benefit_factor`), deck → `grants: Capability::Hack`; breach/degrade/repair drive `set_scale`; `fill()` is the deploy step (max-rise never refills, §3a). The **breach-liability firing / EMP / Cascade / mesh-synergy** need the status pool → **deferred to L2b** | `implant.rs` `to_decorator` + 5 tests; `Unit` fold still drives the loop |
+| **L2b** | port the **status pool → decorators** (`trigger`→events, `decay`→`expiration`, DoTs→`TickStart` reactions) **and complete L2**: breach fires liabilities as decorators, EMP/Cascade operate on the gen | the `Status` system + the breach ladder |
 | **L3** | **behavior factors** (movement / targeting compose from factors) → finishes combat **Phase 1** on this model; a smartgun adds an `Override(targeting)` | combat Phase 1 |
 | **L4+** | **weapon** decorators, **armor** decorators, **corruption** decorators (spoof/Lockware) | new content |
 

@@ -12,6 +12,7 @@
 //! tripping an implant and applying its `hack_effects`) and PAN / slots come in
 //! later phases — the fields are here, the wiring is not.
 
+use crate::chargen::{Capability, Decorator, Factor, Stat, Tag};
 use crate::{Hack, StatusSpec};
 
 /// A unit's **Personal Area Network** mode (`docs/cyberware.md` §5, delta §6) — a
@@ -175,5 +176,139 @@ impl Implant {
             condition: Condition::Online,
             removable: true,
         }
+    }
+
+    /// Project this implant as a [`Decorator`] on the layer architecture
+    /// (`docs/layers.md` L2): each nonzero [`Contribution`] field becomes an `Add`
+    /// [`Factor`], the [`Condition`] becomes the decorator's **`scale`**
+    /// ([`benefit_factor`](Condition::benefit_factor) — Degraded `0.5`, Offline `0.0`),
+    /// and a granted deck loadout becomes a [`Capability::Hack`]. The breach ladder
+    /// then drives the implant by `set_scale` (degrade / disable / repair) on the
+    /// `Character`'s gen; the liabilities it fires (`hack_effects`) join once statuses
+    /// become decorators (L2b).
+    pub fn to_decorator(&self) -> Decorator {
+        let c = self.contribution;
+        let mut factors = Vec::new();
+        if c.link != 0 {
+            factors.push(Factor::add(Stat::Link, c.link as f32));
+        }
+        if c.firewall != 0 {
+            factors.push(Factor::add(Stat::Firewall, c.firewall as f32));
+        }
+        if c.plating != 0.0 {
+            factors.push(Factor::add(Stat::Plating, c.plating));
+        }
+        if c.initiative != 0.0 {
+            factors.push(Factor::add(Stat::Initiative, c.initiative));
+        }
+        if c.damage != 0.0 {
+            factors.push(Factor::add(Stat::Damage, c.damage));
+        }
+        if c.max_integrity != 0.0 {
+            factors.push(Factor::add(Stat::MaxIntegrity, c.max_integrity));
+        }
+        let mut d = Decorator::gear(Tag::Implant, factors).with_scale(self.condition.benefit_factor());
+        if let Some(h) = self.grant_hack {
+            d = d.with_grant(Capability::Hack(h));
+        }
+        d
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{BaseLine, Character};
+
+    /// A blank chassis whose innate Firewall (9) is the netrunning baseline, so a
+    /// cyberdeck's +2 lands the unit at the even-odds wall (11).
+    fn chassis() -> BaseLine {
+        BaseLine {
+            firewall: 9.0,
+            max_integrity: 30.0,
+            initiative: 5.0,
+            damage: 10.0,
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn cyberdeck_folds_the_surface_and_grants_the_hack() {
+        let mut c = Character::new(chassis());
+        c.install(Implant::cyberdeck().to_decorator());
+        let r = c.realize();
+        assert_eq!(r.link(), 5); // 0 base + 5
+        assert_eq!(r.firewall(), 11); // 9 base + 2
+        assert!(r.hack().is_some()); // the deck grants the loadout
+    }
+
+    #[test]
+    fn breach_disabling_the_deck_unfolds_it_and_drops_the_hack() {
+        let mut c = Character::new(chassis());
+        let deck = c.install(Implant::cyberdeck().to_decorator());
+        // disable floor (§6): Offline → scale 0.
+        c.set_scale(deck, Condition::Offline.benefit_factor());
+        let r = c.realize();
+        assert_eq!(r.link(), 0); // surface gone
+        assert_eq!(r.firewall(), 9); // wall back to base
+        assert!(r.hack().is_none()); // deck bricked → no hack
+    }
+
+    #[test]
+    fn degrade_halves_the_benefit_and_repair_restores_it() {
+        let mut c = Character::new(chassis());
+        let plate = c.install(Implant::subdermal_plating().to_decorator()); // +6 plating
+        assert_eq!(c.realize().plating(), 6.0); // Online: full
+        c.set_scale(plate, Condition::Degraded.benefit_factor());
+        assert_eq!(c.realize().plating(), 3.0); // Degraded: half — wear, no liability
+        c.set_scale(plate, Condition::Offline.benefit_factor());
+        assert_eq!(c.realize().plating(), 0.0); // Offline: none
+        c.set_scale(plate, Condition::Online.benefit_factor());
+        assert_eq!(c.realize().plating(), 6.0); // Ripperdoc repair — same decorator
+    }
+
+    #[test]
+    fn max_integrity_implant_fills_at_deploy_then_chunks_on_breach() {
+        let mut c = Character::new(chassis()); // base max 30
+        let pump = c.install(Implant::metabolic_pump().to_decorator()); // +8 max
+        assert_eq!(c.realize().max_integrity(), 38.0);
+        c.fill(); // deploy at full
+        assert_eq!(c.integrity, 38.0);
+
+        // breach the pump: max drops, current chunks to the new cap (§3a).
+        c.set_scale(pump, Condition::Offline.benefit_factor());
+        c.clamp_integrity();
+        assert_eq!(c.realize().max_integrity(), 30.0);
+        assert_eq!(c.integrity, 30.0);
+
+        // repair: capacity returns, but current does NOT refill (repair ≠ heal).
+        c.set_scale(pump, Condition::Online.benefit_factor());
+        c.clamp_integrity();
+        assert_eq!(c.realize().max_integrity(), 38.0);
+        assert_eq!(c.integrity, 30.0);
+    }
+
+    #[test]
+    fn a_full_rig_folds_every_implant() {
+        let mut c = Character::new(chassis());
+        for im in [
+            Implant::cyberdeck(),       // +5 link, +2 fw, hack
+            Implant::subdermal_plating(), // +6 plating
+            Implant::reflex_booster(),    // +3 init
+            Implant::combat_stim(),       // +4 dmg, +1 init
+            Implant::metabolic_pump(),    // +8 max
+        ] {
+            c.install(im.to_decorator());
+        }
+        c.fill();
+        let r = c.realize();
+        assert_eq!(r.link(), 5);
+        assert_eq!(r.firewall(), 11);
+        assert_eq!(r.plating(), 6.0);
+        assert_eq!(r.initiative(), 9.0); // 5 base + 3 + 1
+        assert_eq!(r.damage(), 14.0); // 10 base + 4
+        assert_eq!(r.max_integrity(), 38.0);
+        assert!(r.hack().is_some());
+        assert_eq!(c.integrity, 38.0);
     }
 }

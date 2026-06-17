@@ -579,6 +579,17 @@ impl Character {
         ev
     }
 
+    /// Fill every pool to its current composed maximum — the **deploy / spawn** step
+    /// (loadout complete, the character enters the fight at full). Distinct from a
+    /// mid-battle max change, which never refills (§3a): you build the gen, *then*
+    /// fill, *then* fight.
+    pub fn fill(&mut self) {
+        let r = self.realize();
+        self.integrity = r.max_integrity();
+        self.plating = r.plating();
+        self.barrier = r.barrier();
+    }
+
     /// Heal Integrity, clamped to the **current** composed max (over-heal is wasted).
     pub fn heal(&mut self, amount: f32) {
         let max = self.realize().max_integrity();
