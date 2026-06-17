@@ -1,72 +1,88 @@
-# Equipment layers — the decorator architecture
+# Equipment layers — the character-generator / factor model
 
-*How a unit's effective profile is composed from a **base** (chassis) plus stacked
-**equipment layers**, each implementing the **same interface** and **decorating**
-the one below. Generalises the hand-rolled cyberware fold
+*How a `Character`'s effective profile is **composed** from a **base** (chassis)
+plus **equipment layers** — where each layer is a **character generator** that emits
+**factors** (modifiers), and the `Character` holds the factor list and **sums /
+multiplies** it into effective stats. Generalises the hand-rolled cyberware fold
 ([`cyberware.md`](cyberware.md) Phases A–F) into one uniform model that also carries
 weapons, armor, and behavior-corruption. ◆ = decision (overridable, per repo
-convention). Status: 🔭 **planned** — this is the architecture to refactor toward;
-the current code keeps the fold model until it lands.*
+convention). Status: 🔭 **planned** — the architecture to refactor toward; the
+current code keeps the fold model until it lands.*
 
 ---
 
 ## 0. The principle ◆
 
-Equipment is **not special-cased**. A unit is a **base** stat line wrapped by an
-ordered stack of **layers** (implants · weapons · armor · …), each implementing the
-**same `Layer` interface** as the base and **decorating** it. The effective unit is
-the result of querying the top of the stack.
+Equipment is **not special-cased**, and the decorator **does not implement the unit
+interface**. Instead, each piece of kit is a **character generator** ◆ — a decorator
+that **returns a character** by contributing **factors** (modifiers). A pipeline of
+generators (base → implant → weapon → armor → …) **builds the `Character`**; the
+`Character` holds the resulting **list of factors** and **composes** it — summing
+and multiplying — into its effective stats.
 
-**The character composes — no separate orchestrator ◆.** The unit/character owns
-the **base** + a **`Vec` of layers** and `recompute()`s its effective stats by
-**folding** them (sum the flat adds, sum the %-increments). Because the default
-composition is **additive**, this is *just a fold* — not a heavyweight orchestrator
-object. Cached + recomputed on loadout / condition change (the dirty-flag pattern,
-see Precedents). The combination rules it folds by are below.
+So the split is:
+- **Generators** (the equipment layers) are **factor sources**: each emits its
+  contributions (e.g. a cyberdeck → `Add(Link, 5)`, `Override(hack, deck)`).
+- **The `Character`** owns the **factor `Vec`** and the **composition** (the
+  sum/multiply rules below). The stat-query surface lives **on the `Character`**,
+  computed from base + factors — *not* on each layer. There is **no separate
+  orchestrator**; the `Character` `recompute()`s itself.
 
 This is the architectural expression of two design throughlines:
-- *"Chrome composes onto the body"* — every piece of kit is a layer over what's
-  beneath, summing/overriding cleanly.
+- *"Chrome composes onto the body"* — every generator adds factors over what's
+  beneath; the `Character` sums them cleanly.
 - *"You program your units; the enemy hacks your script"* — **corruption is just
-  another layer**: a spoof / Lockware wraps your behavior interface and overrides
-  it. No separate machinery.
+  another generator**: a spoof / Lockware emits an `Override` factor on behavior.
+  No separate machinery.
 
 ---
 
-## 1. The interface — `Layer`
+## 1. The pieces — `Factor`, `CharacterGenerator`, `Character`
 
-The **derived** surface every layer (and the base) exposes — the read view the
-`sim` queries:
+**`Factor`** — one contribution to one stat: `{ stat, kind, value }`, where `kind`
+is `Add` · `Increased` · `More` · `Override` (§2). A generator emits a small `Vec`
+of these.
 
-| Group | Methods |
+**`CharacterGenerator`** (the layer / decorator) — `generate(character) → character`:
+appends its factors and returns the character. Equipment, augments, even a spoof
+are generators. Condition (Online/Degraded/Offline) gates/scales the factors it
+emits (a Degraded generator halves its values; an Offline one emits none).
+
+**`Character`** — `{ base, factors: Vec<Factor> }` plus the **read surface** the
+`sim` queries, each value **composed from base + the factors** for that stat:
+
+| Group | Queries (on the `Character`) |
 |---|---|
 | **stats** | `link` · `firewall` · `immunity` · `initiative` · `max_integrity` · `armor_class` |
 | **weapon** | `attack` (damage / type / pen / range / emp) |
 | **behavior** | `movement` · `targeting` (the §7J profiles) |
 | **capability** | `hack` (the netrunning loadout) |
 
-- **Base** = the chassis innate values implements `Layer`.
-- A **layer override** is `inner.x()` **augmented** (`link() = inner.link() + 5`) or
-  **replaced** (`targeting() = Smart` over whatever's below; `hack() = Some(deck)`).
+The **base** is the chassis innate line; generators only ever **add factors** to
+it — they never carry the query surface themselves.
 
 ---
 
 ## 2. Composition
 
 ```text
-base ─◄ implant ─◄ implant ─◄ weapon ─◄ armor ─◄ [corruption]
-                                                   (top wins)
+base ─▶ generate ─▶ generate ─▶ … ─▶ Character { base, factors[] }
+        (implant)   (weapon)              │
+                                          └─▶ recompute(): fold the factors per stat
 ```
 
-The effective query **folds/walks the stack from the base up**; **order matters**
-for overrides — a spoof layer on top wins `targeting` over everything beneath.
+Generators **append factors**; the `Character` then **folds its factor list per
+stat**. For numeric stats it sums/multiplies by the buckets below; for behavior /
+capability it takes the **last `Override`** (top wins). Folding is order-
+independent for the numeric buckets (sum/product), so only `Override` cares about
+order — last-applied generator wins.
 
 ### Combining numbers — the bucket model ◆ (additive vs. multiplicative)
 
-*How layers' numbers combine is a **balance lever**, not an implementation detail.
-Shipped ARPGs converged independently on a **bucket** model (Path of Exile's
-`Added / Increased / More`; Diablo 4's additive-vs-`x%` buckets) — adopt it.* A
-layer's contribution to a numeric stat declares its **kind**:
+*How the `Character` combines its factors is a **balance lever**, not an
+implementation detail. Shipped ARPGs converged independently on a **bucket** model
+(Path of Exile's `Added / Increased / More`; Diablo 4's additive-vs-`x%` buckets)
+— adopt it.* Each `Factor`'s **kind** sets how it combines:
 
 | Kind | Combine | Runs away? | Use |
 |---|---|---|---|
@@ -80,7 +96,8 @@ layer's contribution to a numeric stat declares its **kind**:
 > separate factors, and **only `More` compounds into runaway**.
 
 Plus **Override** (non-numeric): for behavior/capability (`targeting`, `hack`,
-`movement`) the **top layer wins** (a spoof *replaces* targeting; not a number).
+`movement`) the **last `Override` factor wins** (a spoof *replaces* targeting; not
+a number).
 
 **Composition formula** (PoE / D4 order, per stat) — but with `More` empty by
 default it collapses to a plain additive fold:
@@ -91,75 +108,78 @@ effective = (base + Σadd) × (1 + Σincreased) × Π(1 + moreᵢ)
 ```
 
 **Our calls ◆:**
-- **Additive by default → it's a fold, runaway-proof, no orchestrator.** Today's
-  implant contributions are all flat `Add`, and `Increased` only *sums*, so the
-  whole composition is a `Vec`-fold on the character.
+- **Additive by default → the `Character` just folds its factors, runaway-proof.**
+  Today's implant contributions are all flat `Add`, and `Increased` only *sums*, so
+  the whole composition is a `Vec`-fold over the factor list.
 - **`More` is off by default.** Genuine multiplication is the only runaway risk;
   don't ship a free-stacking `More` bucket. If a *signature* mechanic ever needs it
   (a marquee implant, the PAN-mesh synergy), it's **rare + hard-capped**, and still
   just one product step in the same fold.
-- **Condition scales the *layer* before the fold.** A Degraded layer
-  ([`cyberware.md`](cyberware.md) §6) delivers **half its contribution** (its
-  `benefit_factor`), applied to that layer's adds/%s before they're summed.
+- **Condition scales the *generator's* factors before the fold.** A Degraded
+  generator ([`cyberware.md`](cyberware.md) §6) emits **half-value** factors (its
+  `benefit_factor`); an Offline one emits none.
 - **Per-stat buckets.** Link, Firewall, damage, … each fold independently.
 
 ---
 
 ## 3. Derived vs. live state ◆
 
-| Decorated (derived — recomputed from base + active layers) | Live battle-state (on the unit, **not** decorated) |
+| Composed (derived — recomputed from base + factors) | Live battle-state (on the `Character`, **not** composed) |
 |---|---|
-| the whole §1 surface (stats / weapon / behavior / capability) | `pos`, **current** Integrity, the depletable **Barrier / Plating pools**, `statuses`, `alive`, and each layer's **condition** (Online/Degraded/Offline — *gates* its contribution) |
+| the whole §1 query surface (stats / weapon / behavior / capability) | `pos`, **current** Integrity, the depletable **Barrier / Plating pools**, `statuses`, `alive`, and each generator's **condition** (Online/Degraded/Offline — *gates* the factors it emits) |
 
-The split is the crux: layers compute the **effective maxima / profile**; the unit
-instance holds the **mutable fight state** that ticks down during a battle.
+The split is the crux: the factor fold gives the **effective maxima / profile**;
+the `Character` instance holds the **mutable fight state** that ticks down during a
+battle.
 
 ---
 
-## 4. Realization ◆ — a layer `Vec`, folded
+## 4. Realization ◆ — a flat factor `Vec` on the `Character`
 
-**Decision:** keep the exact `Layer` trait and decorator semantics, but store
-equipment as an **ordered `Vec` of layers** and compute the effective surface by
-**folding the trait over the base** — cached, recomputed on **loadout / condition
-change** (not every read, for the deterministic hot loop).
+The generator-emits-factors model settles the earlier "decorator chain vs. fold"
+question: there's **no query chain** at all.
 
-- ✔ Same uniform interface + composition, **and** layers stay **indexable** (so a
-  breach/EMP can flip one layer's condition without walking a boxed chain), with
-  **no per-method delegation boilerplate**.
-- **Alternative — literal `Box<dyn Layer>` chain:** the purest decorator, but every
-  layer hand-delegates ~10 trait methods to `inner`, and mutating one mid-chain is
-  awkward. Available if the purity is wanted; the `Vec` fold is the recommendation.
+- **Generators** run once at build / loadout (and on condition change) to emit
+  `Factor`s into the `Character`'s flat `Vec<Factor>` — no per-method delegation,
+  no `Box<dyn>` chain to walk.
+- **`Character::recompute()`** folds that `Vec` per stat by the §2 buckets, caching
+  the results; reruns only on a **loadout / condition change** (the dirty flag), so
+  the deterministic hot loop just reads cached effective values.
+- A breach / EMP that flips a generator's condition → re-emit its (now zero/halved)
+  factors → `recompute()`. The generators stay **indexable** for exactly this.
 
-Either way the **public shape is identical**: `unit.link()` / `unit.targeting()`
-read the composed value; nothing outside cares how it's stored.
+The **public shape**: `character.link()` / `character.targeting()` read the
+composed value; nothing outside cares that it came from a folded factor list.
 
 ---
 
 ## 5. Subsumes the cyberware fold
 
 The current implant model ([`cyberware.md`](cyberware.md) A–F) becomes the **first
-`Layer` kind**, with its meaning intact:
+kind of generator**, with its meaning intact:
 
-| Cyberware concept | In the layer model |
+| Cyberware concept | In the generator/factor model |
 |---|---|
-| `Contribution` fold / `refold` | a layer's stat overrides; effective = recompute over active layers |
-| Condition (Online/Degraded/Offline) | the layer's gate + scale (Degraded = half), unchanged |
-| benefit ↔ liability, hack-effects | the layer carries them; breach disables the layer → recompute |
-| EMP / PAN / Cascade | operate on the layer set (disable all / cascade), unchanged semantics |
+| `Contribution` fold / `refold` | a generator emitting `Add`/`Increased` factors; effective = `Character::recompute()` |
+| Condition (Online/Degraded/Offline) | gates/scales the **factors emitted** (Degraded = half, Offline = none), unchanged |
+| benefit ↔ liability, hack-effects | the generator carries them; breach disables it → re-emit (zero) → recompute |
+| EMP / PAN / Cascade | operate on the generator set (disable all / cascade), unchanged semantics |
 
-Then it **extends**: **weapons** and **armor** become further layer kinds
+Then it **extends**: **weapons** and **armor** become further generator kinds
 (multi-weapon, layered armor), and **behavior-corruption** (spoof / Lockware) is a
-layer that overrides `movement` / `targeting`.
+generator that emits an `Override` factor on `movement` / `targeting`.
 
 ---
 
 ## 6. Layered defense — optional reach ◆
 
-The same stack can model the design's **layered defense**: an incoming hit routes
-**outermost → inner** (Barrier layer → Plating layer → Integrity base), each layer
-**absorbing** the remainder by its pen-tier rules. That folds today's `apply_damage`
-pipeline into the layer chain — *adopt later*; the current pool-based `apply_damage`
-already works, so this is a clean-up, not a blocker.
+Defense is itself **layered** — an incoming hit routes **outermost → inner**
+(Barrier → Plating → Integrity base), each absorbing the remainder by its pen-tier
+rules. These defensive layers are **depletable pools** (live state §3), distinct
+from the stat-factor generators above; a generator can *grant* a pool (subdermal
+plating → +Plating), but the absorb sequence is its own ordered pass — *adopt
+later*; the current pool-based `apply_damage` already works, so this is a clean-up,
+not a blocker.
 
 ---
 
@@ -167,24 +187,25 @@ already works, so this is a clean-up, not a blocker.
 
 | Step | Does | Touches |
 |---|---|---|
-| **L1** | define the `Layer` trait + a `Base` (chassis stats); the unit's flat derived fields become a cached **`Derived`** recomputed from base + layers | `sim` stat reads |
-| **L2** | port **implants → layers** (Contribution/condition → layer overrides); keep breach / EMP / PAN / Cascade behavior | the implant model + ~10 tests re-expressed on the layer API |
-| **L3** | the **behavior layer** (movement / targeting join the interface) → finishes combat **Phase 1** on the layered model; a smartgun decorates `targeting` | combat Phase 1 |
-| **L4+** | **weapon** layers, **armor** layers, **corruption** layers (spoof/Lockware) | new content |
+| **L1** | define `Factor` + `CharacterGenerator` + the `Character`'s base + `Vec<Factor>` + a cached `recompute()` fold (Add/Increased buckets) | `sim` stat reads |
+| **L2** | port **implants → generators** (Contribution/condition → emitted factors); keep breach / EMP / PAN / Cascade behavior | the implant model + ~10 tests re-expressed on the factor API |
+| **L3** | **behavior factors** (movement / targeting compose from factors) → finishes combat **Phase 1** on this model; a smartgun emits an `Override(targeting)` | combat Phase 1 |
+| **L4+** | **weapon** generators, **armor** generators, **corruption** generators (spoof/Lockware) | new content |
 
 **Test impact:** the implant tests (install / disable / degrade / EMP / cascade)
-re-express on the layer API — the breach/condition **semantics are unchanged**, so
+re-express on the factor API — the breach/condition **semantics are unchanged**, so
 the assertions port. Contest / objective / run tests are untouched: they read
-*effective* stats, which still exist (just composed differently).
+*effective* stats, which still exist (just composed from factors now).
 
 ---
 
 ## 8. Why now ◆
 
 Do **L1–L3 before finishing combat Phase 1** (behavior profiles): the movement /
-targeting profiles *belong in the `Layer` interface*, so wiring them into flat
-fields first would be throwaway. The Phase-1 enums are already committed and slot
-straight into the interface. After L3, the "smartgun decorates targeting" and
+targeting profiles *compose from factors on the `Character`*, so wiring them into
+flat fields first would be throwaway. The Phase-1 enums are already committed and
+slot straight in as `Override` factors. After L3, the "smartgun overrides targeting"
+and
 "spoof corrupts behavior" stories fall out for free.
 
 ---

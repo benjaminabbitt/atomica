@@ -78,9 +78,9 @@ Sequenced so each phase is shippable and test-first, hardest-leverage first:
 1. **Behavior profiles** — **movement** + **targeting** profiles on the unit, read
    each activation. *The keystone:* it makes units *programmable* (and thus
    hackable, §7J), and turns "walk to nearest" into real tactics. Pure logic,
-   deterministic, no new spatial rules. *(Lands on the [`Layer`](layers.md)
-   interface — profiles are part of the decorated surface, so a smartgun decorates
-   targeting and a spoof corrupts it; see layers.md L3.)*
+   deterministic, no new spatial rules. *(Composes from **factors** on the
+   `Character` ([`layers.md`](layers.md)) — a smartgun emits an `Override(targeting)`
+   factor, a spoof emits a corrupting one; see layers.md L3.)*
 2. **Movement model** — a **move** stat (move up to N/turn), **move-then-act** per
    activation, and **occupancy / pathing** (free-hex pathing, boxed-in). Units stop
    overlapping; positioning becomes real.

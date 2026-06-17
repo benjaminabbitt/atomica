@@ -256,10 +256,11 @@ mender *unit* (targeting, cross-pool at the high end) is later content.
 ## 7. The sim data model & build order ◆
 
 > **Architecture note:** the implant model below (the shipped fold) is being
-> generalised into the **equipment-layer decorator** architecture
-> ([`layers.md`](layers.md)) — implants become the first `Layer` kind, alongside
-> weapons / armor / behavior-corruption, all over one interface. The semantics
-> here (benefit↔liability, condition, EMP, PAN/Cascade) carry over unchanged.
+> generalised into the **character-generator / factor** model
+> ([`layers.md`](layers.md)) — implants become **generators that emit factors**,
+> alongside weapons / armor / behavior-corruption, and the `Character` composes the
+> factors. The semantics here (benefit↔liability, condition, EMP, PAN/Cascade)
+> carry over unchanged.
 
 **Engine shape.** `atomica-sim` gains an `Implant`; a `Unit` composes its stat
 line from a **chassis base + the sum of its Online implants** (the loadout
