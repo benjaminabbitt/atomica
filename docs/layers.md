@@ -43,13 +43,17 @@ This is the architectural expression of two design throughlines:
 is `Add` · `Increased` · `More` · `Override` (§2). A generator emits a small `Vec`
 of these.
 
-**`CharacterGenerator`** (the layer / decorator) — `generate(character) → character`:
-appends its factors and returns the character. Equipment, augments, even a spoof
-are generators. Condition (Online/Degraded/Offline) gates/scales the factors it
-emits (a Degraded generator halves its values; an Offline one emits none).
+**`CharacterGenerator`** (`chargen`) — the **one uniform type** for everything that
+shapes a character: **gear, weapons, armor, augments/implants, consumables, buffs,
+even a spoof** are all `chargen`-typed. `generate(character) → character` appends
+its factors and returns the character. A generator carries **no math** — it only
+*declares* the factors it contributes, gated/scaled by its condition
+(Online/Degraded/Offline → full / half / none). That's its whole job.
 
 **`Character`** — `{ base, factors: Vec<Factor> }` plus the **read surface** the
-`sim` queries, each value **composed from base + the factors** for that stat:
+`sim` queries. **The `Character` does all the math:** every effective value is
+**composed by it** from base + its factors (the §2 bucket fold) — generators never
+compute, only the `Character` sums and multiplies.
 
 | Group | Queries (on the `Character`) |
 |---|---|
