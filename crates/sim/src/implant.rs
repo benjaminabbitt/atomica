@@ -25,10 +25,30 @@ pub enum Condition {
 }
 
 impl Condition {
-    /// Does the implant deliver its benefit right now? (Online or Degraded; an
-    /// Offline / Destroyed implant contributes nothing.)
+    /// Does the implant deliver (some of) its benefit right now? (Online or
+    /// Degraded; an Offline / Destroyed implant contributes nothing.)
     pub fn is_active(self) -> bool {
         matches!(self, Condition::Online | Condition::Degraded)
+    }
+
+    /// Fraction of its benefit the implant delivers now (`docs/cyberware.md` §6):
+    /// Online full, **Degraded half**, Offline / Destroyed none.
+    pub fn benefit_factor(self) -> f32 {
+        match self {
+            Condition::Online => 1.0,
+            Condition::Degraded => 0.5,
+            Condition::Offline | Condition::Destroyed => 0.0,
+        }
+    }
+
+    /// One step down the wear ladder: `Online → Degraded → Offline → Destroyed`
+    /// (Destroyed is terminal).
+    pub fn degraded(self) -> Condition {
+        match self {
+            Condition::Online => Condition::Degraded,
+            Condition::Degraded => Condition::Offline,
+            Condition::Offline | Condition::Destroyed => Condition::Destroyed,
+        }
     }
 }
 

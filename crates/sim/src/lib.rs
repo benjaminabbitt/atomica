@@ -190,56 +190,80 @@ impl Unit {
         }
     }
 
-    /// Install `implant`, folding its [`Contribution`] (and any granted hack) into
-    /// the derived stat line while it is active (`docs/cyberware.md` §7). The
-    /// effective line is the chassis base plus the sum of active implants.
+    /// Install `implant`, folding the benefit it delivers (scaled by its
+    /// condition, §6) into the derived stat line and granting any deck loadout
+    /// while active.
     pub fn install(&mut self, implant: Implant) {
+        self.refold(&implant, 0.0, implant.condition.benefit_factor());
         if implant.condition.is_active() {
-            self.fold_implant(&implant, true);
+            if let Some(h) = implant.grant_hack {
+                self.hack = Some(h);
+            }
         }
         self.implants.push(implant);
     }
 
-    /// Fold (`add`) or unfold an active implant's contribution + granted capability.
-    fn fold_implant(&mut self, implant: &Implant, add: bool) {
-        let s = if add { 1 } else { -1 };
+    /// Apply the *change* in an implant's delivered contribution between two
+    /// condition factors. Integer stats use `round(new) − round(old)` (exact and
+    /// reversible — no rounded-delta drift across half-steps); continuous stats
+    /// scale linearly.
+    fn refold(&mut self, implant: &Implant, old: f32, new: f32) {
         let c = implant.contribution;
-        self.link += s * c.link;
-        self.firewall += s * c.firewall;
-        self.defense.plating += s as f32 * c.plating;
-        self.initiative += s as f32 * c.initiative;
-        self.attack.damage += s as f32 * c.damage;
-        self.max_integrity += s as f32 * c.max_integrity;
-        if add {
-            self.integrity += c.max_integrity; // gain the extra HP
-        } else {
+        let at = |f: f32, x: i32| (f * x as f32).round() as i32;
+        self.link += at(new, c.link) - at(old, c.link);
+        self.firewall += at(new, c.firewall) - at(old, c.firewall);
+        let d = new - old;
+        self.defense.plating += d * c.plating;
+        self.initiative += d * c.initiative;
+        self.attack.damage += d * c.damage;
+        self.max_integrity += d * c.max_integrity;
+        if d > 0.0 {
+            self.integrity += d * c.max_integrity; // gain the extra HP
+        } else if c.max_integrity != 0.0 {
             self.integrity = self.integrity.min(self.max_integrity); // clamp on loss
         }
-        if let Some(h) = implant.grant_hack {
-            self.hack = add.then_some(h);
+    }
+
+    /// Move the implant at `idx` to `cond`, folding the change in delivered
+    /// benefit and toggling its granted hack on the active boundary. Destroyed is
+    /// terminal. Returns the implant's `hack_effects` iff this knocks it from
+    /// active to inactive (a breach — the caller fires them per the §6 ladder).
+    fn transition(&mut self, idx: usize, cond: Condition) -> Vec<StatusSpec> {
+        let old = self.implants[idx].condition;
+        if old == Condition::Destroyed {
+            return Vec::new(); // terminal
+        }
+        let im = self.implants[idx].clone();
+        self.refold(&im, old.benefit_factor(), cond.benefit_factor());
+        if let Some(h) = im.grant_hack {
+            self.hack = cond.is_active().then_some(h);
+        }
+        self.implants[idx].condition = cond;
+        if old.is_active() && !cond.is_active() {
+            im.hack_effects
+        } else {
+            Vec::new()
         }
     }
 
-    /// Knock the implant at `idx` **Offline** — a breach's "disable" floor
-    /// (`docs/cyberware.md` §6): unfold its benefit and return its `hack_effects`
-    /// for the caller to apply the severity ladder (the trigger is a later phase).
+    /// Knock the implant at `idx` straight to **Offline** — a breach's "disable"
+    /// floor (§6). Returns its `hack_effects` for the severity ladder.
     pub fn disable_implant(&mut self, idx: usize) -> Vec<StatusSpec> {
-        if self.implants[idx].condition.is_active() {
-            let im = self.implants[idx].clone();
-            self.fold_implant(&im, false);
-        }
-        self.implants[idx].condition = Condition::Offline;
-        self.implants[idx].hack_effects.clone()
+        self.transition(idx, Condition::Offline)
     }
 
-    /// Bring the implant at `idx` back **Online** — refold its benefit (the
-    /// Ripperdoc un-bricking Offline gear, §3.2).
+    /// Wear the implant at `idx` **one step** down the condition ladder
+    /// (`Online → Degraded → Offline → Destroyed`): physical wear, *reduced*
+    /// benefit, **no liability fired** (§3.1 — wear is not a breach).
+    pub fn degrade_implant(&mut self, idx: usize) {
+        let next = self.implants[idx].condition.degraded();
+        self.transition(idx, next);
+    }
+
+    /// Bring the implant at `idx` back **Online** — the Ripperdoc un-bricking /
+    /// repairing it (§3.2). Destroyed gear is terminal (a no-op).
     pub fn repair_implant(&mut self, idx: usize) {
-        if !self.implants[idx].condition.is_active() {
-            let im = self.implants[idx].clone();
-            self.fold_implant(&im, true);
-        }
-        self.implants[idx].condition = Condition::Online;
+        self.transition(idx, Condition::Online);
     }
 
     /// The first active (breachable) implant — the hack's target slot (a
@@ -1104,6 +1128,55 @@ mod tests {
         assert!(u.hack.is_some()); // benefit: the unit can now hack
         assert_eq!(u.link, 5); // folded surface
         assert_eq!(u.firewall, 2); // folded wall
+    }
+
+    #[test]
+    fn a_degraded_implant_delivers_half_its_benefit() {
+        let mut u = unit(0, Team::A, 0);
+        u.install(Implant::subdermal_plating()); // +6 Plating, Online
+        assert_eq!(u.defense.plating, 6.0);
+        u.degrade_implant(0); // Online → Degraded
+        assert_eq!(u.implants[0].condition, Condition::Degraded);
+        assert_eq!(u.defense.plating, 3.0); // half benefit
+        u.degrade_implant(0); // Degraded → Offline
+        assert_eq!(u.implants[0].condition, Condition::Offline);
+        assert_eq!(u.defense.plating, 0.0); // none
+    }
+
+    #[test]
+    fn the_ripperdoc_repairs_a_degraded_implant_to_online() {
+        let mut u = unit(0, Team::A, 0);
+        u.install(Implant::subdermal_plating());
+        u.degrade_implant(0); // Degraded, plating 3
+        u.repair_implant(0);
+        assert_eq!(u.implants[0].condition, Condition::Online);
+        assert_eq!(u.defense.plating, 6.0); // restored full
+    }
+
+    #[test]
+    fn wear_destroys_and_destroyed_is_terminal() {
+        let mut u = unit(0, Team::A, 0);
+        u.install(Implant::subdermal_plating());
+        u.degrade_implant(0); // Degraded
+        u.degrade_implant(0); // Offline
+        u.degrade_implant(0); // Destroyed
+        assert_eq!(u.implants[0].condition, Condition::Destroyed);
+        u.repair_implant(0); // terminal — a no-op
+        assert_eq!(u.implants[0].condition, Condition::Destroyed);
+        assert_eq!(u.defense.plating, 0.0); // stays gone
+    }
+
+    #[test]
+    fn a_degraded_deck_still_hacks_on_a_thinner_surface() {
+        let mut u = unit(0, Team::A, 0);
+        u.install(Implant::cyberdeck()); // Link 5, grants hack
+        assert_eq!(u.link, 5);
+        u.degrade_implant(0); // Degraded — still active
+        assert!(u.hack.is_some()); // a degraded deck still hacks
+        assert_eq!(u.link, 3); // round(0.5 × 5) = 3 — thinner surface
+        u.degrade_implant(0); // Offline
+        assert!(u.hack.is_none()); // now bricked
+        assert_eq!(u.link, 0); // and exact — no rounding drift
     }
 
     #[test]

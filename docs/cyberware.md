@@ -232,13 +232,20 @@ effect**: one breach can disable the slot, land its margin-scaled liabilities, a
 — on a crit — fire its stun-class one(s) on top. A **Cascade**/worm trips the
 whole list regardless of margin (that's what makes it the finisher).
 
-**Condition ladder** (delta §3.1): `Online → Degraded → Offline → Destroyed`.
-Plating-shred / physical wear **Degrades** (reduced benefit); breaches knock
-**Offline** (benefit gone); enough damage **Destroys** (salvage on death).
+**Condition ladder ✅** (delta §3.1): `Online → Degraded → Offline → Destroyed`,
+with each tier delivering a **fraction of the benefit** — Online **full**,
+Degraded **half** (`benefit_factor`), Offline / Destroyed **none**. Physical wear
+(`degrade_implant`) steps it **one tier down** (reduced benefit, *no liability* —
+wear is not a breach); a **breach** knocks it straight **Offline** (firing the
+ladder); **Destroyed is terminal** (salvage on death). A degraded **deck still
+hacks**, just on a thinner Link surface. *(Engine note: condition changes fold the
+`round(new·factor) − round(old·factor)` delta, so a half-tier round-trips exactly
+— no integer drift.)*
 
-**Repair — the Ripperdoc** (chrome mender, delta §3.2): un-bricks Offline gear,
-restores Plating/Barrier, cures EMP/Shed/Lockout — a between-battle clinic or an
-in-battle mender (cross-pool at the high end).
+**Repair — the Ripperdoc ✅** (chrome mender, delta §3.2): `repair_implant`
+un-bricks Offline / restores Degraded gear to **Online** (refolding the full
+benefit); Destroyed is beyond it. Today it's the bare operation — the in-battle
+mender *unit* (targeting, cross-pool at the high end) is later content.
 
 ---
 
@@ -276,7 +283,7 @@ crit-gated stun; Cascade fires all). The Ripperdoc reverses the disable.
 | **A** ✅ | `Implant` + **stat derivation** — `Unit::install` folds a `Contribution` (Link/Firewall/plating/init) into the line; `disable`/`repair` un/refold (the disable floor). Cyberdeck grants the `Hack` loadout | **built** (`implant.rs`): cyberdeck / subdermal-plating / reflex-booster presets; breach *trigger* is Phase C |
 | **B** ✅ | the **benefit roster** as content (§2 table) | **built**: deck · plating · reflex · firewall · stim (multi-effect Overdose) · pump; smartgun / sensor / skill-chip wait on targeting / AR / §10 |
 | **C** ✅ | **trip-on-breach** — a hack success targets an implant (`first_active_implant`) and applies the **severity ladder** (§6): success ⇒ **disable**, margin ⇒ **degrade**, crit ⇒ **knockout** (stun) | **built** (`Battle::apply_breach`): reuses the margin/crit roll outputs; chromeless targets fall back to the deck payload. Closes the netrunning loop |
-| **D** | **condition + Ripperdoc** — Degraded/Offline/Destroyed + repair | delta §3 |
+| **D** ✅ | **condition + Ripperdoc** — Degraded (half benefit) / Offline / Destroyed (terminal) ladder + `degrade_implant` / `repair_implant` | **built**: condition-scaled fold (round-trips exact); the mender *unit* is later content |
 | **E** | **EMP** — physical, Firewall-bypassing, knocks chrome Offline + trips effects | the chrome counter |
 | **F** | **PAN** mesh/segment + **Cascade** | delta §6 |
 
