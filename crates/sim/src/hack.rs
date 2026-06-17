@@ -1,18 +1,19 @@
 //! Netrunning — the digital attack, resolved by the core **3d6 contest**.
 //!
 //! A hack is one unit projecting onto the net against another. **Link is the
-//! digital bandwidth** (§7D): it caps how much of each side's digital stat
-//! actually comes to bear, so the contest is
+//! attacker's digital bandwidth** (§7D): it caps how much trained Hacking can be
+//! pushed down the pipe, so the contest is
 //!
 //! ```text
-//! 3d6 + min(Link, Hacking)   vs   min(Link, Firewall)
+//! 3d6 + min(Link, Hacking)   vs   Firewall
 //! ```
 //!
-//! — your trained Hacking only lands up to what your Link can push, and the
-//! defender's Firewall only engages up to *its* Link surface (§13). Both ends are
-//! still hard-gated: **zero Link** means *no surface to reach* (the target is
-//! air-gapped) or *no presence to reach with* (the attacker is dark), §7F. The
-//! deck / equipment's digital strength flows through **Link** and **Hacking**
+//! — a skilled runner on a thin connection is throttled, and a fat pipe with no
+//! skill is still weak (you need both). **Defense is Link-blind:** the target
+//! number is the Firewall wall alone. Both ends are still hard-gated by
+//! reachability — **zero Link** means *no surface to reach* (the target is
+//! air-gapped/immune) or *no presence to reach with* (the attacker is dark), §7F.
+//! The deck / equipment's digital strength flows through **Link** and **Hacking**
 //! (cyberdeck → Link, skill chip → Hacking, §7D/§13), so there is no separate
 //! roll add-on. On a success the hack lands its **payload** — a status: a tripped
 //! hack-effect or a deployed program (§7F/§10.8) — with stacks scaling on the
