@@ -18,9 +18,9 @@ In [`crates/sim`](../crates/sim/src/lib.rs) today:
 - **The tick loop** (`Battle::step`): **status** (DoTs / shred, may kill) →
   **action** (physical) → **digital** (hacks) → **decay**.
 - **Action**: units act in **effective-initiative order** (desc, id tiebreak); each
-  non-stunned unit picks a target by its **targeting profile** and, if out of range,
-  steps one hex by its **movement profile** (§7J, L3) — programmable + spoofable, not
-  hardwired to "nearest / advance".
+  non-stunned unit picks a target by its **targeting profile**, **moves** up to its
+  `speed` through free hexes by its **movement profile**, **then attacks** if in range
+  (§7J/§10.4, L3 + Phase 2) — programmable + spoofable, occupancy-aware.
 - **Damage pipeline**: penetration tiers (External → Barrier, Contact → Plating,
   Internal → straight to Integrity), the **armor matrix** (type × class), **Breach**
   vulnerability, the **softener** floor; layered Barrier → Plating → Integrity.
@@ -57,8 +57,8 @@ The designed round:
 |---|---|---|---|
 | **Movement profiles** (§7J) | Advance · Hold · Kite · Flank · Swarm · Disperse | **all six**, read each activation | ✅ |
 | **Targeting profiles** (§7J) | Nearest · Lowest-Integrity · Highest-threat · Backline · Weakest-armor | **all five**, read each activation | ✅ |
-| **Move stat + move-then-act** (§10.4) | move up to `move` hexes, then act | 1 hex/tick *or* attack | 🔭 |
-| **Occupancy / pathing / boxed-in** (§10.5a) | occupied hexes block; no free hex ⇒ no move | units can overlap | 🔭 |
+| **Move stat + move-then-act** (§10.4) | move up to `move` hexes, then act | **`speed` hexes, then act** | ✅ |
+| **Occupancy / pathing / boxed-in** (§10.5a) | occupied hexes block; no free hex ⇒ no move | **free-hex stepping + boxed-in** (greedy, no A*) | ✅ |
 | **Woven initiative** (§7C/§10.3) | one interleaved physical+digital order | two discrete phases | 🔭 |
 | **AoE footprints + friendly fire** (§7G) | blast (radius) · beam (line/width); physical hits allies | single-target | 🔭 (hex math ✅) |
 | **Range bands / reach** (§10.5) | gun bands · polearm reach | one `range` value | ◑ |
@@ -83,9 +83,12 @@ Sequenced so each phase is shippable and test-first, hardest-leverage first:
    `GEAR`-priority `Override`, and `Unit::spoof` a `CORRUPTION` one that wins, so "the
    enemy hacks your script" falls out. Default Nearest/Advance preserves the old
    baseline. *(Still Phase 1's single-hex step; the `move` stat is Phase 2.)*
-2. **Movement model** — a **move** stat (move up to N/turn), **move-then-act** per
-   activation, and **occupancy / pathing** (free-hex pathing, boxed-in). Units stop
-   overlapping; positioning becomes real.
+2. **Movement model ✅** — a **`speed`** stat (move up to N hexes/activation),
+   **move-then-act** (the unit closes by its movement profile, *then* attacks if in
+   range, same activation), and **occupancy** (`occupied_by_other` blocks a hex;
+   greedy free-hex stepping; **boxed in** ⇒ no move). Units no longer overlap;
+   positioning is real. *(Greedy single-hex pathing — full A* around obstacles is a
+   later refinement.)*
 3. **AoE footprints + friendly fire** — wire **blast** (`within`) and **beam**
    (`line`) into attacks; **physical AoE hits allies**. The hex math is already
    there — this is attack-resolution plumbing + a footprint on the weapon.

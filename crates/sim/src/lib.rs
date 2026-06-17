@@ -142,6 +142,9 @@ pub struct Unit {
 
     /// Physical Initiative — turn order in the world (higher acts first).
     pub initiative: f32,
+    /// The **move stat** (§10.4): how many hexes the unit may step per activation
+    /// (move-then-act). `0` ⇒ stationary.
+    pub speed: i32,
     /// Digital Initiative / net presence (Link, §7D). Integer **bandwidth tiers**;
     /// `0` ⇒ immune to all digital attack. Feeds the hack channel + digital init.
     pub link: i32,
@@ -191,6 +194,7 @@ impl Unit {
             chassis,
             skills: chassis.baseline_skills(),
             initiative: 5.0,
+            speed: 1,
             link: 0,
             firewall: 0,
             immunity: 0,
@@ -226,6 +230,12 @@ impl Unit {
     /// Builder: set the physical Initiative.
     pub fn with_initiative(mut self, initiative: f32) -> Self {
         self.initiative = initiative;
+        self
+    }
+
+    /// Builder: set the move stat (hexes per activation).
+    pub fn with_speed(mut self, speed: i32) -> Self {
+        self.speed = speed;
         self
     }
 
@@ -651,19 +661,21 @@ impl<R: RandomSource> Battle<R> {
             if !self.units[i].is_alive() || self.units[i].is_stunned() {
                 continue;
             }
-            // §7J: pick the target by the unit's **targeting profile**, then either
-            // attack (in range) or take one step by its **movement profile**.
+            // §7J/§10.4: pick a target by the **targeting profile**, **move** up to
+            // `speed` hexes by the **movement profile** (through free hexes), **then
+            // act** if a target is in range.
             let Some(target) = self.select_target(i) else {
                 continue;
             };
-            let (pos, range) = {
-                let u = &self.units[i];
-                (u.pos, u.attack.range)
-            };
-            if pos.distance(self.units[target].pos) <= range {
+            for _ in 0..self.units[i].speed.max(0) {
+                let next = self.movement_step(i, target);
+                if next == self.units[i].pos {
+                    break; // at the profile's goal, or boxed in
+                }
+                self.units[i].pos = next;
+            }
+            if self.units[i].pos.distance(self.units[target].pos) <= self.units[i].attack.range {
                 self.resolve_attack(i, target);
-            } else {
-                self.units[i].pos = self.movement_step(i, target);
             }
         }
     }
@@ -703,25 +715,59 @@ impl<R: RandomSource> Battle<R> {
         }
     }
 
-    /// One step for unit `i` toward what its **movement profile** wants (§7J). Phase 1
-    /// keeps the single-hex step; the `move` stat / move-then-act is Phase 2.
+    /// One step for unit `i` toward what its **movement profile** wants (§7J), routed
+    /// only through **free** hexes (§10.5a occupancy). Returns the best free neighbour,
+    /// or the unit's own hex when it's already at the goal or **boxed in** (every
+    /// improving neighbour occupied). Greedy single-hex pathing — full A* is later.
     fn movement_step(&self, i: usize, target: usize) -> Hex {
-        let me = &self.units[i];
+        let here = self.units[i].pos;
         let tpos = self.units[target].pos;
-        match me.movement() {
-            MovementProfile::Advance => me.pos.step_toward(tpos),
-            MovementProfile::Hold => me.pos,
-            MovementProfile::Flank => me.pos.step_flank(tpos),
-            MovementProfile::Swarm => self
-                .nearest_enemy(i)
-                .map_or(me.pos, |e| me.pos.step_toward(self.units[e].pos)),
-            MovementProfile::Kite => self
-                .nearest_enemy(i)
-                .map_or(me.pos, |e| me.pos.step_away(self.units[e].pos)),
-            MovementProfile::Disperse => self
-                .nearest_ally(i)
-                .map_or(me.pos, |a| me.pos.step_away(self.units[a].pos)),
+        // Candidate hexes: stay put, or step to a free neighbour. `once(here)` is
+        // first so it wins ties — a unit only moves when a neighbour is strictly
+        // better by the profile's scoring.
+        let free = |h: &Hex| !self.occupied_by_other(i, *h);
+        let candidates =
+            || std::iter::once(here).chain(here.neighbors().into_iter().filter(free));
+        match self.units[i].movement() {
+            MovementProfile::Hold => here,
+            MovementProfile::Advance => {
+                candidates().min_by_key(|h| h.distance(tpos)).unwrap_or(here)
+            }
+            MovementProfile::Flank => candidates()
+                .min_by_key(|h| (h.distance(tpos), -(h.r - tpos.r).abs(), h.q, h.r))
+                .unwrap_or(here),
+            MovementProfile::Swarm => match self.nearest_enemy(i) {
+                Some(e) => {
+                    let ep = self.units[e].pos;
+                    candidates().min_by_key(|h| h.distance(ep)).unwrap_or(here)
+                }
+                None => here,
+            },
+            MovementProfile::Kite => match self.nearest_enemy(i) {
+                Some(e) => {
+                    let ep = self.units[e].pos;
+                    candidates().max_by_key(|h| (h.distance(ep), -h.q, -h.r)).unwrap_or(here)
+                }
+                None => here,
+            },
+            MovementProfile::Disperse => match self.nearest_ally(i) {
+                Some(a) => {
+                    let ap = self.units[a].pos;
+                    candidates().max_by_key(|h| (h.distance(ap), -h.q, -h.r)).unwrap_or(here)
+                }
+                None => here,
+            },
         }
+    }
+
+    /// Is hex `h` occupied by a *living* unit other than `i`? (§10.5a — occupied hexes
+    /// block movement; sequential resolution means a unit sees those that already
+    /// moved this activation.)
+    fn occupied_by_other(&self, i: usize, h: Hex) -> bool {
+        self.units
+            .iter()
+            .enumerate()
+            .any(|(j, u)| j != i && u.is_alive() && u.pos == h)
     }
 
     fn nearest_ally(&self, i: usize) -> Option<usize> {
@@ -947,6 +993,7 @@ mod tests {
             chassis: Chassis::Augmented,
             skills: Chassis::Augmented.baseline_skills(),
             initiative: 5.0,
+            speed: 1,
             link: 0,
             firewall: 0,
             immunity: 0,
@@ -1743,5 +1790,62 @@ mod tests {
         assert_eq!(b.units[0].movement(), MovementProfile::Advance);
         assert_eq!(b.select_target(0), Some(1)); // nearest
         assert_eq!(b.movement_step(0, 1), Hex::new(0, 0).step_toward(Hex::new(2, 0)));
+    }
+
+    // -- Phase 2: the move stat, move-then-act, occupancy (§10.4/§10.5a) --------
+
+    #[test]
+    fn move_then_act_closes_and_strikes_same_activation() {
+        // Speed 5: a unit 3 hexes out closes *and* attacks in one activation.
+        let atk = unit(0, Team::A, 0).with_speed(5).with_initiative(10.0);
+        let mut dummy = unit(1, Team::B, 3).with_movement(MovementProfile::Hold);
+        dummy.integrity = 100.0;
+        let mut b = Battle::new(vec![atk, dummy], 1);
+        b.action_phase();
+        assert!(b.units[0].pos.distance(Hex::new(3, 0)) <= 1); // closed to melee
+        assert!(b.units[1].integrity < 100.0); // and hit, same turn
+    }
+
+    #[test]
+    fn speed_zero_never_moves() {
+        let atk = unit(0, Team::A, 0).with_speed(0);
+        let foe = unit(1, Team::B, 4);
+        let mut b = Battle::new(vec![atk, foe], 1);
+        b.action_phase();
+        assert_eq!(b.units[0].pos, Hex::new(0, 0)); // rooted
+    }
+
+    #[test]
+    fn an_occupied_lane_boxes_the_unit_in() {
+        // The only distance-reducing hex (1,0) is taken by an ally → no improving
+        // free neighbour, so the mover stays put (boxed in).
+        let mover = unit(0, Team::A, 0).with_movement(MovementProfile::Advance);
+        let blocker = unit(1, Team::A, 1);
+        let target = unit(2, Team::B, 2);
+        let b = Battle::new(vec![mover, blocker, target], 1);
+        assert!(b.occupied_by_other(0, Hex::new(1, 0)));
+        assert_eq!(b.movement_step(0, 2), Hex::new(0, 0)); // boxed
+        // remove the blocker (id 1) and it advances into the freed lane.
+        let b2 = Battle::new(vec![unit(0, Team::A, 0), unit(2, Team::B, 2)], 1);
+        assert_eq!(b2.movement_step(0, 1), Hex::new(1, 0));
+    }
+
+    #[test]
+    fn living_units_never_share_a_hex() {
+        // Two allies racing the same enemy must queue, not stack.
+        let a = unit(0, Team::A, 0).with_speed(3);
+        let ally = unit(2, Team::A, 1).with_speed(3);
+        let foe = unit(1, Team::B, 6).with_speed(3);
+        let mut b = Battle::new(vec![a, ally, foe], 7);
+        for _ in 0..12 {
+            b.step();
+            let live: Vec<Hex> =
+                b.units.iter().filter(|u| u.is_alive()).map(|u| u.pos).collect();
+            for x in 0..live.len() {
+                for y in (x + 1)..live.len() {
+                    assert_ne!(live[x], live[y], "two units overlapped");
+                }
+            }
+        }
     }
 }
