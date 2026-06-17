@@ -36,7 +36,7 @@ mod status;
 pub use armor::ArmorClass;
 pub use hack::{hack_rating, Hack, HackResult};
 pub use hex::Hex;
-pub use implant::{Condition, Contribution, Implant};
+pub use implant::{Condition, Contribution, Implant, Pan};
 pub use objective::{
     Goal, MarginLoss, Objective, ObjectiveStatus, Objectives, Reach, Survive, TimeAttack, WinFight,
     PLAYER,
@@ -152,6 +152,9 @@ pub struct Unit {
     /// [`Contribution`] into the stat line above while active; its liabilities
     /// fire on breach. The stats above are the derived (base + Σ active) line.
     pub implants: Vec<Implant>,
+    /// The implant network mode (§5): meshed (synergy, Cascade-vulnerable) vs
+    /// segmented (contained, no synergy). A loadout commitment.
+    pub pan: Pan,
     /// Active à-la-carte statuses.
     pub statuses: Vec<Status>,
     pub alive: bool,
@@ -275,6 +278,27 @@ impl Unit {
         self.implants.iter().position(|im| im.condition.is_active())
     }
 
+    /// Indices of all active (breachable) implants — Cascade and EMP hit them all.
+    fn active_implant_indices(&self) -> Vec<usize> {
+        self.implants
+            .iter()
+            .enumerate()
+            .filter(|(_, im)| im.condition.is_active())
+            .map(|(i, _)| i)
+            .collect()
+    }
+
+    /// Throughput bonus from a **meshed** PAN (§5): networked implants boost each
+    /// other (set-effects). First-cut — +1 per active implant beyond the first,
+    /// capped. A **segmented** PAN forfeits it (the price of Cascade-immunity).
+    fn mesh_synergy(&self) -> i32 {
+        if self.pan == Pan::Meshed {
+            (self.active_implant_indices().len() as i32 - 1).clamp(0, MESH_SYNERGY_CAP)
+        } else {
+            0
+        }
+    }
+
     fn is_stunned(&self) -> bool {
         self.statuses.iter().any(|s| matches!(s.spec.effect, Effect::Stun))
     }
@@ -318,6 +342,9 @@ const KNOCKOUT_STUN: u32 = 2;
 /// Fixed magnitude of the degrade-class liabilities an EMP fires — it has no
 /// margin/crit, being a blunt physical pulse. Placeholder (TBD).
 const EMP_MAGNITUDE: u32 = 2;
+
+/// Cap on the meshed-PAN synergy bonus to a hack rating (§5). Placeholder (TBD).
+const MESH_SYNERGY_CAP: i32 = 3;
 
 /// The Target Number a stochastic status rolls against (its `resist` axis, §13).
 fn resist_tn(unit: &Unit, resist: Resist) -> i32 {
@@ -570,14 +597,7 @@ impl<R: RandomSource> Battle<R> {
     /// knockout is the hacker's finesse — EMP is blunt. Flesh / bioware (no chrome)
     /// are immune, and the more implants a target runs, the more an EMP ruins.
     fn apply_emp(&mut self, target: usize) {
-        let active: Vec<usize> = self.units[target]
-            .implants
-            .iter()
-            .enumerate()
-            .filter(|(_, im)| im.condition.is_active())
-            .map(|(i, _)| i)
-            .collect();
-        for idx in active {
+        for idx in self.units[target].active_implant_indices() {
             for spec in self.units[target].disable_implant(idx) {
                 if !matches!(spec.effect, Effect::Stun) {
                     self.units[target].add_status(spec, EMP_MAGNITUDE, EMP_MAGNITUDE);
@@ -633,7 +653,8 @@ impl<R: RandomSource> Battle<R> {
         // The connection runs at the weaker endpoint's bandwidth (the channel);
         // the rating averages the attacker's Hacking with it. Firewall is the TN.
         let channel = self.units[attacker].digital_band().min(self.units[target].digital_band());
-        let rating = hack_rating(self.units[attacker].skill(Skill::Hacking), channel);
+        let rating = hack_rating(self.units[attacker].skill(Skill::Hacking), channel)
+            + self.units[attacker].mesh_synergy(); // meshed PAN throughput (§5)
         let tn = self.units[target].firewall;
         let outcome = resolve_contest(&mut self.rng, Contest::new(rating, 0, tn));
         let stacks =
@@ -647,7 +668,7 @@ impl<R: RandomSource> Battle<R> {
     /// per effect. If the target carries no chrome to trip, land the deck's own
     /// payload instead (a generic intrusion). Returns the magnitude landed.
     fn apply_breach(&mut self, target: usize, outcome: &RollOutcome, hack: Hack) -> u32 {
-        let Some(idx) = self.units[target].first_active_implant() else {
+        let Some(first) = self.units[target].first_active_implant() else {
             // No chrome to trip — run the deck's own payload.
             let stacks = hack.stacks_for(outcome);
             if stacks > 0 {
@@ -655,18 +676,26 @@ impl<R: RandomSource> Battle<R> {
             }
             return stacks;
         };
-        // Floor: disable the implant (unfold its benefit); collect its liabilities.
-        let effects = self.units[target].disable_implant(idx);
+        // Cascade (§5): a crit on a **meshed** PAN rides the net to *every*
+        // implant; a segmented PAN contains it to the one slot.
+        let slots = if outcome.crit && self.units[target].pan == Pan::Meshed {
+            self.units[target].active_implant_indices()
+        } else {
+            vec![first]
+        };
         let degrade = hack::margin_stacks(outcome.margin);
-        for spec in effects {
-            if matches!(spec.effect, Effect::Stun) {
-                // Knockout class — crit-gated (a decisive hack only).
-                if outcome.crit {
-                    self.units[target].add_status(spec, KNOCKOUT_STUN, 1);
+        for idx in slots {
+            // Floor: disable the implant; then the ladder per liability.
+            for spec in self.units[target].disable_implant(idx) {
+                if matches!(spec.effect, Effect::Stun) {
+                    // Knockout class — crit-gated (a decisive hack only).
+                    if outcome.crit {
+                        self.units[target].add_status(spec, KNOCKOUT_STUN, 1);
+                    }
+                } else if degrade > 0 {
+                    // Degrade class — magnified by the margin.
+                    self.units[target].add_status(spec, degrade, degrade);
                 }
-            } else if degrade > 0 {
-                // Degrade class — magnified by the margin.
-                self.units[target].add_status(spec, degrade, degrade);
             }
         }
         degrade
@@ -750,6 +779,7 @@ mod tests {
             },
             hack: None,
             implants: Vec::new(),
+            pan: Pan::Meshed,
             statuses: Vec::new(),
             alive: true,
         }
@@ -1161,6 +1191,57 @@ mod tests {
         assert!(u.hack.is_some()); // benefit: the unit can now hack
         assert_eq!(u.link, 5); // folded surface
         assert_eq!(u.firewall, 2); // folded wall
+    }
+
+    #[test]
+    fn a_crit_cascades_across_a_meshed_pan() {
+        // A decisive hack on a meshed PAN rides to every implant, not just one.
+        let mut atk = runner(0, Team::A, 0, 4);
+        atk.skills.set(Skill::Hacking, 4);
+        let mut tgt = unit(1, Team::B, 1);
+        tgt.link = 3;
+        tgt.firewall = 4;
+        tgt.install(Implant::subdermal_plating());
+        tgt.install(Implant::reflex_booster());
+        assert_eq!(tgt.pan, Pan::Meshed); // the default
+        let mut b = Battle::with_rng(vec![atk, tgt], ScriptedRng::from_d6([6, 6, 6])); // crit
+        b.resolve_hack(0, 1);
+        assert!(b.units[1].implants.iter().all(|im| im.condition == Condition::Offline));
+    }
+
+    #[test]
+    fn a_segmented_pan_contains_the_crit() {
+        // Same decisive hack, but segmentation isolates the breach to one slot.
+        let mut atk = runner(0, Team::A, 0, 4);
+        atk.skills.set(Skill::Hacking, 4);
+        let mut tgt = unit(1, Team::B, 1);
+        tgt.link = 3;
+        tgt.firewall = 4;
+        tgt.pan = Pan::Segmented;
+        tgt.install(Implant::subdermal_plating()); // idx 0 — the targeted slot
+        tgt.install(Implant::reflex_booster()); // idx 1 — contained
+        let mut b = Battle::with_rng(vec![atk, tgt], ScriptedRng::from_d6([6, 6, 6])); // crit
+        b.resolve_hack(0, 1);
+        assert_eq!(b.units[1].implants[0].condition, Condition::Offline);
+        assert_eq!(b.units[1].implants[1].condition, Condition::Online); // contained
+    }
+
+    #[test]
+    fn a_meshed_pan_boosts_hacking_throughput() {
+        // Same roll: a meshed netrunner with extra chrome out-hacks a segmented one.
+        let total_for = |pan: Pan| {
+            let mut atk = unit(0, Team::A, 0);
+            atk.skills.set(Skill::Hacking, 4);
+            atk.pan = pan;
+            atk.install(Implant::cyberdeck()); // grants the hack + Link 5
+            atk.install(Implant::reflex_booster()); // 2 active → meshed synergy +1
+            let mut tgt = networked(1, Team::B, 0, 4);
+            tgt.link = 5;
+            let mut b = Battle::with_rng(vec![atk, tgt], ScriptedRng::from_d6([4, 4, 4]));
+            let HackResult::Rolled { outcome, .. } = b.resolve_hack(0, 1) else { panic!() };
+            outcome.total
+        };
+        assert!(total_for(Pan::Meshed) > total_for(Pan::Segmented));
     }
 
     #[test]

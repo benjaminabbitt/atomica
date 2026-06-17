@@ -183,13 +183,17 @@ double-exposed (§7F).
   Flesh few/none · Machine varies). **Inbuilt** implants occupy slots
   non-removably and define the archetype (§7F). You buy *more* chrome into the
   free slots.
-- **PAN — mesh vs segment (delta §6, build commitment).** Installed implants
-  network over a **Personal Area Network**:
-  - **Meshed** (default) → cross-implant **synergy / set-effects** + full
-    throughput, **but a breach can Cascade** (trip every hack-effect at once).
-  - **Segmented / air-gapped** → implants isolated → a breach is **contained** (no
-    Cascade), **but no synergy** + reduced throughput.
-  - Chosen at **loadout, not in-battle** (delta §13) — a build identity.
+- **PAN — mesh vs segment ✅ (delta §6, build commitment).** `Unit.pan` over the
+  installed implants:
+  - **Meshed** (default) → **synergy** (modelled as a netrunning **throughput**
+    bonus, `mesh_synergy`: +1 to the hack rating per active implant beyond the
+    first, capped), **but a crit Cascades** — `apply_breach` breaches *every*
+    active implant, not just the targeted slot.
+  - **Segmented** → isolated → a breach is **contained** to the one slot (a crit
+    still knocks out that implant, but no Cascade), **and no synergy**.
+  - Chosen at **loadout, not in-battle** (delta §13) — a build identity. *(The
+    synergy as netrunning throughput is a first-cut; richer set-effects are
+    content.)*
 - **Skill chips are implants** — a capped, **transferable, salvageable** skill
   floor (§10): the fungible counterpart to a character's earned skill. Slot a
   hacking chip on a bruiser for basic netrunning; it dies *recoverable* (unlike
@@ -285,7 +289,7 @@ crit-gated stun; Cascade fires all). The Ripperdoc reverses the disable.
 | **C** ✅ | **trip-on-breach** — a hack success targets an implant (`first_active_implant`) and applies the **severity ladder** (§6): success ⇒ **disable**, margin ⇒ **degrade**, crit ⇒ **knockout** (stun) | **built** (`Battle::apply_breach`): reuses the margin/crit roll outputs; chromeless targets fall back to the deck payload. Closes the netrunning loop |
 | **D** ✅ | **condition + Ripperdoc** — Degraded (half benefit) / Offline / Destroyed (terminal) ladder + `degrade_implant` / `repair_implant` | **built**: condition-scaled fold (round-trips exact); the mender *unit* is later content |
 | **E** ✅ | **EMP** — physical, Firewall-bypassing pulse (`Attack.emp`); fries **all** active implants Offline + fires degrade liabilities (no stun) | **built** (`apply_emp`): reuses `disable_implant`; bioware/flesh immune |
-| **F** | **PAN** mesh/segment + **Cascade** | delta §6 |
+| **F** ✅ | **PAN** mesh/segment + **Cascade** — `Unit.pan`; meshed crit Cascades to all implants + a `mesh_synergy` throughput bonus; segmented contains | **built**: closes the cyberware loop |
 
 Phase **A** is the load-bearing refactor (the stat line becomes derived);
 everything after is content + one mechanic each. None of it breaks the crate

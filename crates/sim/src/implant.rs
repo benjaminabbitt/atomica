@@ -14,6 +14,20 @@
 
 use crate::{Hack, StatusSpec};
 
+/// A unit's **Personal Area Network** mode (`docs/cyberware.md` §5, delta §6) — a
+/// loadout commitment, not an in-battle toggle.
+///
+/// - **Meshed** (default): cross-implant **synergy** + full throughput, but a
+///   breach can **Cascade** to *every* implant at once.
+/// - **Segmented**: implants isolated → a breach is **contained** (Cascade-proof),
+///   but no synergy.
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
+pub enum Pan {
+    #[default]
+    Meshed,
+    Segmented,
+}
+
 /// Live state of an implant (`docs/cyberware.md` §6): `Online → Degraded →
 /// Offline → Destroyed`.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
