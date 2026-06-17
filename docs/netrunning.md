@@ -102,6 +102,14 @@ substrate that doesn't exist yet:
 | **Spoof IFF** | Flip-hostile / Masquerade / Scramble / Ghost | an **IFF / targeting** layer |
 | **Disable an implant** | knock a slot **Offline** | **equipment-condition** state |
 
+**Severity scales with the roll ◆** (designed in [`cyberware.md`](cyberware.md)
+§6). A breach is not one thing: a plain success **disables** the target implant
+(the floor — it just goes Offline), the **margin** magnifies its hack-effect, and
+a **crit** delivers the **knockout** (the stun class). So today's margin→stacks
+scaling is the *magnification* half; the disable floor and the crit-gated knockout
+arrive with the implant model (Phase C). The upshot — netrunning is reliable
+**attrition**, not a reliable hard-disable.
+
 ---
 
 ## 4. The implant model 🔭 — the keystone
@@ -198,11 +206,20 @@ be brought against it: against a **dark** target (Link 1) even a master is held 
 | **soft** (low FW) | easy, shallow — *mook* | easy, deep — *juicy* |
 | **hard** (high FW) | hard, shallow — *bunker* | hard but deep if cracked — *fortress* |
 
+**Hacking is hard by construction ◆.** Landing a hack is only the *floor* — it
+**disables** the implant. The two outcomes that *matter* are gated: the
+**magnified liability** needs a strong **margin**, and the **knockout** (the stun
+class) needs a **crit** (cyberware §6). So even when a hack lands, the severe
+results are rare, and meaningful targets sit at/above the even-odds wall (11+).
+Netrunning rewards the **invested specialist against an exposed target**, not the
+dabbler — soft mooks are easy to poke but shallow (the depth-gate above).
+
 **Still open ⏳:**
 
 | Knob | Question |
 |---|---|
 | **`MARGIN_PER_STACK`** (=3) | the margin→stacks curve; `base_stacks`; per-payload stack caps. |
+| **Knockout gate** | crit-only is **nat 18** (~0.5%) — likely too rare; widen to a **margin ≥ K** "decisive" tier (a strong runner overpowering a soft/exposed target)? |
 | **Antenna range** | reach bands for the digital pass; beam (line) vs single delivery. |
 | **Hack-effect severity** | how punishing each tripped liability is — the "chrome is a real-but-fair gamble" dial. |
 

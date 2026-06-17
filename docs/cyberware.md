@@ -74,6 +74,13 @@ This does three things at once:
 3. **Worms & netrunners share a payload roster** — every hack-effect is both the
    owner's liability *and* a hacker's/worm's prize (§7F, netrunning §4).
 
+**Symmetry is the default, not a law ◆.** Most implants mirror (benefit ↔ inverted
+benefit); **some carry an orthogonal liability** instead — a deck whose breach
+**Sheds** your plating — where that makes better content. What's mechanically
+load-bearing isn't the symmetry but the **severity class** of the hack-effect:
+whether a breach merely **disables**, fires a **magnified liability**, or delivers
+a **knockout** (§6) — and that is gated by the *roll*, not the implant.
+
 ### The implant roster (first pass ◆)
 
 Benefit (unconditional) ↔ hack-effect (on breach). Magnitudes are band-tier
@@ -174,14 +181,33 @@ double-exposed (§7F).
 
 ## 6. Breach & repair
 
-An implant is **breached** three ways, all firing its `hack_effect` on the owner
-and setting it **Offline** (benefit lost until repaired):
+An implant is **breached** three ways:
 
 | Vector | How | Defended by |
 |---|---|---|
 | **Hack** | a netrunner trips the implant (a hack success, `netrunning.md` §3) | Firewall, low Link |
 | **Worm** | **Logic-bomb** trips one by name · **Cascade** trips all (meshed PAN) | Firewall, segment PAN |
 | **EMP** | a physical pulse — **bypasses Firewall**, knocks chrome Offline | hardening, bioware |
+
+### Breach outcome — severity scales with the roll ◆
+
+A breach is **not one thing**; its severity is the **degree of success** (margin)
+of the hack that caused it. This is the answer to *"the knockout stuff may be crit
+only"* and *"hacking should be hard":*
+
+| Roll quality | Outcome on the owner | Frequency |
+|---|---|---|
+| **Success (floor)** | **Disable** — the implant goes **Offline**, its benefit lost (repairable). The least-bad case. | the common success |
+| **+ margin** | **Magnified liability** — the implant's hack-effect fires, **scaled by margin** (the degrade class: Shed, Overload, Breach, Blind, Misfire…). | needs a solid hit |
+| **Crit** | **Knockout** — the **incapacitate class** (a stun: Seizure-Crash, Lockout, Overdose→Crash), or **Cascade** on a meshed PAN (trip *all* implants). | crit-gated; rare |
+
+So **disable is the default best case** (for the victim — you just lose the gear),
+a **magnified liability is the common case** when a runner lands it well, and the
+**turn-skipping knockouts are crit-only**. Netrunning is reliable **attrition**,
+not a reliable hard-disable. *Rule of thumb ◆: any hack-effect that **stuns**
+(removes the action) is **crit-gated**; everything else **scales with margin**.*
+*(Knockout-gate width — strict nat-18 vs a margin ≥ K "decisive" tier — is a knob,
+netrunning §6.)*
 
 **Condition ladder** (delta §3.1): `Online → Degraded → Offline → Destroyed`.
 Plating-shred / physical wear **Degrades** (reduced benefit); breaches knock
@@ -225,7 +251,7 @@ drops out). The Ripperdoc reverses it.
 |---|---|---|
 | **A** | `Implant` + **stat derivation** — Unit = chassis base + Σ implants | foundational; refactors the flat stat line. The Cyberdeck implant grants the existing `Hack` loadout |
 | **B** | the **benefit roster** as content (§2 table) | deck · plating · reflex · smartgun · firewall · stim · sensor · chip |
-| **C** | **trip-on-breach** — a hack success targets + trips an implant → fires its hack-effect + Offline | closes the netrunning loop (real consequences) |
+| **C** | **trip-on-breach** — a hack success targets an implant and applies the **severity ladder** (§6): success ⇒ **disable**, margin ⇒ **magnified liability**, crit ⇒ **knockout** (stun class) | closes the netrunning loop (real consequences); reuses the existing margin/crit roll outputs |
 | **D** | **condition + Ripperdoc** — Degraded/Offline/Destroyed + repair | delta §3 |
 | **E** | **EMP** — physical, Firewall-bypassing, knocks chrome Offline + trips effects | the chrome counter |
 | **F** | **PAN** mesh/segment + **Cascade** | delta §6 |
