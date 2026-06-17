@@ -33,6 +33,13 @@ use crate::{RollOutcome, StatusSpec};
 /// scaling, §13). Placeholder tuning value — numbers are TBD.
 const MARGIN_PER_STACK: i32 = 3;
 
+/// Extra stacks bought by the **degree of success** — the margin, floored by
+/// [`MARGIN_PER_STACK`]. `0` at margin ≤ 0, so a marginal breach is a *pure
+/// disable* (the §6 floor) with no liability fired.
+pub fn margin_stacks(margin: i32) -> u32 {
+    (margin.max(0) / MARGIN_PER_STACK) as u32
+}
+
 /// The attacker's effective hack rating: its **Hacking** averaged with the
 /// **connection channel** (the weaker endpoint's Link bandwidth), floored —
 /// `(hacking + channel) / 2`. Skill and channel each carry half the weight, so a
@@ -70,8 +77,7 @@ impl Hack {
         if !outcome.success {
             return 0;
         }
-        let bonus = (outcome.margin.max(0) / MARGIN_PER_STACK) as u32;
-        self.base_stacks + bonus + outcome.crit as u32
+        self.base_stacks + margin_stacks(outcome.margin) + outcome.crit as u32
     }
 }
 
@@ -89,9 +95,11 @@ pub enum HackResult {
 }
 
 impl HackResult {
-    /// Did the hack land its payload?
+    /// Did the hack succeed — i.e. **breach** the target? A success always at
+    /// least *disables* a tripped implant (the §6 floor); `stacks` may still be 0
+    /// (a marginal breach fires no liability).
     pub fn landed(&self) -> bool {
-        matches!(self, HackResult::Rolled { stacks, .. } if *stacks > 0)
+        matches!(self, HackResult::Rolled { outcome, .. } if outcome.success)
     }
 }
 

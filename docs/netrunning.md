@@ -87,27 +87,26 @@ Crash/Seizure **stun** freezes the net action too.
 
 ---
 
-## 3. What a hack *does* — the payload 🔭
+## 3. What a hack *does* — the payload
 
-The **contest** is built; the **consequences** are mostly stubs. On success a
-hack lands a **status payload** (margin-scaled stacks). Today the only digital
-payloads are **Lockware** (an Internal DoT, `Resist::Firewall`), **Crash**
-(Seizure-style stun), and **Lag**. The designed payload menu (§7F/§10.8) needs
-substrate that doesn't exist yet:
+The **contest** is built, and (Phase C ✅) a success now **breaches a target
+implant** via the severity ladder (`cyberware.md` §6) — **disable** → margin
+**degrade** → crit **knockout** — firing the implant's `hack_effects`. Against a
+target with **no chrome to trip**, it falls back to landing the deck's own
+**payload** (margin-scaled — Lockware/Crash/Lag). The remaining payload *modes*
+still need their own substrate:
 
-| Payload | What it does | Needs (🔭) |
+| Payload mode | What it does | Status |
 |---|---|---|
-| **Trip a hack-effect** | fire the target implant's loaded liability **on its owner** (Seizure/Misfire/Shed/Overload/Lockout/Blind/Overdose) | the **implant model** (§4) |
-| **Deploy a worm** | plant a spreading, re-rolling contagion strain | the **Worm contagion** family |
-| **Spoof IFF** | Flip-hostile / Masquerade / Scramble / Ghost | an **IFF / targeting** layer |
-| **Disable an implant** | knock a slot **Offline** | **equipment-condition** state |
+| **Trip a hack-effect** | breach an implant → fire its liability **on the owner**, by the severity ladder | ✅ built (`apply_breach`) |
+| **Disable an implant** | knock a slot **Offline** (the ladder's floor) | ✅ built (`disable_implant`) |
+| **Deploy a worm** | plant a spreading, re-rolling contagion strain | 🔭 **Worm contagion** family |
+| **Spoof IFF** | Flip-hostile / Masquerade / Scramble / Ghost | 🔭 **IFF / targeting** layer |
 
-**Severity scales with the roll ◆** (designed in [`cyberware.md`](cyberware.md)
-§6). A breach is not one thing: a plain success **disables** the target implant
-(the floor — it just goes Offline), the **margin** magnifies its hack-effect, and
-a **crit** delivers the **knockout** (the stun class). So today's margin→stacks
-scaling is the *magnification* half; the disable floor and the crit-gated knockout
-arrive with the implant model (Phase C). The upshot — netrunning is reliable
+**Severity scales with the roll ✅** (`cyberware.md` §6). A breach is not one
+thing: a plain success **disables** the target implant (the floor — it goes
+Offline), the **margin** magnifies its degrade-class hack-effects, and a **crit**
+delivers the **knockout** (the stun class). The upshot — netrunning is reliable
 **attrition**, not a reliable hard-disable.
 
 ---

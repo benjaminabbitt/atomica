@@ -266,7 +266,7 @@ crit-gated stun; Cascade fires all). The Ripperdoc reverses the disable.
 |---|---|---|
 | **A** ✅ | `Implant` + **stat derivation** — `Unit::install` folds a `Contribution` (Link/Firewall/plating/init) into the line; `disable`/`repair` un/refold (the disable floor). Cyberdeck grants the `Hack` loadout | **built** (`implant.rs`): cyberdeck / subdermal-plating / reflex-booster presets; breach *trigger* is Phase C |
 | **B** | the **benefit roster** as content (§2 table) | deck · plating · reflex · smartgun · firewall · stim · sensor · chip |
-| **C** | **trip-on-breach** — a hack success targets an implant and applies the **severity ladder** (§6): success ⇒ **disable**, margin ⇒ **magnified liability**, crit ⇒ **knockout** (stun class) | closes the netrunning loop (real consequences); reuses the existing margin/crit roll outputs |
+| **C** ✅ | **trip-on-breach** — a hack success targets an implant (`first_active_implant`) and applies the **severity ladder** (§6): success ⇒ **disable**, margin ⇒ **degrade**, crit ⇒ **knockout** (stun) | **built** (`Battle::apply_breach`): reuses the margin/crit roll outputs; chromeless targets fall back to the deck payload. Closes the netrunning loop |
 | **D** | **condition + Ripperdoc** — Degraded/Offline/Destroyed + repair | delta §3 |
 | **E** | **EMP** — physical, Firewall-bypassing, knocks chrome Offline + trips effects | the chrome counter |
 | **F** | **PAN** mesh/segment + **Cascade** | delta §6 |

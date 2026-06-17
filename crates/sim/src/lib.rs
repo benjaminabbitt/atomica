@@ -235,6 +235,12 @@ impl Unit {
         self.implants[idx].condition = Condition::Online;
     }
 
+    /// The first active (breachable) implant — the hack's target slot (a
+    /// targeting rule is a later refinement).
+    fn first_active_implant(&self) -> Option<usize> {
+        self.implants.iter().position(|im| im.condition.is_active())
+    }
+
     fn is_stunned(&self) -> bool {
         self.statuses.iter().any(|s| matches!(s.spec.effect, Effect::Stun))
     }
@@ -269,6 +275,11 @@ impl Unit {
         m
     }
 }
+
+/// Ticks a crit-gated knockout stun lasts. Applied in the digital phase (after
+/// the action phase), so it needs ≥2 to survive decay and skip the next action.
+/// Placeholder (TBD).
+const KNOCKOUT_STUN: u32 = 2;
 
 /// The Target Number a stochastic status rolls against (its `resist` axis, §13).
 fn resist_tn(unit: &Unit, resist: Resist) -> i32 {
@@ -562,11 +573,40 @@ impl<R: RandomSource> Battle<R> {
         let rating = hack_rating(self.units[attacker].skill(Skill::Hacking), channel);
         let tn = self.units[target].firewall;
         let outcome = resolve_contest(&mut self.rng, Contest::new(rating, 0, tn));
-        let stacks = hack.stacks_for(&outcome);
-        if stacks > 0 {
-            self.units[target].add_status(hack.payload, hack.duration, stacks);
-        }
+        let stacks =
+            if outcome.success { self.apply_breach(target, &outcome, hack) } else { 0 };
         HackResult::Rolled { outcome, stacks }
+    }
+
+    /// Apply a successful hack's consequences — the §6 **severity ladder**
+    /// (`docs/cyberware.md`): breach a target implant (**disable** floor →
+    /// margin-scaled **degrade** → crit **knockout**), firing its `hack_effects`
+    /// per effect. If the target carries no chrome to trip, land the deck's own
+    /// payload instead (a generic intrusion). Returns the magnitude landed.
+    fn apply_breach(&mut self, target: usize, outcome: &RollOutcome, hack: Hack) -> u32 {
+        let Some(idx) = self.units[target].first_active_implant() else {
+            // No chrome to trip — run the deck's own payload.
+            let stacks = hack.stacks_for(outcome);
+            if stacks > 0 {
+                self.units[target].add_status(hack.payload, hack.duration, stacks);
+            }
+            return stacks;
+        };
+        // Floor: disable the implant (unfold its benefit); collect its liabilities.
+        let effects = self.units[target].disable_implant(idx);
+        let degrade = hack::margin_stacks(outcome.margin);
+        for spec in effects {
+            if matches!(spec.effect, Effect::Stun) {
+                // Knockout class — crit-gated (a decisive hack only).
+                if outcome.crit {
+                    self.units[target].add_status(spec, KNOCKOUT_STUN, 1);
+                }
+            } else if degrade > 0 {
+                // Degrade class — magnified by the margin.
+                self.units[target].add_status(spec, degrade, degrade);
+            }
+        }
+        degrade
     }
 
     /// Nearest enemy with a digital surface (Link > 0) within the unit's antenna
@@ -1090,6 +1130,68 @@ mod tests {
         assert!(u.hack.is_some());
         assert_eq!(u.link, 5);
         assert_eq!(u.implants[0].condition, Condition::Online);
+    }
+
+    #[test]
+    fn a_marginal_hack_just_disables_the_implant() {
+        // Margin 0 success → the §6 floor: disable only, no liability fired.
+        let mut atk = runner(0, Team::A, 0, 4); // Link 3
+        atk.skills.set(Skill::Hacking, 4);
+        let mut tgt = unit(1, Team::B, 1);
+        tgt.link = 2;
+        tgt.install(Implant::reflex_booster()); // Seizure liability (stun)
+        tgt.firewall = 12; // channel min(3,2)=2 → rating avg(4,2)=3; dice 9 → 12 = TN, margin 0
+        let mut b = Battle::with_rng(vec![atk, tgt], ScriptedRng::from_d6([3, 3, 3]));
+        assert!(b.resolve_hack(0, 1).landed());
+        assert_eq!(b.units[1].implants[0].condition, Condition::Offline); // disabled
+        assert!(b.units[1].statuses.is_empty()); // nothing fired (margin 0, no crit)
+    }
+
+    #[test]
+    fn a_solid_hack_disables_and_fires_the_degrade_liability() {
+        // Strong margin → disable + the degrade-class hack-effect, margin-scaled.
+        let mut atk = runner(0, Team::A, 0, 4); // Link 3
+        atk.skills.set(Skill::Hacking, 6);
+        let mut tgt = unit(1, Team::B, 1);
+        tgt.link = 4;
+        tgt.install(Implant::subdermal_plating()); // Shed = Corrode (not stun)
+        tgt.firewall = 4; // channel min(3,4)=3 → rating avg(6,3)=4; dice 9 → 13 vs 4, margin 9
+        let mut b = Battle::with_rng(vec![atk, tgt], ScriptedRng::from_d6([3, 3, 3]));
+        b.resolve_hack(0, 1);
+        assert_eq!(b.units[1].implants[0].condition, Condition::Offline);
+        assert_eq!(b.units[1].statuses[0].spec.name, "Corrode"); // Shed fired
+        assert_eq!(b.units[1].statuses[0].stacks, 3); // margin 9 / 3
+    }
+
+    #[test]
+    fn a_crit_delivers_the_knockout_stun() {
+        // The stun class is crit-gated — only a decisive hack lands it.
+        let mut atk = runner(0, Team::A, 0, 4);
+        atk.skills.set(Skill::Hacking, 4);
+        let mut tgt = unit(1, Team::B, 1);
+        tgt.link = 3;
+        tgt.firewall = 12;
+        tgt.install(Implant::reflex_booster()); // Seizure (stun)
+        let mut b = Battle::with_rng(vec![atk, tgt], ScriptedRng::from_d6([6, 6, 6])); // nat 18
+        b.resolve_hack(0, 1);
+        assert_eq!(b.units[1].implants[0].condition, Condition::Offline);
+        assert!(b.units[1].statuses.iter().any(|s| matches!(s.spec.effect, Effect::Stun)));
+    }
+
+    #[test]
+    fn breaching_a_deck_silences_the_targets_own_hacking() {
+        // A netrunner whose deck is breached can't hack back (benefit unfolds).
+        let mut atk = runner(0, Team::A, 0, 4);
+        atk.skills.set(Skill::Hacking, 6);
+        let mut tgt = unit(1, Team::B, 1);
+        tgt.skills.set(Skill::Hacking, 4);
+        tgt.install(Implant::cyberdeck()); // grants the hack + Link 5
+        assert!(tgt.hack.is_some());
+        tgt.firewall = 4;
+        let mut b = Battle::with_rng(vec![atk, tgt], ScriptedRng::from_d6([3, 3, 3]));
+        b.resolve_hack(0, 1);
+        assert!(b.units[1].hack.is_none()); // deck bricked → no hacking back
+        assert_eq!(b.units[1].implants[0].condition, Condition::Offline);
     }
 
     #[test]
