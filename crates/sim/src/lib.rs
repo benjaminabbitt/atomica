@@ -636,6 +636,14 @@ mod tests {
     }
 
     #[test]
+    fn winfight_fails_on_fight_end_without_victory() {
+        // Both sides still standing: Pending while ongoing, Failed once the fight ends.
+        let standoff = vec![unit(0, Team::A, 0), unit(1, Team::B, 1)];
+        assert_eq!(WinFight.status(&standoff, 9, false), ObjectiveStatus::Pending);
+        assert_eq!(WinFight.status(&standoff, 9, true), ObjectiveStatus::Failed);
+    }
+
+    #[test]
     fn survive_objective_met_at_the_deadline() {
         let obj = Survive { rounds: 3 };
         let alive = vec![unit(0, Team::A, 0)];

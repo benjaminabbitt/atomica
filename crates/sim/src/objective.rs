@@ -44,14 +44,14 @@ fn count_alive(units: &[Unit], team: Team) -> u32 {
     units.iter().filter(|u| u.is_alive() && u.team == team).count() as u32
 }
 
-/// The simple objective: **win the standard fight** (wipe the enemy). Fails only
-/// if the player is wiped.
+/// The simple objective: **win the standard fight** (wipe the enemy). Its fail
+/// condition is the **fight ending without victory** (a loss or a draw).
 pub struct WinFight;
 impl Objective for WinFight {
-    fn status(&self, units: &[Unit], _tick: u32, _fight_over: bool) -> ObjectiveStatus {
+    fn status(&self, units: &[Unit], _tick: u32, fight_over: bool) -> ObjectiveStatus {
         match (any_alive(units, PLAYER), any_alive(units, ENEMY)) {
-            (true, false) => ObjectiveStatus::Achieved, // enemy wiped → won
-            (false, _) => ObjectiveStatus::Failed,      // player wiped → lost
+            (true, false) => ObjectiveStatus::Achieved, // victory
+            _ if fight_over => ObjectiveStatus::Failed, // fight ended without victory
             _ => ObjectiveStatus::Pending,
         }
     }
