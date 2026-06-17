@@ -12,7 +12,7 @@
 //! tripping an implant and applying its `hack_effects`) and PAN / slots come in
 //! later phases — the fields are here, the wiring is not.
 
-use crate::chargen::{Capability, Decorator, Factor, Stat, Tag};
+use crate::chargen::{Capability, Condition, Decorator, Factor, Stat, Tag};
 use crate::{Hack, StatusSpec};
 
 /// A unit's **Personal Area Network** mode (`docs/cyberware.md` §5, delta §6) — a
@@ -29,43 +29,9 @@ pub enum Pan {
     Segmented,
 }
 
-/// Live state of an implant (`docs/cyberware.md` §6): `Online → Degraded →
-/// Offline → Destroyed`.
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub enum Condition {
-    Online,
-    Degraded,
-    Offline,
-    Destroyed,
-}
-
-impl Condition {
-    /// Does the implant deliver (some of) its benefit right now? (Online or
-    /// Degraded; an Offline / Destroyed implant contributes nothing.)
-    pub fn is_active(self) -> bool {
-        matches!(self, Condition::Online | Condition::Degraded)
-    }
-
-    /// Fraction of its benefit the implant delivers now (`docs/cyberware.md` §6):
-    /// Online full, **Degraded half**, Offline / Destroyed none.
-    pub fn benefit_factor(self) -> f32 {
-        match self {
-            Condition::Online => 1.0,
-            Condition::Degraded => 0.5,
-            Condition::Offline | Condition::Destroyed => 0.0,
-        }
-    }
-
-    /// One step down the wear ladder: `Online → Degraded → Offline → Destroyed`
-    /// (Destroyed is terminal).
-    pub fn degraded(self) -> Condition {
-        match self {
-            Condition::Online => Condition::Degraded,
-            Condition::Degraded => Condition::Offline,
-            Condition::Offline | Condition::Destroyed => Condition::Destroyed,
-        }
-    }
-}
+// `Condition` (the Online→Degraded→Offline→Destroyed ladder) now lives on the
+// generic `Decorator` ([`chargen::Condition`], `docs/layers.md` L5) — re-exported by
+// the crate root. An implant's `condition` field is its authored starting state.
 
 /// The stat deltas an implant folds into its owner while active. Link / Firewall
 /// are the digital surface (exposure + defense); plating / initiative / damage /
@@ -180,12 +146,10 @@ impl Implant {
 
     /// Project this implant as a [`Decorator`] on the layer architecture
     /// (`docs/layers.md` L2): each nonzero [`Contribution`] field becomes an `Add`
-    /// [`Factor`], the [`Condition`] becomes the decorator's **`scale`**
-    /// ([`benefit_factor`](Condition::benefit_factor) — Degraded `0.5`, Offline `0.0`),
-    /// and a granted deck loadout becomes a [`Capability::Hack`]. The breach ladder
-    /// then drives the implant by `set_scale` (degrade / disable / repair) on the
-    /// `Character`'s gen; the liabilities it fires (`hack_effects`) join once statuses
-    /// become decorators (L2b).
+    /// [`Factor`], the [`Condition`] is carried on the decorator (it scales the
+    /// factors — Degraded `0.5`, Offline `0.0`), and a granted deck loadout becomes a
+    /// [`Capability::Hack`]. The breach ladder drives the implant by `set_condition`
+    /// (degrade / disable / repair) on the `Character`'s gen.
     pub fn to_decorator(&self) -> Decorator {
         let c = self.contribution;
         let mut factors = Vec::new();
@@ -207,7 +171,7 @@ impl Implant {
         if c.max_integrity != 0.0 {
             factors.push(Factor::add(Stat::MaxIntegrity, c.max_integrity));
         }
-        let mut d = Decorator::gear(Tag::Implant, factors).with_scale(self.condition.benefit_factor());
+        let mut d = Decorator::gear(Tag::Implant, factors).with_condition(self.condition);
         if let Some(h) = self.grant_hack {
             d = d.with_grant(Capability::Hack(h));
         }
@@ -248,7 +212,7 @@ mod tests {
         let mut c = Character::new(chassis());
         let deck = c.install(Implant::cyberdeck().to_decorator());
         // disable floor (§6): Offline → scale 0.
-        c.set_scale(deck, Condition::Offline.benefit_factor());
+        c.set_condition(deck, Condition::Offline);
         let r = c.realize();
         assert_eq!(r.link(), 0); // surface gone
         assert_eq!(r.firewall(), 9); // wall back to base
@@ -260,11 +224,11 @@ mod tests {
         let mut c = Character::new(chassis());
         let plate = c.install(Implant::subdermal_plating().to_decorator()); // +6 plating
         assert_eq!(c.realize().plating(), 6.0); // Online: full
-        c.set_scale(plate, Condition::Degraded.benefit_factor());
+        c.set_condition(plate, Condition::Degraded);
         assert_eq!(c.realize().plating(), 3.0); // Degraded: half — wear, no liability
-        c.set_scale(plate, Condition::Offline.benefit_factor());
+        c.set_condition(plate, Condition::Offline);
         assert_eq!(c.realize().plating(), 0.0); // Offline: none
-        c.set_scale(plate, Condition::Online.benefit_factor());
+        c.set_condition(plate, Condition::Online);
         assert_eq!(c.realize().plating(), 6.0); // Ripperdoc repair — same decorator
     }
 
@@ -277,13 +241,13 @@ mod tests {
         assert_eq!(c.integrity, 38.0);
 
         // breach the pump: max drops, current chunks to the new cap (§3a).
-        c.set_scale(pump, Condition::Offline.benefit_factor());
+        c.set_condition(pump, Condition::Offline);
         c.clamp_integrity();
         assert_eq!(c.realize().max_integrity(), 30.0);
         assert_eq!(c.integrity, 30.0);
 
         // repair: capacity returns, but current does NOT refill (repair ≠ heal).
-        c.set_scale(pump, Condition::Online.benefit_factor());
+        c.set_condition(pump, Condition::Online);
         c.clamp_integrity();
         assert_eq!(c.realize().max_integrity(), 38.0);
         assert_eq!(c.integrity, 30.0);
@@ -315,7 +279,7 @@ mod tests {
 
     #[test]
     fn emp_fries_all_chrome_at_once() {
-        // EMP is the gen-op `scale_where(Implant, 0)` — every implant Offline at once
+        // EMP is the gen-op `condition_where(Implant, Offline)` — all chrome Offline at once
         // (docs/cyberware.md §5; the per-roll Cascade gating stays with the resolver).
         let mut c = Character::new(chassis());
         c.install(Implant::cyberdeck().to_decorator());
@@ -324,7 +288,7 @@ mod tests {
         assert_eq!(c.realize().link(), 5);
         assert!(c.realize().hack().is_some());
 
-        c.scale_where(Tag::Implant, 0.0); // pulse
+        c.condition_where(Tag::Implant, Condition::Offline); // pulse
         let r = c.realize();
         assert_eq!(r.link(), 0); // surface gone
         assert_eq!(r.plating(), 0.0); // plating gone
@@ -340,7 +304,7 @@ mod tests {
         let stim = Implant::combat_stim(); // Overdose: Bleed + Crash
         let id = c.install(stim.to_decorator());
         c.fill();
-        c.set_scale(id, Condition::Offline.benefit_factor()); // disable floor
+        c.set_condition(id, Condition::Offline); // disable floor
 
         // fire the degrade-class liability (Bleed) at margin-scaled stacks.
         c.install(stim.hack_effects[0].to_decorator(2, 0));

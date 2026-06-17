@@ -39,13 +39,13 @@ mod status;
 pub use armor::ArmorClass;
 pub use board::{Board, SeamOffset};
 pub use chargen::{
-    Amount, BaseLine, Capability, Character, Decorator, DamageEvent, Event, Expiration, Factor,
-    FactorKind, Flag, GenId, Hook, HookEffect, Modifier, ModifierKind, Override, Priority, Reaction,
-    Realized, Remove, Stat, Tag, Wear,
+    Amount, BaseLine, Capability, Character, Condition, Decorator, DamageEvent, Event, Expiration,
+    Factor, FactorKind, Flag, GenId, Hook, HookEffect, Modifier, ModifierKind, Override, Priority,
+    Reaction, Realized, Remove, Stat, Tag, Wear,
 };
 pub use hack::{hack_rating, Hack, HackResult};
 pub use hex::Hex;
-pub use implant::{Condition, Contribution, Implant, Pan};
+pub use implant::{Contribution, Implant, Pan};
 pub use profile::{MovementProfile, TargetingProfile};
 pub use objective::{
     Goal, Hold, MarginLoss, Objective, ObjectiveKind, ObjectiveStatus, Objectives, Reach, Survive,

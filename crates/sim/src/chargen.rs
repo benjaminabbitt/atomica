@@ -255,6 +255,45 @@ pub enum Wear {
     ByStacks,
 }
 
+/// A decorator's **condition ladder** (`docs/cyberware.md` §6, layers.md L5): the
+/// 4-state benefit gate `Online → Degraded → Offline → Destroyed`. It scales every
+/// numeric factor the decorator adds (and gates its overrides / grant / ward / hooks).
+/// Gear, buffs and statuses sit at `Online`; only chrome wears down it. **Destroyed**
+/// is terminal — a repair can't bring it back.
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
+pub enum Condition {
+    #[default]
+    Online,
+    Degraded,
+    Offline,
+    Destroyed,
+}
+
+impl Condition {
+    /// Does it deliver (some of) its benefit now? (Online or Degraded.)
+    pub fn is_active(self) -> bool {
+        matches!(self, Condition::Online | Condition::Degraded)
+    }
+
+    /// Fraction delivered now: Online full, **Degraded half**, Offline / Destroyed none.
+    pub fn benefit_factor(self) -> f32 {
+        match self {
+            Condition::Online => 1.0,
+            Condition::Degraded => 0.5,
+            Condition::Offline | Condition::Destroyed => 0.0,
+        }
+    }
+
+    /// One step down the wear ladder (Destroyed is terminal).
+    pub fn degraded(self) -> Condition {
+        match self {
+            Condition::Online => Condition::Degraded,
+            Condition::Degraded => Condition::Offline,
+            Condition::Offline | Condition::Destroyed => Condition::Destroyed,
+        }
+    }
+}
+
 /// A **character generator** (`chargen`) — a stateful decorator. Its **passive face**
 /// is the modifiers it contributes (`factors` · `overrides` · `flags`); its **active
 /// face** is its lifecycle (`expiration` / `decay` / `stacks`), the modifiers it
@@ -269,12 +308,12 @@ pub struct Decorator {
     /// Slot in the priority-ordered gen — higher wins overrides (default
     /// [`Priority::GEAR`]).
     pub priority: Priority,
-    /// The fraction of its benefit the decorator currently delivers — the cyberware
-    /// **condition ladder** (`docs/cyberware.md` §6): Online `1.0`, **Degraded `0.5`**,
-    /// Offline/Destroyed `0.0`. Scales every numeric factor; at `0.0` the decorator
-    /// contributes **nothing** (factors, overrides, grant, ward all gated off) without
-    /// losing its identity (`id`/`source`) — so a breach can degrade then repair it.
-    pub scale: f32,
+    /// The [`Condition`] ladder gating its benefit (Online / Degraded / Offline /
+    /// Destroyed). Scales every numeric factor and gates overrides / grant / ward /
+    /// hooks; at `Offline`+ the decorator contributes **nothing** without losing its
+    /// identity (`id`/`source`) — so a breach can degrade then repair it. Gear / buffs
+    /// / statuses stay `Online`.
+    pub condition: Condition,
     /// Mutable self-state: how many stacks the decorator holds — scales its event
     /// reactions and (under [`Wear::ByStacks`]) is its lifetime.
     pub stacks: u32,
@@ -302,7 +341,7 @@ impl Decorator {
         Self {
             tag,
             priority: Priority::GEAR,
-            scale: 1.0,
+            condition: Condition::Online,
             stacks: 1,
             expiration: Expiration::Permanent,
             decay: Wear::None,
@@ -372,15 +411,20 @@ impl Decorator {
         self
     }
 
-    /// Builder: set the initial benefit fraction (default `1.0` = Online).
-    pub fn with_scale(mut self, scale: f32) -> Self {
-        self.scale = scale;
+    /// Builder: set the initial [`Condition`] (default `Online`).
+    pub fn with_condition(mut self, condition: Condition) -> Self {
+        self.condition = condition;
         self
     }
 
-    /// Does the decorator deliver (some of) its benefit right now? (`scale > 0`.)
+    /// Does the decorator deliver (some of) its benefit right now? (Online / Degraded.)
     pub fn is_active(&self) -> bool {
-        self.scale > 0.0
+        self.condition.is_active()
+    }
+
+    /// The benefit fraction it currently delivers (the condition's factor).
+    pub fn benefit(&self) -> f32 {
+        self.condition.benefit_factor()
     }
 
     /// Has it worn off — duration ran out, or stack-decay emptied it?
@@ -612,23 +656,35 @@ impl Character {
         self.gen.retain(|d| d.tag != tag);
     }
 
-    /// Set a decorator's benefit fraction in place — the breach / repair path
-    /// (`docs/cyberware.md` §6): Degraded `0.5`, Offline `0.0`, repaired back to
-    /// `1.0`. Keeps the decorator's identity (`id`/`source`) so it can recover.
-    pub fn set_scale(&mut self, id: GenId, scale: f32) {
+    /// Set a decorator's [`Condition`] in place — the breach / degrade / repair path
+    /// (`docs/cyberware.md` §6). Keeps the decorator's identity (`id`/`source`) so it
+    /// can recover (unless Destroyed, which is terminal).
+    pub fn set_condition(&mut self, id: GenId, condition: Condition) {
         if let Some(d) = self.gen.iter_mut().find(|d| d.id == id) {
-            d.scale = scale;
+            d.condition = condition;
         }
     }
 
-    /// Set the benefit fraction of **every** decorator with `tag` — the gen-level
-    /// op behind EMP (`scale_where(Implant, 0.0)` fries all chrome) and a mass
-    /// repair. (`docs/cyberware.md` §5; the Cascade's crit/mesh gating stays with the
-    /// hack resolver.)
-    pub fn scale_where(&mut self, tag: Tag, scale: f32) {
+    /// The current [`Condition`] of the decorator `id` (if present).
+    pub fn condition_of(&self, id: GenId) -> Option<Condition> {
+        self.gen.iter().find(|d| d.id == id).map(|d| d.condition)
+    }
+
+    /// Set the [`Condition`] of **every** decorator with `tag` — the gen-level op
+    /// behind EMP (`condition_where(Implant, Offline)` fries all chrome) and a mass
+    /// repair (`docs/cyberware.md` §5). Returns the affected ids.
+    pub fn condition_where(&mut self, tag: Tag, condition: Condition) -> Vec<GenId> {
+        let mut hit = Vec::new();
         for d in self.gen.iter_mut().filter(|d| d.tag == tag) {
-            d.scale = scale;
+            d.condition = condition;
+            hit.push(d.id);
         }
+        hit
+    }
+
+    /// The ids of all **active** decorators with `tag` (Cascade / mesh-synergy use this).
+    pub fn active_ids(&self, tag: Tag) -> Vec<GenId> {
+        self.gen.iter().filter(|d| d.tag == tag && d.is_active()).map(|d| d.id).collect()
     }
 
     /// One **decay step** (the cleanup phase, §1): wear every decorator by its
@@ -733,7 +789,7 @@ impl Character {
                 continue;
             }
             for &f in &dec.factors {
-                let scaled = Factor { value: f.value * dec.scale, ..f };
+                let scaled = Factor { value: f.value * dec.benefit(), ..f };
                 mods.push(Modifier {
                     source: dec.id,
                     tag: dec.tag,
@@ -1059,11 +1115,11 @@ mod tests {
             vec![Factor::add(Stat::MaxIntegrity, 20.0)],
         ));
         assert_eq!(c.realize().max_integrity(), 50.0); // Online: full +20
-        c.set_scale(imp, 0.5);
+        c.set_condition(imp, Condition::Degraded);
         assert_eq!(c.realize().max_integrity(), 40.0); // Degraded: +10
-        c.set_scale(imp, 0.0);
+        c.set_condition(imp, Condition::Offline);
         assert_eq!(c.realize().max_integrity(), 30.0); // Offline: nothing
-        c.set_scale(imp, 1.0);
+        c.set_condition(imp, Condition::Online);
         assert_eq!(c.realize().max_integrity(), 50.0); // repaired — same decorator
     }
 
@@ -1081,9 +1137,9 @@ mod tests {
             Decorator::gear(Tag::Implant, vec![Factor::add(Stat::Link, 5.0)]).with_grant(a_deck(6)),
         );
         assert!(c.realize().hack().is_some()); // Online → can hack
-        c.set_scale(deck, 0.0); // breach → Offline
+        c.set_condition(deck, Condition::Offline); // breach
         assert!(c.realize().hack().is_none()); // hack drops with the deck
-        c.set_scale(deck, 0.5); // Degraded still grants
+        c.set_condition(deck, Condition::Degraded); // Degraded still grants
         assert!(c.realize().hack().is_some());
         c.remove(deck);
         assert!(c.realize().hack().is_none()); // removed entirely
