@@ -15,8 +15,8 @@
 //! - the [`armor`] matrix (damage type vs armor class);
 //! - the [`status`] pool on the design's 9-axis schema (DoTs, Crash/Lag, Breach,
 //!   Corrode), processed each tick;
-//! - [`hack`]ing — the netrunning digital attack (`3d6 + Hacking + deck` vs
-//!   Firewall, Link-gated, §7F/§13);
+//! - [`hack`]ing — the netrunning digital attack (`3d6 + min(Link, Hacking)` vs
+//!   `min(Link, Firewall)`; Link is the bandwidth that caps both sides, §7F/§13);
 //! - an initiative-ordered tick loop with a minimal "attack nearest / step toward"
 //!   resolution plus a digital pass.
 //!
@@ -195,6 +195,13 @@ impl Unit {
             }
         }
         init
+    }
+
+    /// Digital **bandwidth** — Link floored to an integer (§7D). It caps how much
+    /// Hacking (offense) or Firewall (defense) actually comes to bear on a hack:
+    /// `min(band, stat)`. (Zero Link is handled earlier as the hard immunity gate.)
+    fn digital_band(&self) -> i32 {
+        self.link.max(0.0).floor() as i32
     }
 
     /// Incoming-damage multiplier from Breach-style vulnerabilities.
@@ -482,22 +489,27 @@ impl<R: RandomSource> Battle<R> {
     }
 
     /// Resolve a netrunning hack from `attacker` onto `target` (§7F, §10.8): roll
-    /// `3d6 + Hacking + deck` vs the target's Firewall (the TN, §13), gated by
-    /// Link on both ends, landing the hack's payload (margin-scaled) on success.
+    /// `3d6 + min(Link, Hacking)` vs `min(Link, Firewall)` (Link is the bandwidth
+    /// that caps both sides, §7D/§13), with zero Link the hard immunity gate.
+    /// Lands the hack's payload (margin-scaled) on success.
     pub fn resolve_hack(&mut self, attacker: usize, target: usize) -> HackResult {
         let Some(hack) = self.units[attacker].hack else {
             return HackResult::NoHack;
         };
-        // Link gate (§7D/§7F): a runner needs net presence; the target a surface.
+        // Hard gate (§7D/§7F): a runner needs net presence; the target a surface.
         if self.units[attacker].link <= 0.0 {
             return HackResult::Offline;
         }
         if self.units[target].link <= 0.0 {
             return HackResult::NoSurface;
         }
-        let skill = self.units[attacker].skill(Skill::Hacking);
-        let tn = self.units[target].firewall;
-        let outcome = resolve_contest(&mut self.rng, Contest::new(skill, hack.power, tn));
+        // Link caps each side's digital stat (§7D): bandwidth limits what comes
+        // to bear — trained Hacking on offense, the Firewall wall on defense.
+        let atk = &self.units[attacker];
+        let rating = atk.digital_band().min(atk.skill(Skill::Hacking));
+        let tgt = &self.units[target];
+        let tn = tgt.digital_band().min(tgt.firewall);
+        let outcome = resolve_contest(&mut self.rng, Contest::new(rating, 0, tn));
         let stacks = hack.stacks_for(&outcome);
         if stacks > 0 {
             self.units[target].add_status(hack.payload, hack.duration, stacks);
@@ -586,11 +598,12 @@ mod tests {
         }
     }
 
-    /// A unit wired to hack: net presence + a Lockware deck (`power`, `range`).
-    fn runner(id: u32, team: Team, q: i32, power: i32, range: i32) -> Unit {
+    /// A unit wired to hack: net presence + a Lockware deck (antenna `range`).
+    /// Its hack strength comes from its own Link & Hacking — set those per test.
+    fn runner(id: u32, team: Team, q: i32, range: i32) -> Unit {
         let mut u = unit(id, team, q);
         u.link = 3.0;
-        u.hack = Some(Hack::new(power, range, StatusSpec::lockware(), 1, 5));
+        u.hack = Some(Hack::new(range, StatusSpec::lockware(), 1, 5));
         u
     }
 
@@ -839,8 +852,8 @@ mod tests {
 
     #[test]
     fn zero_link_target_is_immune_to_hacks() {
-        let atk = runner(0, Team::A, 0, 5, 1);
-        let mut tgt = networked(1, Team::B, 0, 0);
+        let atk = runner(0, Team::A, 0, 1);
+        let mut tgt = networked(1, Team::B, 0, 8);
         tgt.link = 0.0; // air-gapped — no surface to reach
                         // Empty RNG: a roll here would panic, proving the gate short-circuits.
         let mut b = Battle::with_rng(vec![atk, tgt], ScriptedRng::default());
@@ -850,7 +863,7 @@ mod tests {
 
     #[test]
     fn offline_attacker_cannot_hack() {
-        let mut atk = runner(0, Team::A, 0, 5, 1);
+        let mut atk = runner(0, Team::A, 0, 1);
         atk.link = 0.0; // dark — no presence to reach with
         let tgt = networked(1, Team::B, 0, 8);
         let mut b = Battle::with_rng(vec![atk, tgt], ScriptedRng::default());
@@ -859,33 +872,91 @@ mod tests {
     }
 
     #[test]
-    fn hack_lands_against_a_beatable_firewall() {
-        let atk = runner(0, Team::A, 0, 3, 1); // Augmented Hacking baseline = 1
-        let tgt = networked(1, Team::B, 0, 12);
-        // 3d6 = 12, + skill 1 + deck 3 = 16 vs Firewall 12 → margin 4, lands.
-        let mut b = Battle::with_rng(vec![atk, tgt], ScriptedRng::from_d6([4, 4, 4]));
-        let r = b.resolve_hack(0, 1);
-        assert!(r.landed());
-        assert_eq!(b.units[1].statuses.len(), 1);
-        assert_eq!(b.units[1].statuses[0].spec.name, "Lockware");
-        assert_eq!(b.units[1].statuses[0].stacks, 2); // base 1 + margin 4/3
+    fn link_caps_the_attackers_hacking() {
+        // Hacking 9, but only Link 2 of bandwidth → effective rating 2 (the min).
+        let mut atk = runner(0, Team::A, 0, 1);
+        atk.link = 2.0;
+        atk.skills.set(Skill::Hacking, 9);
+        let mut tgt = networked(1, Team::B, 0, 0);
+        tgt.link = 50.0; // isolate the attacker's cap; defender side irrelevant
+        let mut b = Battle::with_rng(vec![atk, tgt], ScriptedRng::from_d6([4, 4, 4])); // 12
+        let HackResult::Rolled { outcome, .. } = b.resolve_hack(0, 1) else { panic!() };
+        assert_eq!(outcome.total, 12 + 2); // throttled to Link 2, not Hacking 9
     }
 
     #[test]
-    fn hack_whiffs_against_a_hard_firewall() {
-        let atk = runner(0, Team::A, 0, 3, 1);
-        let tgt = networked(1, Team::B, 0, 20);
-        // 16 < Firewall 20 → whiff; nothing lands.
-        let mut b = Battle::with_rng(vec![atk, tgt], ScriptedRng::from_d6([4, 4, 4]));
-        assert!(!b.resolve_hack(0, 1).landed());
+    fn more_link_lifts_the_cap_until_hacking_is_the_ceiling() {
+        let make = |link: f32| {
+            let mut u = runner(0, Team::A, 0, 1);
+            u.link = link;
+            u.skills.set(Skill::Hacking, 5); // the ceiling
+            u
+        };
+        let tgt = || {
+            let mut t = networked(1, Team::B, 0, 0);
+            t.link = 50.0;
+            t
+        };
+        // Link 3 < Hacking 5 → rating capped at the bandwidth, 3.
+        let mut b = Battle::with_rng(vec![make(3.0), tgt()], ScriptedRng::from_d6([3, 3, 3])); // 9
+        let HackResult::Rolled { outcome, .. } = b.resolve_hack(0, 1) else { panic!() };
+        assert_eq!(outcome.total, 9 + 3);
+        // Link 8 ≥ Hacking 5 → rating capped at the skill ceiling, 5.
+        let mut b = Battle::with_rng(vec![make(8.0), tgt()], ScriptedRng::from_d6([3, 3, 3]));
+        let HackResult::Rolled { outcome, .. } = b.resolve_hack(0, 1) else { panic!() };
+        assert_eq!(outcome.total, 9 + 5);
+    }
+
+    #[test]
+    fn link_caps_the_defenders_firewall() {
+        // Firewall 99, but only Link 2 → effective TN 2; the wall barely engages.
+        let mut atk = runner(0, Team::A, 0, 1);
+        atk.link = 5.0;
+        atk.skills.set(Skill::Hacking, 5); // rating min(5, 5) = 5
+        let mut tgt = networked(1, Team::B, 0, 99);
+        tgt.link = 2.0;
+        let mut b = Battle::with_rng(vec![atk, tgt], ScriptedRng::from_d6([3, 3, 3])); // 9
+        let HackResult::Rolled { outcome, .. } = b.resolve_hack(0, 1) else { panic!() };
+        assert_eq!(outcome.margin, (9 + 5) - 2); // TN capped at Link 2, not Firewall 99
+        assert!(outcome.success);
+    }
+
+    #[test]
+    fn full_link_brings_the_firewall_fully_to_bear() {
+        // Same firewall, ample Link → TN is the full wall; the same hack now whiffs.
+        let mut atk = runner(0, Team::A, 0, 1);
+        atk.link = 3.0;
+        atk.skills.set(Skill::Hacking, 3); // rating 3
+        let mut tgt = networked(1, Team::B, 0, 16);
+        tgt.link = 20.0; // TN min(20, 16) = 16
+        let mut b = Battle::with_rng(vec![atk, tgt], ScriptedRng::from_d6([4, 4, 4])); // 12
+        let HackResult::Rolled { outcome, stacks } = b.resolve_hack(0, 1) else { panic!() };
+        assert_eq!(outcome.total, 12 + 3); // 15 vs TN 16 → whiff
+        assert!(!outcome.success);
+        assert_eq!(stacks, 0);
         assert!(b.units[1].statuses.is_empty());
     }
 
     #[test]
+    fn margin_scales_the_landed_stacks() {
+        let mut atk = runner(0, Team::A, 0, 1);
+        atk.link = 3.0;
+        atk.skills.set(Skill::Hacking, 3); // rating 3
+        let mut tgt = networked(1, Team::B, 0, 2);
+        tgt.link = 5.0; // TN min(5, 2) = 2
+        // 3d6 = 9, + rating 3 = 12 vs TN 2 → margin 10 → 1 + 10/3 = 4 stacks.
+        let mut b = Battle::with_rng(vec![atk, tgt], ScriptedRng::from_d6([3, 3, 3]));
+        assert!(b.resolve_hack(0, 1).landed());
+        assert_eq!(b.units[1].statuses[0].spec.name, "Lockware");
+        assert_eq!(b.units[1].statuses[0].stacks, 4);
+    }
+
+    #[test]
     fn digital_phase_hacks_the_nearest_reachable_enemy() {
-        let atk = runner(0, Team::A, 0, 3, 4);
-        let near = networked(1, Team::B, 2, 10); // distance 2 ≤ antenna range 4
-        let far = networked(2, Team::B, 9, 10); // out of range
+        let mut atk = runner(0, Team::A, 0, 4); // antenna range 4
+        atk.skills.set(Skill::Hacking, 3);
+        let near = networked(1, Team::B, 2, 2); // distance 2 ≤ range 4
+        let far = networked(2, Team::B, 9, 2); // out of range
         let mut b = Battle::with_rng(vec![atk, near, far], ScriptedRng::from_d6([4, 4, 4]));
         b.digital_phase();
         assert!(!b.units[1].statuses.is_empty()); // near got hacked
@@ -894,9 +965,9 @@ mod tests {
 
     #[test]
     fn a_stunned_runner_skips_its_hack() {
-        let mut atk = runner(0, Team::A, 0, 3, 4);
+        let mut atk = runner(0, Team::A, 0, 4);
         atk.add_status(StatusSpec::crash(), 1, 1); // Seizure freezes the net action too
-        let tgt = networked(1, Team::B, 1, 10);
+        let tgt = networked(1, Team::B, 1, 2);
         // Empty RNG: a stunned runner must not roll.
         let mut b = Battle::with_rng(vec![atk, tgt], ScriptedRng::default());
         b.digital_phase();
@@ -906,7 +977,9 @@ mod tests {
     #[test]
     fn hacking_resolution_is_deterministic() {
         let setup = || {
-            Battle::new(vec![runner(0, Team::A, 0, 3, 4), networked(1, Team::B, 2, 11)], 99)
+            let mut atk = runner(0, Team::A, 0, 4);
+            atk.skills.set(Skill::Hacking, 3);
+            Battle::new(vec![atk, networked(1, Team::B, 2, 2)], 99)
         };
         let mut x = setup();
         let mut y = setup();

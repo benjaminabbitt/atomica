@@ -5,8 +5,8 @@
 //! timer. All game rules live in the sim crate.
 
 use atomica_sim::{
-    ArmorClass, Attack, Battle, Chassis, DamageType, Defense, Hack, Hex, Outcome, StatusSpec, Team,
-    Unit, UnitId,
+    ArmorClass, Attack, Battle, Chassis, DamageType, Defense, Hack, Hex, Outcome, Skill, StatusSpec,
+    Team, Unit, UnitId,
 };
 use egui_macroquad::egui;
 use macroquad::prelude::*;
@@ -54,14 +54,16 @@ fn demo_battle() -> Battle {
         mk(2, "Bulwark", Team::B, 5, 0, 7.0, 4.0, 1, Bludgeoning, Contact, Plate),
         mk(3, "SMG", Team::B, 5, 2, 8.0, 6.0, 3, Piercing, External, Mail),
     ];
-    // Wire the Runner as a netrunner (Link + a Lockware deck) and give the enemy
-    // line a digital surface (Link + Firewall) so the hack layer is visible.
-    units[1].link = 3.0;
-    units[1].hack = Some(Hack::new(3, 6, StatusSpec::lockware(), 1, 6));
-    units[2].link = 2.0;
-    units[2].firewall = 8;
-    units[3].link = 2.0;
-    units[3].firewall = 8;
+    // Wire the Runner as a netrunner: Link bandwidth + Hacking skill drive the
+    // hack (3d6 + min(Link, Hacking)); the Lockware deck sets the payload + reach.
+    // Give the enemy line a digital surface (Link + Firewall) so it's hackable.
+    units[1].link = 5.0;
+    units[1].skills.set(Skill::Hacking, 4);
+    units[1].hack = Some(Hack::new(6, StatusSpec::lockware(), 1, 6));
+    units[2].link = 3.0;
+    units[2].firewall = 6;
+    units[3].link = 3.0;
+    units[3].firewall = 6;
     // Seed a couple of statuses so the pipeline is visible on first run.
     units[2].add_status(StatusSpec::burn(), 6, 3);
     units[3].add_status(StatusSpec::lag(), 6, 1);
