@@ -26,6 +26,7 @@
 pub mod armor;
 mod hack;
 mod hex;
+mod implant;
 mod objective;
 mod rng;
 mod roll;
@@ -35,6 +36,7 @@ mod status;
 pub use armor::ArmorClass;
 pub use hack::{hack_rating, Hack, HackResult};
 pub use hex::Hex;
+pub use implant::{Condition, Contribution, Implant};
 pub use objective::{
     Goal, MarginLoss, Objective, ObjectiveStatus, Objectives, Reach, Survive, TimeAttack, WinFight,
     PLAYER,
@@ -140,8 +142,13 @@ pub struct Unit {
 
     pub attack: Attack,
     /// Optional netrunning loadout — the digital action this unit takes on its
-    /// turn (§7F). `None` ⇒ no deck (a pure physical fighter).
+    /// turn (§7F). `None` ⇒ no deck. Usually **granted by a cyberdeck implant**
+    /// (folded in by [`Unit::install`]), not hand-set.
     pub hack: Option<Hack>,
+    /// Installed cyberware (`docs/cyberware.md`). Each implant folds its
+    /// [`Contribution`] into the stat line above while active; its liabilities
+    /// fire on breach. The stats above are the derived (base + Σ active) line.
+    pub implants: Vec<Implant>,
     /// Active à-la-carte statuses.
     pub statuses: Vec<Status>,
     pub alive: bool,
@@ -181,6 +188,51 @@ impl Unit {
         } else {
             self.statuses.push(Status { spec, stacks, duration });
         }
+    }
+
+    /// Install `implant`, folding its [`Contribution`] (and any granted hack) into
+    /// the derived stat line while it is active (`docs/cyberware.md` §7). The
+    /// effective line is the chassis base plus the sum of active implants.
+    pub fn install(&mut self, implant: Implant) {
+        if implant.condition.is_active() {
+            self.fold_implant(&implant, true);
+        }
+        self.implants.push(implant);
+    }
+
+    /// Fold (`add`) or unfold an active implant's contribution + granted capability.
+    fn fold_implant(&mut self, implant: &Implant, add: bool) {
+        let s = if add { 1 } else { -1 };
+        let c = implant.contribution;
+        self.link += s * c.link;
+        self.firewall += s * c.firewall;
+        self.defense.plating += s as f32 * c.plating;
+        self.initiative += s as f32 * c.initiative;
+        if let Some(h) = implant.grant_hack {
+            self.hack = add.then_some(h);
+        }
+    }
+
+    /// Knock the implant at `idx` **Offline** — a breach's "disable" floor
+    /// (`docs/cyberware.md` §6): unfold its benefit and return its `hack_effects`
+    /// for the caller to apply the severity ladder (the trigger is a later phase).
+    pub fn disable_implant(&mut self, idx: usize) -> Vec<StatusSpec> {
+        if self.implants[idx].condition.is_active() {
+            let im = self.implants[idx].clone();
+            self.fold_implant(&im, false);
+        }
+        self.implants[idx].condition = Condition::Offline;
+        self.implants[idx].hack_effects.clone()
+    }
+
+    /// Bring the implant at `idx` back **Online** — refold its benefit (the
+    /// Ripperdoc un-bricking Offline gear, §3.2).
+    pub fn repair_implant(&mut self, idx: usize) {
+        if !self.implants[idx].condition.is_active() {
+            let im = self.implants[idx].clone();
+            self.fold_implant(&im, true);
+        }
+        self.implants[idx].condition = Condition::Online;
     }
 
     fn is_stunned(&self) -> bool {
@@ -593,6 +645,7 @@ mod tests {
                 range: 1,
             },
             hack: None,
+            implants: Vec::new(),
             statuses: Vec::new(),
             alive: true,
         }
@@ -994,5 +1047,59 @@ mod tests {
             assert_eq!(a.integrity, b.integrity);
             assert_eq!(a.statuses.len(), b.statuses.len());
         }
+    }
+
+    #[test]
+    fn installing_a_cyberdeck_grants_the_hack_and_folds_the_surface() {
+        let mut u = unit(0, Team::A, 0); // base: no deck, Link 0, Firewall 0
+        assert!(u.hack.is_none());
+        u.install(Implant::cyberdeck());
+        assert!(u.hack.is_some()); // benefit: the unit can now hack
+        assert_eq!(u.link, 5); // folded surface
+        assert_eq!(u.firewall, 2); // folded wall
+    }
+
+    #[test]
+    fn subdermal_plating_folds_into_defense() {
+        let mut u = unit(0, Team::A, 0);
+        let base = u.defense.plating;
+        u.install(Implant::subdermal_plating());
+        assert_eq!(u.defense.plating, base + 6.0);
+    }
+
+    #[test]
+    fn an_offline_implant_contributes_nothing() {
+        let mut u = unit(0, Team::A, 0);
+        let mut deck = Implant::cyberdeck();
+        deck.condition = Condition::Offline; // installed dead
+        u.install(deck);
+        assert!(u.hack.is_none());
+        assert_eq!(u.link, 0);
+    }
+
+    #[test]
+    fn disabling_drops_the_benefit_then_repair_restores_it() {
+        let mut u = unit(0, Team::A, 0);
+        u.install(Implant::cyberdeck());
+        let effects = u.disable_implant(0); // the §6 disable floor (a breach)
+        assert!(u.hack.is_none()); // bricked — lost the deck
+        assert_eq!(u.link, 0); // surface folded back out
+        assert!(!effects.is_empty()); // liabilities returned for the ladder (later phase)
+        assert_eq!(u.implants[0].condition, Condition::Offline);
+        u.repair_implant(0); // Ripperdoc
+        assert!(u.hack.is_some());
+        assert_eq!(u.link, 5);
+        assert_eq!(u.implants[0].condition, Condition::Online);
+    }
+
+    #[test]
+    fn an_installed_deck_lets_a_unit_hack_in_the_digital_phase() {
+        let mut atk = unit(0, Team::A, 0);
+        atk.skills.set(Skill::Hacking, 4);
+        atk.install(Implant::cyberdeck()); // grants hack + Link 5
+        let tgt = networked(1, Team::B, 1, 9); // soft target, in deck range 6
+        let mut b = Battle::with_rng(vec![atk, tgt], ScriptedRng::from_d6([4, 4, 4]));
+        b.digital_phase();
+        assert!(!b.units[1].statuses.is_empty()); // hacked via the installed deck
     }
 }

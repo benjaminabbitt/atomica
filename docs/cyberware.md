@@ -264,7 +264,7 @@ crit-gated stun; Cascade fires all). The Ripperdoc reverses the disable.
 
 | Phase | Deliverable | Notes |
 |---|---|---|
-| **A** | `Implant` + **stat derivation** — Unit = chassis base + Σ implants | foundational; refactors the flat stat line. The Cyberdeck implant grants the existing `Hack` loadout |
+| **A** ✅ | `Implant` + **stat derivation** — `Unit::install` folds a `Contribution` (Link/Firewall/plating/init) into the line; `disable`/`repair` un/refold (the disable floor). Cyberdeck grants the `Hack` loadout | **built** (`implant.rs`): cyberdeck / subdermal-plating / reflex-booster presets; breach *trigger* is Phase C |
 | **B** | the **benefit roster** as content (§2 table) | deck · plating · reflex · smartgun · firewall · stim · sensor · chip |
 | **C** | **trip-on-breach** — a hack success targets an implant and applies the **severity ladder** (§6): success ⇒ **disable**, margin ⇒ **magnified liability**, crit ⇒ **knockout** (stun class) | closes the netrunning loop (real consequences); reuses the existing margin/crit roll outputs |
 | **D** | **condition + Ripperdoc** — Degraded/Offline/Destroyed + repair | delta §3 |

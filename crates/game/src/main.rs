@@ -5,8 +5,8 @@
 //! timer. All game rules live in the sim crate.
 
 use atomica_sim::{
-    ArmorClass, Attack, Battle, Chassis, DamageType, Defense, Hack, Hex, Outcome, Skill, StatusSpec,
-    Team, Unit, UnitId,
+    ArmorClass, Attack, Battle, Chassis, DamageType, Defense, Hex, Implant, Outcome, Skill,
+    StatusSpec, Team, Unit, UnitId,
 };
 use egui_macroquad::egui;
 use macroquad::prelude::*;
@@ -42,6 +42,7 @@ fn demo_battle() -> Battle {
         immunity: 0,
         attack: Attack { damage: dmg, dtype, pen, range },
         hack: None,
+        implants: Vec::new(),
         statuses: Vec::new(),
         alive: true,
     };
@@ -54,15 +55,14 @@ fn demo_battle() -> Battle {
         mk(2, "Bulwark", Team::B, 5, 0, 7.0, 4.0, 1, Bludgeoning, Contact, Plate),
         mk(3, "SMG", Team::B, 5, 2, 8.0, 6.0, 3, Piercing, External, Mail),
     ];
-    // Wire the Runner as a netrunner: Hacking + the connection channel drive the
-    // hack (3d6 + avg(Hacking, channel), channel = weaker endpoint's Link); the
-    // Lockware deck sets the payload + reach. The enemy line shows the spread
-    // (§ netrunning calibration): Bulwark is a hardened, connected "fortress"
-    // (high Firewall + high Link → deep if cracked), SMG a soft, low-Link "mook"
-    // (easy to land but the thin channel keeps it shallow).
-    units[1].link = 5;
+    // Wire the Runner as a netrunner by **installing a cyberdeck** — the implant
+    // grants the hack loadout and folds in its Link (5) + Firewall (the derived
+    // stat line, docs/cyberware.md §7). Its Hacking is a character skill.
     units[1].skills.set(Skill::Hacking, 4);
-    units[1].hack = Some(Hack::new(6, StatusSpec::lockware(), 1, 6));
+    units[1].install(Implant::cyberdeck());
+    // The enemy line shows the netrunning spread (§ calibration): Bulwark is a
+    // hardened, connected "fortress" (deep if cracked); SMG a soft, low-Link
+    // "mook" (easy to land but the thin channel keeps it shallow).
     units[2].link = 5;
     units[2].firewall = 15; // hardened + connected
     units[3].link = 2;
