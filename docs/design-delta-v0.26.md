@@ -456,3 +456,27 @@ So Rep has two inputs: **fielding affiliated units** (the live unit-summation, �
 - **Recruitment** — draft / hire chassis · archetypes · veterans (§13 #17).
 - **Jobs board** — the Rep + gear faucet (§9).
 - **Loadout station** *(free config, not a purchase)* — assign movement / targeting profiles, set **PAN segmentation** (§13 #7), install skill chips, manage insurance.
+
+---
+
+## 15. Run structure — the navigation tree ◆
+
+The roguelike run is a **branching navigation tree** (Slay-the-Spire-style map) of nodes from start to a boss, **rolled per run** (seeded). At each branch you **choose your route**, trading off reward, risk, Rep, and recovery. (**"Flight"** = a battle / combat sortie — the in-world term.)
+
+**Node types:**
+
+| Node | What |
+|---|---|
+| **Flight** (battle) | the auto-resolved combats; **elite / boss flights** are tougher |
+| **Economy / shop** | a §14 market (2 vendors/category — buy, sell) |
+| **Job** | a faction contract (§9) — alt objective, Rep + gear |
+| **Event** | a choice / dilemma (narrative, gambles, faction overtures) |
+| **Fixer** | intel (scout ahead), Rep brokering, black-market |
+| **Clinic / Rest** | heal · chrome-repair · Worm-cleanse (menders as a service) |
+| **Raid** | a forced **cop** encounter spawned by Notoriety (§13 #2) |
+
+**Cadence ◆:** between **flights**, the route runs through **2–3 economy / shopping segments** (shop · Job · event · rest) — the downtime where the casualty economy (§9.4), the *Recovered-units-sit-out-one-segment* rule (§13 #13), and Rep flows play out across **multiple stops**, not one.
+
+**Routing is the strategy:** you see the tree ahead and plan — dive for Jobs (Rep + gear, risk), stock up at shops, rest to recover downed units, or rush the boss. Branches force trade-offs (you can't hit every node), and **Notoriety + the dynamic rivalry (§13 #3) reshape which nodes and enemies appear** — so no two runs route the same.
+
+**Factoring:** `atomica-run` owns the tree — seeded generation, node resolution, routing; the `sim` only runs **Flight** nodes. The tree is run-state. *(⏳ tuning: tree depth, flights-per-run, node mix, boss structure.)*
