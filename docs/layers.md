@@ -17,18 +17,22 @@ until it lands.*
 
 Equipment is **not special-cased**, and the decorator **does not implement the unit
 interface**. Instead, each piece of kit is a **character generator** (`chargen`) ◆ —
-a decorator that **emits a `Character`**: given the character so far, it **adds (and
-may remove) `Modifier`s** on it and returns it. A pipeline of generators
-(base → implant → weapon → armor → …) **builds the `Character`**, accumulating its
-**referenceable modifier set**; the `Character`'s **accessors** then **sum and
-operate** over those modifiers (the §2 math) to answer each query.
+a stateful decorator that **emits a `Character`**: given the character so far, it
+**adds (and may remove) `Modifier`s** on it and returns it. `chargen` is **the
+modification interface** — *every* change to a character flows through it. The
+persistent state is the **decorator set**; the `Character` is **created on demand**
+by running the decorators over the `base` (base → implant → weapon → armor → …),
+accumulating its **referenceable modifier set**; the `Character`'s **accessors** then
+**sum and operate** over those modifiers (the §2 math) to answer each query.
 
 So the split is three clean roles:
-- **`chargen` (decorators) emit a `Character`** — their *output is the character*,
-  not a bag of modifiers. Their job is to **decorate** it: **add their modifiers**
-  (each stamped with the decorator's id), and **remove** others' where they counter.
-- **The `Character` holds** the base + the **referenceable modifier set** (add /
-  remove / look-up by id, `source`, or `tag`).
+- **`chargen` (decorators) are the modification interface** — they **emit a
+  `Character`** by decorating it: **add their modifiers** (each stamped with the
+  decorator's id), and **remove** others' where they counter. Stateful: they hold an
+  `expiration` and **receive events** (which may modify them).
+- **The persistent state is the decorator set** (+ base + live state); the
+  **`Character` is the on-demand composed view** — its referenceable modifier set is
+  produced by running the decorators, queried/looked-up by id, `source`, or `tag`.
 - **The `Character`'s accessors do the math** — `link()` / `attack()` / … **sum the
   factors and run the operations** (sum / multiply / pick-override). There is **no
   separate orchestrator**; the calculation lives in the accessors.
@@ -58,12 +62,14 @@ Kinds of `Modifier`: a numeric **`Factor`** `{ stat, kind: Add/Increased/More, v
 (§2) · an **`Override`** (behavior / capability) · and other modifying components (a
 granted pool, a hook). All share the interface — **referenceable, removable**.
 
-**`CharacterGenerator`** (`chargen`) — the **one uniform type** for everything that
-shapes a character (gear · weapons · armor · augments · consumables · buffs · a
-spoof). `generate(character) → character` **decorates** it: it **adds** its modifiers
-and **may remove** others' (a Vaccinated cleanse removes `Virus`-tagged modifiers; a
-Ripperdoc removes a breach's disable), then **returns the character**. Its output *is
-a character*, not modifiers.
+**`CharacterGenerator`** (`chargen`) is **the modification interface** ◆ — the *one*
+interface through which a character is ever modified. Everything that shapes a
+character — gear · weapons · armor · augments · consumables · buffs · a spoof · and
+a decorator reacting to an event — does so **through `chargen`**.
+`generate(character) → character` **decorates** it: **adds** its modifiers and **may
+remove** others' (a Vaccinated cleanse removes `Virus`-tagged modifiers; a Ripperdoc
+removes a breach's disable), then **returns the character**. Its output *is a
+character*, not modifiers.
 
 **A decorator is a stateful component ◆**, not a one-shot factory. Beyond the
 modifiers it contributes, it carries:
@@ -72,11 +78,13 @@ modifiers it contributes, it carries:
   `source` id).
 - an **event handler** — it **receives events** and reacts. On a battle event —
   `TickStart` · `OnHit` · `OnDeath` · `OnBreach` · … (the taxonomy's §6.6 trigger
-  set) — it can tick its expiration, deal a DoT, fire a death-trigger, add/remove
-  modifiers, or **spread** (a contagion adds a decorator to a neighbour).
+  set) — it may **modify itself** (bump its stacks, refresh / decrement its
+  `expiration`, change the modifiers it carries) **and** act outward through
+  `chargen` (deal a DoT, fire a death-trigger, add/remove modifiers, or **spread** —
+  a contagion adds a decorator to a neighbour).
 
 So a decorator has a **passive face** (the modifiers the `Character` composes into
-stats — *no math of its own*) and an **active face** (its lifecycle + event
+stats — *no math of its own*) and an **active face** (its mutable lifecycle + event
 reactions). Static gear is just a `Permanent` decorator with no reactions.
 
 **This subsumes the status system ◆.** The 9-axis status schema *is* a decorator:
@@ -85,12 +93,16 @@ reactions). Static gear is just a `Permanent` decorator with no reactions.
 one component type** — a buff is a `Duration` decorator emitting factors; a **DoT** a
 decorator that damages on `TickStart`; an implant a `Permanent` one.
 
-**`Character`** — holds `base` + the **referenceable modifier set**, plus the
-**accessors** the `sim` queries. Mutating API: `add(m) → id` · `remove(id)` ·
-`remove_where(pred)` (match by `source` / `tag`). **All math lives in the
+**`Character` — created on demand ◆.** The *persistent* state is the **decorator
+set** (+ `base` + live state §3); the `Character` is **generated on demand** — run
+the decorators over the base (each `generate` adds its modifiers) to get the
+referenceable modifier set, then query it through the **accessors**. Events and the
+mutating API (`add`/`remove`/`remove_where` by `id`/`source`/`tag`) act on the
+**decorator set**; the next `Character` reflects them. **All math lives in the
 accessors:** `link()` / `attack()` / … **sum the relevant `Factor`s and run the
-operations** (§2) over the base. Generators never compute; only the accessors do.
-*(Caching behind a dirty flag is a pure optimization, §4 — it doesn't move the math.)*
+operations** (§2) over the base — generators never compute. *(In the hot loop, cache
+the composed view behind a dirty flag — re-create only on a loadout / condition /
+event change. The cache is a pure optimization; it doesn't move the math.)*
 
 > **Removal is the counterplay substrate ◆.** Because every modifier is
 > referenceable + removable, the design's whole **answer-half *is* removal**:
@@ -193,24 +205,29 @@ battle.
 
 ---
 
-## 4. Realization ◆ — a flat, referenceable modifier set on the `Character`
+## 4. Realization ◆ — the decorator set is the state; the `Character` is composed on demand
 
 The generator-decorates-the-character model settles the earlier "decorator chain vs.
-fold" question: there's **no query chain** at all.
+fold" question: there's **no query chain** at all, and the `Character` is **not** the
+durable thing.
 
-- **Generators** run at build / loadout (and on condition change) to **add** (and
-  sometimes **remove**) `Modifier`s in the `Character`'s flat, **keyed** modifier set
-  (`id → Modifier`, indexed by `source` / `tag` for removal) — no per-method
-  delegation, no `Box<dyn>` chain to walk.
-- **The `Character`'s accessors** sum the relevant factors per stat (§2). Caching
-  the summed values behind a **dirty flag** — recomputed only on **loadout /
-  condition change** — is a pure optimization for the deterministic hot loop; it
-  doesn't move the math out of the accessors.
-- A breach / EMP that flips a generator's condition → re-add its (now zero/halved)
-  factors → mark dirty. The generators stay **indexable** for exactly this.
+- **The persistent state is the decorator set** — the ordered list of `chargen`
+  decorators (+ `base` + the live battle-state of §3), each indexed by `id` so any
+  component can reference / remove another. This is what saves, ticks, and takes
+  events.
+- **The `Character` is created on demand** — running the decorators over the `base`
+  produces a flat, **keyed** modifier set (`id → Modifier`, indexed by `source` /
+  `tag` for removal); the `Character`'s **accessors** then sum the relevant factors
+  per stat (§2). No per-method delegation, no `Box<dyn>` chain to walk.
+- **Caching is a pure optimization** — in the deterministic hot loop, hold the
+  composed view behind a **dirty flag** and **re-create it only on a change to the
+  decorator set**: **loadout / condition / event**. A breach / EMP that flips a
+  generator's condition, an `expiration` ticking out, an event that mutates a
+  decorator — each **marks dirty**, and the next query re-runs the generators. The
+  cache never moves the math out of the accessors.
 
 The **public shape**: `character.link()` / `character.targeting()` read the
-composed value; nothing outside cares that it came from a folded factor list.
+composed value; nothing outside cares that it came from a freshly folded factor list.
 
 ---
 
