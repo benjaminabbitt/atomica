@@ -254,6 +254,8 @@ The **Rep + gear faucet.** Alongside standard battles (which pay currency / surv
 | **Take the dive** | you **lose** — but by **no more than X** (a controlled, convincing loss) |
 | **Time attack** | you win within **N** rounds |
 
+A Flight carries a **list** of these — the node's standard **WinFight** (awarded for winning the fight) plus any bonus goals — and can **meet any number** of them independently; rewards are **commensurate** with what's achieved. The standard fight still drives termination.
+
 ### 9.2 Requirements (the oddball entry / run conditions)
 
 - **Endorsement** — field **≥X gear from a named vendor** (a sponsorship / proving-ground deal → builds *that* vendor's Rep).
