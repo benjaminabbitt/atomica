@@ -483,16 +483,16 @@ The roguelike run is a **branching navigation tree** (Slay-the-Spire-style map) 
 
 ---
 
-## 16. Rep-spots — Rep on the board ◆
+## 16. Rep-spots, representatives & challenges ◆
 
-A bridge between the meta (Rep) and the tactical (the board): designated **rep-spots** — special hexes / zones on the flight board, each flagged to a faction.
+Rep manifests on the board through **representatives** — *not* capturable empty nodes. *(Resolves the earlier open: it's **Rep → board presence**, threshold-gated; **not** board → Rep.)*
 
-- **Rep fills them.** Your standing with a faction determines what a rep-spot offers — a faction **representative / reinforcement** deployed there, a supply / buff, or a capturable goal. Higher Rep → a better fill.
-- **Players aim for them.** Rep-spots are positional targets: route units to **reach / hold / use** one — a real gamble, since committing to a spot can cost combat position (the clustering / exposure tension, §7B).
-- **…and hope to hit goals.** Capturing / holding a rep-spot completes a **goal**, paying **Rep** — a *third* Rep input beside units-summation (§13 #14) and patronage (§14) — and/or in-battle rewards.
+- **No blank Rep-capture.** Designated board spots are *not* empty objectives you seize to mint Rep.
+- **Rep threshold → a representative fills the spot.** When your standing with a faction crosses a **threshold** (the Rep tiers, §13 #1), that faction's **vendor / representative** may **fill an empty board spot** — deploying a rep onto the board as an ally / asset. Rep cashes out as **board presence**, earned by trust.
+- **Representatives issue challenges.** A present rep may pose a **challenge** — a goal / duel / task (a §9-style `Objective`). Players **aim for and attempt** these; hitting one pays rewards (Rep, gear, unlocks). Chasing a challenge can cost combat position (§7B) — the gamble.
 
-So your meta-standing becomes a **tactical factor**, and the board becomes a **Rep faucet** — you fight *for position* to bank reputation. Reuses existing machinery: rep-spots are **board-goal objectives** (the §9 `Objective` seam), placed on the board (§7B), with the **dynamic rivalry** (§13 #3) deciding whose spots appear.
+So the flow is **Rep → representative on the board → challenge → reward**, *not* board → Rep. Your meta-standing buys a tactical ally that then dangles goals; pursuing them deepens the relationship.
 
-**Factoring:** the `sim` owns the goal hexes (occupancy / hold / capture — the `Objective` seam); `atomica-run` maps a captured spot → the Rep payoff.
+**Factoring:** `atomica-run` triggers the threshold fill and owns challenges / rewards; the `sim` places the representative unit and runs any challenge that's a board `Objective` (§9). The **dynamic rivalry** (§13 #3) shapes which factions' reps appear.
 
-*Open ◆: the precise mechanic — does Rep **deploy a representative into** the spot (Rep → board presence), do you **capture an empty spot to earn** Rep (board → Rep), or both? And are rep-spots a **main objective** (Job flights, §9) or **optional secondary goals** on any flight? (⏳ + design.)*
+*Open ⏳: which thresholds summon which reps; challenge types & rewards; whether a representative **fights for you**, only **observes / judges**, or both.*
