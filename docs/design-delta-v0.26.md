@@ -470,7 +470,7 @@ The roguelike run is a **branching navigation tree** (Slay-the-Spire-style map) 
 |---|---|
 | **Flight** (battle) | the auto-resolved combats; **elite / boss flights** are tougher |
 | **Economy / shop** | a §14 market (2 vendors/category — buy, sell) |
-| **Job** | a faction contract (§9) — alt objective, Rep + gear |
+| **Politicking** | offers a **selection of Jobs** (§9) to accept — contracts negotiated here, fought as objective Flights |
 | **Event** | a choice / dilemma (narrative, gambles, faction overtures) |
 | **Fixer** | intel (scout ahead), Rep brokering, black-market |
 | **Clinic / Rest** | heal · chrome-repair · Worm-cleanse (menders as a service) |
@@ -484,16 +484,16 @@ The roguelike run is a **branching navigation tree** (Slay-the-Spire-style map) 
 
 ---
 
-## 16. Rep-spots, representatives & challenges ◆
+## 16. Rep → aligned shops ◆
 
-Rep manifests on the board through **representatives** — *not* capturable empty nodes. *(Resolves the earlier open: it's **Rep → board presence**, threshold-gated; **not** board → Rep.)*
+Rep cashes out as **shop access**, not battle-board presence. *(Supersedes the earlier board-representative idea — there are **no combat-board rep-spots**.)*
 
-- **No blank Rep-capture.** Designated board spots are *not* empty objectives you seize to mint Rep.
-- **Rep threshold → a representative fills the spot.** When your standing with a faction crosses a **threshold** (the Rep tiers, §13 #1), that faction's **vendor / representative** may **fill an empty board spot** — deploying a rep onto the board as an ally / asset. Rep cashes out as **board presence**, earned by trust.
-- **Representatives issue challenges — a challenge *is* a Job (§9).** A present rep poses a **Job** (faction contract: alt objective, Rep + gear) from the board rather than a tree node. Players attempt it; chasing it can cost combat position (§7B) — the gamble.
+- **Crossing a faction's Rep threshold spawns its aligned shop.** When standing hits a tier (§13 #1), that faction's **dedicated vendor** appears — filling an open slot in the 2-vendors-per-category market, or as a shop node on the run tree (§14 / §15). Deeper, branded, signature stock: the reward for standing.
+- So §14's *"more vendors unlock over a run"* is **Rep-driven** — build standing, its shop spawns.
+- The **dynamic rivalry** (§13 #3) still bites: a rival's shop may close (or price away) as the aligned one opens.
 
-So the flow is **Rep → representative on the board → challenge → reward**, *not* board → Rep. Your meta-standing buys a tactical ally that then dangles goals; pursuing them deepens the relationship.
+**Jobs come from politicking nodes, not the board.** A challenge **is a Job** (§9), offered at a **politicking node** (§15) — a run-tree stop presenting a **selection of Jobs** to accept; the accepted Job then runs as an objective **Flight**. No board reps, no board challenges.
 
-**Factoring:** `atomica-run` triggers the threshold fill and owns challenges / rewards; the `sim` places the representative unit and runs any challenge that's a board `Objective` (§9). The **dynamic rivalry** (§13 #3) shapes which factions' reps appear.
+**Factoring:** all `atomica-run` — Rep thresholds gate shop spawns; politicking nodes generate Job offers. The `sim` is untouched.
 
-*Open ⏳: which thresholds summon which reps; challenge types & rewards; whether a representative **fights for you**, only **observes / judges**, or both.*
+*Open ⏳: which thresholds spawn which shops; politicking Job-offer counts / refresh; whether a rival shop closes or just prices away.*
