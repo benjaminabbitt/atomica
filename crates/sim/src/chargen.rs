@@ -714,6 +714,13 @@ impl Character {
     /// fresh each call; a dirty-flag cache (§4) is a pure optimization to add only if
     /// the fold ever shows up hot.
     pub fn realize(&self) -> Realized {
+        self.realize_with_base(self.base)
+    }
+
+    /// Realize over a **supplied** base instead of the stored one (§0 "created on
+    /// demand"): lets an owner whose authored base lives elsewhere (a `Unit`'s flat
+    /// stat line, mid-migration) compose its modifiers without copying them in.
+    pub fn realize_with_base(&self, base: BaseLine) -> Realized {
         // Passive face: contribute every **active** decorator's modifiers, in priority
         // order (low → high, so the last seen — highest priority — wins for `Override`
         // and the granted `Capability`). Numeric factors are scaled by the decorator's
@@ -762,7 +769,7 @@ impl Character {
                 mods.retain(|m| m.source == dec.id || !r.matches(m));
             }
         }
-        Realized { base: self.base, mods, capability }
+        Realized { base, mods, capability }
     }
 
     // -- the pools (live state, §3c) --

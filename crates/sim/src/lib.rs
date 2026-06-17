@@ -343,15 +343,66 @@ impl Unit {
         self
     }
 
+    /// The **stat base** for composition (`docs/layers.md`): a [`BaseLine`] from the
+    /// unit's authored flat stat line. The `character`'s decorators (behavior +
+    /// installed modifiers) compose **on top** of this — so a buff/debuff/gear adds a
+    /// stat `Factor` and the effective accessors below honour it. *(Transitional: the
+    /// flat fields are still the base — the implant fold + status pool haven't moved
+    /// onto the gen yet; this establishes the read-through seam.)*
+    fn stat_base(&self) -> BaseLine {
+        BaseLine {
+            link: self.link as f32,
+            firewall: self.firewall as f32,
+            immunity: self.immunity as f32,
+            initiative: self.initiative,
+            max_integrity: self.max_integrity,
+            ..BaseLine::default()
+        }
+    }
+
+    /// Compose the unit's stat line **on demand**: its flat base + the `character`'s
+    /// modifier decorators (§0). The single read path the loop goes through.
+    fn realized(&self) -> Realized {
+        self.character.realize_with_base(self.stat_base())
+    }
+
+    /// Effective **Link** — base + composed modifiers (§7D).
+    pub fn link(&self) -> i32 {
+        self.realized().link()
+    }
+    /// Effective **Firewall** (the digital TN, §13).
+    pub fn firewall(&self) -> i32 {
+        self.realized().firewall()
+    }
+    /// Effective **Immunity** (the bio TN).
+    pub fn immunity(&self) -> i32 {
+        self.realized().immunity()
+    }
+    /// Effective **Initiative** before status slows (see [`Unit::effective_initiative`]).
+    pub fn initiative(&self) -> f32 {
+        self.realized().initiative()
+    }
+    /// Effective **max Integrity**.
+    pub fn max_integrity(&self) -> f32 {
+        self.realized().max_integrity()
+    }
+
+    /// Install a stat/behavior **modifier** on the unit (a buff, debuff, or gear) — a
+    /// decorator on its `character`; the effective accessors compose it immediately.
+    /// Returns the [`GenId`] for later removal (a cleanse / dispel).
+    pub fn apply_modifier(&mut self, dec: Decorator) -> GenId {
+        self.character.install(dec)
+    }
+
     /// The unit's effective targeting profile — the behavior layer composed (a spoof
     /// overrides the program).
     pub fn targeting(&self) -> TargetingProfile {
-        self.character.realize().targeting()
+        self.realized().targeting()
     }
 
     /// The unit's effective movement profile.
     pub fn movement(&self) -> MovementProfile {
-        self.character.realize().movement()
+        self.realized().movement()
     }
 
     /// **Spoof** the unit's behavior (§7J) — install a `CORRUPTION`-priority override
@@ -509,7 +560,7 @@ impl Unit {
 
     /// Initiative after Lag-style slows.
     fn effective_initiative(&self) -> f32 {
-        let mut init = self.initiative;
+        let mut init = self.initiative();
         for s in &self.statuses {
             if let Effect::Slow(f) = s.spec.effect {
                 init *= f;
@@ -523,7 +574,7 @@ impl Unit {
     /// with its Hacking. (Defense is Link-blind; zero Link is the separate hard
     /// reachability gate.)
     fn digital_band(&self) -> i32 {
-        self.link.max(0)
+        self.link().max(0)
     }
 
     /// Incoming-damage multiplier from Breach-style vulnerabilities.
@@ -554,8 +605,8 @@ const MESH_SYNERGY_CAP: i32 = 3;
 fn resist_tn(unit: &Unit, resist: Resist) -> i32 {
     match resist {
         Resist::None => 0,
-        Resist::Immunity => unit.immunity,
-        Resist::Firewall => unit.firewall,
+        Resist::Immunity => unit.immunity(),
+        Resist::Firewall => unit.firewall(),
     }
 }
 
@@ -1002,7 +1053,7 @@ impl<R: RandomSource> Battle<R> {
         let mut order: Vec<usize> = (0..self.units.len())
             .filter(|&i| {
                 let u = &self.units[i];
-                u.is_alive() && u.hack.is_some() && u.link > 0
+                u.is_alive() && u.hack.is_some() && u.link() > 0
             })
             .collect();
         order.sort_by(|&a, &b| {
@@ -1041,8 +1092,8 @@ impl<R: RandomSource> Battle<R> {
                 continue;
             }
             order.push((u.effective_initiative(), u.id.0, 0, i, false));
-            if u.hack.is_some() && u.link > 0 {
-                order.push((u.link as f32, u.id.0, 1, i, true));
+            if u.hack.is_some() && u.link() > 0 {
+                order.push((u.link() as f32, u.id.0, 1, i, true));
             }
         }
         order.sort_by(|a, b| {
@@ -1130,10 +1181,10 @@ impl<R: RandomSource> Battle<R> {
             return HackResult::NoHack;
         };
         // Hard gate (§7D/§7F): a runner needs net presence; the target a surface.
-        if self.units[attacker].link <= 0 {
+        if self.units[attacker].link() <= 0 {
             return HackResult::Offline;
         }
-        if self.units[target].link <= 0 {
+        if self.units[target].link() <= 0 {
             return HackResult::NoSurface;
         }
         // The connection runs at the weaker endpoint's bandwidth (the channel);
@@ -1141,7 +1192,7 @@ impl<R: RandomSource> Battle<R> {
         let channel = self.units[attacker].digital_band().min(self.units[target].digital_band());
         let rating = hack_rating(self.units[attacker].skill(Skill::Hacking), channel)
             + self.units[attacker].mesh_synergy(); // meshed PAN throughput (§5)
-        let tn = self.units[target].firewall;
+        let tn = self.units[target].firewall();
         let outcome = resolve_contest(&mut self.rng, Contest::new(rating, 0, tn));
         let stacks =
             if outcome.success { self.apply_breach(target, &outcome, hack) } else { 0 };
@@ -1199,7 +1250,7 @@ impl<R: RandomSource> Battle<R> {
                 *j != i
                     && u.is_alive()
                     && u.team == me.team.enemy()
-                    && u.link > 0
+                    && u.link() > 0
                     && me.pos.distance(u.pos) <= range
             })
             .min_by_key(|(_, u)| (me.pos.distance(u.pos), u.id))
@@ -1982,6 +2033,34 @@ mod tests {
         b.resolve_hack(0, 1);
         assert!(b.units[1].hack.is_none()); // deck bricked → no hacking back
         assert_eq!(b.units[1].implants[0].condition, Condition::Offline);
+    }
+
+    // -- stat read-through: modifiers compose into the effective line --------
+
+    #[test]
+    fn a_modifier_composes_into_the_effective_stat() {
+        let mut u = unit(0, Team::A, 0);
+        u.firewall = 9;
+        assert_eq!(u.firewall(), 9); // base
+        u.apply_modifier(Decorator::gear(Tag::Gear, vec![Factor::add(Stat::Firewall, 4.0)]));
+        assert_eq!(u.firewall(), 13); // base + flat add
+        // an Increased factor scales the *base* — proof the base is inside the fold.
+        u.apply_modifier(Decorator::gear(Tag::Buff, vec![Factor::increased(Stat::Firewall, 0.5)]));
+        assert_eq!(u.firewall(), 20); // round((9 + 4) × 1.5) = round(19.5)
+    }
+
+    #[test]
+    fn a_firewall_debuff_makes_a_hack_land_in_the_loop() {
+        let mut atk = runner(0, Team::A, 0, 4);
+        atk.link = 4;
+        atk.skills.set(Skill::Hacking, 4); // rating avg(4, 4) = 4
+        let mut tgt = networked(1, Team::B, 1, 14); // base Firewall 14
+        tgt.link = 4;
+        // Debuff Firewall by 4 → effective 10; the loop reads firewall() through the gen.
+        tgt.apply_modifier(Decorator::gear(Tag::Debuff, vec![Factor::add(Stat::Firewall, -4.0)]));
+        // 3d6 = 8, + rating 4 = 12: misses base 14, but beats the debuffed 10.
+        let mut b = Battle::with_rng(vec![atk, tgt], ScriptedRng::from_d6([3, 3, 2]));
+        assert!(b.resolve_hack(0, 1).landed());
     }
 
     #[test]
