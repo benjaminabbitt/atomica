@@ -55,6 +55,16 @@ its factors and returns the character. A generator carries **no math** — it on
 **composed by it** from base + its factors (the §2 bucket fold) — generators never
 compute, only the `Character` sums and multiplies.
 
+> **Narrative vs. type ◆.** The domain language calls these things **modifiers** —
+> they "modify the character." But the **type is `chargen`**: a modifier doesn't
+> mutate the character, it **generates** the (composed) one via factors. So **every
+> modifier is `chargen`** — *permanent* (gear / augments) **and** *transient*
+> (buffs, debuffs like Lag/Breach, a spoof) alike; a transient modifier is just a
+> generator whose factors are active for a duration. *(Boundary: pure
+> **tick-effects** — DoTs, plating-shred — **act** each tick rather than modify
+> stats, so they stay their own mechanism; a status may carry both a chargen
+> modifier and a ticker.)*
+
 | Group | Queries (on the `Character`) |
 |---|---|
 | **stats** | `link` · `firewall` · `immunity` · `initiative` · `max_integrity` · `armor_class` |
