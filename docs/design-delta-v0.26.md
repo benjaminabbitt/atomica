@@ -422,6 +422,12 @@ None of it breaks the crate split or phase ordering.
 
 The between-battle storefronts. **Each faction is a vendor** (makers sell gear, service corps sell services), plus universal stops. Currency buys; **Rep gates access/price** (§13 #1); illicit stock raises **Notoriety** (§13 #2). All `atomica-run` + `atomica-content`.
 
+**Market structure ◆ — two vendors per category, two channels.** Each shop category opens a run with a **choice of two vendors** (more unlock over the run via Rep / exploration / events) — never a monopoly. Vendors come in two channels:
+- **General vendors** carry a **mishmash** across categories (generic-tier stock, §2.6): convenient, always-available, **Rep-neutral** — no relationship, no politics. The open-market floor.
+- **Direct-from-manufacturer** is a faction's own storefront — branded, specialist, signature stock, better depth — but **buying direct builds Rep with that manufacturer** (patronage), and, via the **dynamic rivalry** (§13 #3), **costs Rep with its current run-rival**. *Where you shop is a Rep play.*
+
+So Rep has two inputs: **fielding affiliated units** (the live unit-summation, §13 #14) and **patronage** (buying direct). *(Open ⏳: whether patronage-Rep is a separate persistent track or feeds the same live sum — and how many vendors/category unlock over a run, gated by what.)*
+
 **Realm symmetry ◆:** **Arms** (physical weapons + armor) ∥ **Programs** (digital software) — one offense-*and*-defense shop per realm, mirroring the two-realm spine.
 
 **Gear vendors:**
