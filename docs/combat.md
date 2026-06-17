@@ -1,11 +1,13 @@
 # Combat — the fight resolution (current vs designed)
 
 *The `sim`'s **battle** resolution: what one fight actually does, tick by tick.
-Today it runs a deliberately **minimal** loop; the full design (taxonomy
-§7B board · §7C initiative · §7G footprints · §7I weapons · §7J movement/targeting
-· **§10 full rules**) is much richer. This is the **deepest** system and the next
-coding focus — the auto-battler's soul ("you program your units; the enemy hacks
-your script"). ◆ = decision. Status: **✅ built** · **◑ partial** · **🔭 planned**.*
+The **whole phased build order (1–7) is now in** — behavior profiles, the movement
+model, AoE + friendly fire, woven initiative, weapons & range bands, death triggers,
+and the board seam (taxonomy §7B board · §7C initiative · §7G footprints · §7I
+weapons · §7J movement/targeting · **§10 full rules**). The auto-battler's soul ("you
+program your units; the enemy hacks your script") is built; what remains is the
+**cross-cutting layers** (Heat / Morale / Vehicles) and polish on the ◑ items. ◆ =
+decision. Status: **✅ built** · **◑ partial** · **🔭 planned**.*
 
 ---
 
@@ -67,7 +69,7 @@ The designed round:
 | **Multiple weapons / selection** | per-target weapon choice | **`weapons` + `weapon_at` (best in band)** | ✅ |
 | **Smartgun / IFF targeting** (§7F) | smart profiles, fires on Link | — | 🔭 |
 | **Death triggers** (§10.9) | Detonate · Legacy · Data-spill | **all three**, reaped (chain-kills) | ✅ |
-| **Board seam / two boards** (§7B) | ±½-hex seam, frontage pairings | single shared grid | 🔭 |
+| **Board seam / two boards** (§7B) | ±½-hex seam, frontage pairings | **single grid + seam rule** (`Board`/`SeamOffset`, `engages`) | ✅ |
 | **Heat** (§7D/§10.10) | thermal layer | — | 🔭 |
 | **Morale / Resolve** (delta §4) | Resolve pool, Break (rout/berserk) | — | 🔭 |
 | **Vehicles / multi-hex** (delta §5) | 2–3-hex occupancy, ram, crew | — | 🔭 |
@@ -113,7 +115,16 @@ Sequenced so each phase is shippable and test-first, hardest-leverage first:
    seed) · `Legacy` (a status to nearby **allies**). `Battle::reap` fires each once
    after every activation (and after `status_phase`), looping so a `Detonate`
    **chain-kills**. Feeds the contagion's **Data-spill** later.
-7. **Board geometry** — the two-board **seam** (±½-hex) and frontage pairings (§7B).
+7. **Board geometry ◑** — the two-board **seam** on the **single shared grid**
+   (`Board { offset: SeamOffset }`, rolled from the seed, settable via
+   `Battle::with_seam` — the mesh item). A flat-top hex's two forward neighbours are
+   `(q+1, r)` + a diagonal; the offset picks the diagonal (`Down` → `r-1`, `Up` →
+   `r+1`), so each front hex **engages two enemy front hexes** (`frontage_pairs`).
+   `Battle::reach` reads an `Up`-staggered pair (raw grid distance 2) as melee **1** —
+   the seam closes the half-hex gap. *Scoped: the offset re-wires front-line
+   **engagement** (the §7B payoff); ranged/AoE still use grid distance, and deploy-half
+   validation isn't enforced. Orientation per the design's "confirm diagram" is the
+   `Up`/`Down` choice here.*
 
 **Cross-cutting layers** (their own systems, slot in later): **Heat** (§7D),
 **Morale/Resolve** (delta §4), **Vehicles** (delta §5, the multi-hex one — the
@@ -131,5 +142,6 @@ biggest engine change).
   contagion spread, AR targeting, and the digital realm ([`netrunning.md`](netrunning.md))
   all read combat state, so its shape constrains everything above it.
 
-Begin at **Phase 1 (behavior profiles)** — highest design leverage, lowest spatial
-risk, and the thing that makes a unit a *program*.
+**Phases 1–7 are built** (Phase 1 first, highest-leverage, through the board seam).
+What's left is the **cross-cutting layers** above and polish on the ◑ items
+(Smartgun/IFF, beam width, deploy-half validation, ranged seam distance).

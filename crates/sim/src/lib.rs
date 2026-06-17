@@ -24,6 +24,7 @@
 //! statuses), IFF/spoof, and Heat.
 
 pub mod armor;
+mod board;
 mod chargen;
 mod hack;
 mod hex;
@@ -36,6 +37,7 @@ mod skills;
 mod status;
 
 pub use armor::ArmorClass;
+pub use board::{Board, SeamOffset};
 pub use chargen::{
     Amount, BaseLine, Capability, Character, Decorator, DamageEvent, Event, Expiration, Factor,
     FactorKind, Flag, GenId, Hook, HookEffect, Modifier, ModifierKind, Override, Priority, Reaction,
@@ -576,22 +578,40 @@ pub struct Battle<R: RandomSource = SplitMix64> {
     pub tick: u32,
     rng: R,
     objectives: Objectives,
+    /// The two-board **seam** stagger (§7B). Rolled at start; settable by item.
+    pub board: Board,
     withdrawn: bool,
 }
 
 impl Battle<SplitMix64> {
-    /// Build a battle with the production RNG seeded by `seed`.
+    /// Build a battle with the production RNG seeded by `seed`. The seam offset is
+    /// **rolled from the seed** (a pure function of it — it does *not* consume the
+    /// battle RNG stream, so roll determinism is independent of the fight).
     pub fn new(units: Vec<Unit>, seed: u64) -> Self {
-        Self::with_rng(units, SplitMix64::new(seed))
+        let offset = if seed & 1 == 0 { SeamOffset::Down } else { SeamOffset::Up };
+        Self::with_rng(units, SplitMix64::new(seed)).with_seam(offset)
     }
 }
 
 impl<R: RandomSource> Battle<R> {
     /// Build a battle over any [`RandomSource`] — inject a `ScriptedRng` in tests.
-    /// Defaults to the [`Eliminate`] objective.
+    /// Defaults to the [`Eliminate`] objective and the `Down` seam.
     pub fn with_rng(units: Vec<Unit>, rng: R) -> Self {
         let objectives = Objectives::new(vec![Goal::new(Box::new(WinFight), 1, 1)]);
-        Self { units, tick: 0, rng, objectives, withdrawn: false }
+        Self {
+            units,
+            tick: 0,
+            rng,
+            objectives,
+            board: Board::default(),
+            withdrawn: false,
+        }
+    }
+
+    /// Builder: set the seam offset (§7B — the mesh item that picks the stagger).
+    pub fn with_seam(mut self, offset: SeamOffset) -> Self {
+        self.board = Board::new(offset);
+        self
     }
 
     /// Withdraw from the battle: forfeit it (objectives resolve as fight-over),
@@ -761,7 +781,7 @@ impl<R: RandomSource> Battle<R> {
             MovementProfile::Advance | MovementProfile::Flank | MovementProfile::Swarm
         );
         for _ in 0..self.units[i].speed.max(0) {
-            let dist = self.units[i].pos.distance(self.units[target].pos);
+            let dist = self.reach(i, target);
             if closes && self.units[i].weapon_at(dist).is_some() {
                 break; // standoff: a weapon already reaches — stop closing and fire
             }
@@ -771,9 +791,22 @@ impl<R: RandomSource> Battle<R> {
             }
             self.units[i].pos = next;
         }
-        let dist = self.units[i].pos.distance(self.units[target].pos);
+        let dist = self.reach(i, target);
         if let Some(weapon) = self.units[i].weapon_at(dist) {
             self.resolve_attack_with(i, target, weapon);
+        }
+    }
+
+    /// The **engagement distance** between two units — the grid distance, except a
+    /// front-line pair the seam stagger joins (§7B) reads as **1** (the `Up` offset
+    /// closes its half-hex gap into melee). Used for weapon-range / reach checks.
+    fn reach(&self, a: usize, b: usize) -> i32 {
+        let (pa, pb) = (self.units[a].pos, self.units[b].pos);
+        let d = pa.distance(pb);
+        if d > 1 && self.board.engages(pa, pb) {
+            1
+        } else {
+            d
         }
     }
 
@@ -2256,6 +2289,35 @@ mod tests {
         // the first blast killed the second, whose blast fired in turn.
         assert!(!b.units[1].is_alive());
         assert!(b.units[1].death_resolved);
+    }
+
+    // -- Phase 7: the board seam (§7B) -----------------------------------------
+
+    #[test]
+    fn the_seam_lets_a_staggered_front_clash_in_melee() {
+        // A at (0,0), B at (1,1): raw grid distance 2, but the Up seam pairs them, so
+        // the melee attacker strikes without moving (speed 0 isolates the seam).
+        let atk = unit(0, Team::A, 0).with_speed(0).with_initiative(10.0);
+        let mut foe = unit(1, Team::B, 1);
+        foe.pos = Hex::new(1, 1);
+        foe.integrity = 100.0;
+        let mut b = Battle::new(vec![atk, foe], 1).with_seam(SeamOffset::Up);
+        assert_eq!(b.units[0].pos.distance(b.units[1].pos), 2); // not grid-adjacent
+        b.action_phase();
+        assert!(b.units[1].integrity < 100.0); // the seam engaged them anyway
+    }
+
+    #[test]
+    fn the_other_stagger_is_out_of_melee_without_the_seam() {
+        // Same geometry, Down seam: the pair isn't joined, so a speed-0 melee unit
+        // can't reach.
+        let atk = unit(0, Team::A, 0).with_speed(0).with_initiative(10.0);
+        let mut foe = unit(1, Team::B, 1);
+        foe.pos = Hex::new(1, 1);
+        foe.integrity = 100.0;
+        let mut b = Battle::new(vec![atk, foe], 1).with_seam(SeamOffset::Down);
+        b.action_phase();
+        assert_eq!(b.units[1].integrity, 100.0); // distance 2, no seam pairing → untouched
     }
 
     #[test]
