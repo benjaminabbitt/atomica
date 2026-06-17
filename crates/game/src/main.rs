@@ -54,9 +54,10 @@ fn demo_battle() -> Battle {
         mk(2, "Bulwark", Team::B, 5, 0, 7.0, 4.0, 1, Bludgeoning, Contact, Plate),
         mk(3, "SMG", Team::B, 5, 2, 8.0, 6.0, 3, Piercing, External, Mail),
     ];
-    // Wire the Runner as a netrunner: Link bandwidth + Hacking skill drive the
-    // hack (3d6 + min(Link, Hacking)); the Lockware deck sets the payload + reach.
-    // Give the enemy line a digital surface (Link + Firewall) so it's hackable.
+    // Wire the Runner as a netrunner: Hacking + the connection channel drive the
+    // hack (3d6 + avg(Hacking, channel), channel = weaker endpoint's Link); the
+    // Lockware deck sets the payload + reach. Give the enemy line a digital surface
+    // (Link + Firewall) so it's hackable.
     units[1].link = 5.0;
     units[1].skills.set(Skill::Hacking, 4);
     units[1].hack = Some(Hack::new(6, StatusSpec::lockware(), 1, 6));

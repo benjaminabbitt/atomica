@@ -18,15 +18,15 @@ parallel). *Skills attack, stats defend* (§13) — so the offense is a **skill*
 
 | Name | Field | Type | Role | Status |
 |---|---|---|---|---|
-| **Link** | `unit.link` | int◆ | **Three jobs:** ① reachability **gate** both ways (`0` ⇒ immune target / offline attacker); ② **digital initiative** (orders the digital pass); ③ **caps the attacker's Hacking** (`min(Link, Hacking)`). The exposure dial. | ✅ (gate/init/cap); 🔭 exposure (worm-catch) |
+| **Link** | `unit.link` | int◆ | **Three jobs:** ① reachability **gate** both ways (`0` ⇒ immune target / offline attacker); ② **latency → digital initiative** (your own Link orders the digital pass; high = sooner); ③ the **connection channel** (a hack's bandwidth is the *weaker* endpoint's Link, `min`). The exposure dial. | ✅ (gate/init/channel); 🔭 exposure (worm-catch) |
 | **Firewall** | `unit.firewall` | int | The **universal digital TN** — every digital contest rolls against it (hacks; the digital statuses Crash/Lag/Lockware via `Resist::Firewall`). **Link-blind** on defense. | ✅ |
 | **Hacking** | `unit.skills[Hacking]` | int | The **sole offensive additive** on a digital roll. No defensive net-skill exists — you buy Firewall (the stat), not a skill. | ✅ |
 | *Immunity* | `unit.immunity` | int | The **bio** parallel (Virus TN) — separate track, not digital. | ✅ |
 
 **Link is an integer ◆.** It is only ever used as a gate (`> 0`), an ordering
-key, and a cap (`min(Link, Hacking)`) — it carries no fractional meaning, so it
-models cleanly as `i32` bandwidth tiers. *(Currently `f32` in code; the int
-migration is a 🔭 cleanup, §6.)*
+key, and a channel floor (`min` of the two endpoints) — it carries no fractional
+meaning, so it models cleanly as `i32` bandwidth tiers. *(Currently `f32` in
+code; the int migration is a 🔭 cleanup, §6.)*
 
 **Chassis floors (✅).** Only **Augmented** ships innate Hacking (1); Flesh and
 Machine have 0 — they **cannot hack without a skill-chip**. Faithful to "digital
@@ -42,30 +42,38 @@ The core resolution — built in [`crates/sim/src/hack.rs`](../crates/sim/src/ha
 + `Battle::resolve_hack`:
 
 ```text
-3d6 + min(Link, Hacking)   vs   Firewall
+3d6 + avg(Hacking, channel)   vs   Firewall        channel = min(Link_a, Link_t)
 ```
 
-- **Skill attacks, the stat defends.** The only additive is the attacker's
-  Hacking, **capped by its Link** (bandwidth: a skilled runner on a thin pipe is
-  throttled; a fat pipe with no skill is still weak — you need both). The TN is
-  the target's **Firewall, in full** — Link is **irrelevant on defense** (a
-  low-Link target does *not* get a softer wall; that earlier `min(Link, Firewall)`
-  shape inverted the design and was dropped).
+- **The connection channel ◆.** A hack runs over the link *between* the two
+  units, and that channel is only as fat as its **weaker endpoint** —
+  `min(Link_attacker, Link_target)` (the bottleneck). The attacker's effective
+  rating **averages** its Hacking with that channel, floored: `(Hacking + channel) / 2`
+  (`hack_rating`). Skill and channel each carry half the weight — a master runner
+  on a thin pipe is dragged down but not gutted.
+- **Skill attacks, the stat defends.** The TN is the target's **Firewall, in
+  full** — **Link-blind on defense.** The target's Link enters the *attack* (the
+  channel), never the wall, so a **darker target is harder to hack** (thin
+  channel) while a **juicy high-Link target is easier** (its exposure literally
+  widens the attacker's pipe). *(The earlier `min(Link, Firewall)` softened the
+  wall for low-Link units — backwards — and was dropped.)*
 - **Equipment arms the roll through the stats, not a separate term** ◆ — a
   cyberdeck raises **Link**, a skill-chip raises **Hacking**, a Firewall implant
   raises **Firewall**. So `resolve_contest`'s `equipment` addend is `0` for hacks.
 - **Hard reachability gates** (§7D/§7F): zero-Link **target** ⇒ `NoSurface`
-  (immune); zero-Link **attacker** ⇒ `Offline`. These are the locked
-  immunity cliff — distinct from "Link affecting the math."
+  (immune); zero-Link **attacker** ⇒ `Offline`. The locked immunity cliff —
+  distinct from "Link affecting the math."
 - **Margin = degree of success.** `≥ TN` succeeds; **nat 18 crit**, **nat 3
   fumble**. The margin scales the payload: `stacks = base + margin / MARGIN_PER_STACK
   + crit` (placeholder `MARGIN_PER_STACK = 3`).
 
-**Emergent identity ◆ — netrunners are glass cannons.** Because the cap is
-`min(Link, Hacking)`, a real hacker must buy **both** Link *and* Hacking — and
-high Link is (by design) the most exposed state (easier to hack back, higher
-worm-catch). High offense ⇒ high exposure, in one stat. This *is* the `Null`
-archetype; the model produces it for free.
+**Emergent identity ◆ — netrunners are glass cannons.** Skill is the *consistent*
+buy (half-weight, can't be denied); **Link is situational** — your bandwidth only
+widens the channel **up to the other endpoint's Link**, so it pays off most
+against **connected** enemies (and for winning init). And high Link is, by design,
+the most exposed state — a high-Link unit acts sooner, hacks connected enemies
+hard, *and* is the easiest to hack back. "Loud = capable but exposed" carried by
+one shared number. This *is* the `Null` archetype; the model produces it for free.
 
 ### The digital pass ✅
 
@@ -153,7 +161,7 @@ Spike / Leech — loadout choices that shape the Link number and its exposure. �
 | Knob | Question |
 |---|---|
 | **Link → `i32`** | migrate the field; set typical **bands** (0–N tiers). |
-| **Contest calibration** | set **Hacking / Link / Firewall** ranges so a *matched* contest sits near **50%**. 3d6 mean = 10.5, so `min(Link, Hacking) ≈ Firewall − 10` is the even-odds line. |
+| **Contest calibration** | set **Hacking / Link / Firewall** ranges so a *matched* contest sits near **50%**. 3d6 mean = 10.5, so `avg(Hacking, channel) ≈ Firewall − 10.5` is the even-odds line. |
 | **`MARGIN_PER_STACK`** (=3) | the margin→stacks curve; `base_stacks`; per-payload stack caps. |
 | **Antenna range** | reach bands for the digital pass; beam (line) vs single delivery. |
 | **Hack-effect severity** | how punishing each tripped liability is — the "chrome is a real-but-fair gamble" dial. |

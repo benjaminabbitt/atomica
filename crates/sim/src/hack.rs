@@ -1,26 +1,30 @@
 //! Netrunning — the digital attack, resolved by the core **3d6 contest**.
 //!
-//! A hack is one unit projecting onto the net against another. **Link is the
-//! attacker's digital bandwidth** (§7D): it caps how much trained Hacking can be
-//! pushed down the pipe, so the contest is
+//! A hack is one unit projecting onto the net against another. It runs over the
+//! **connection** between them, whose bandwidth is the **weaker endpoint's Link**
+//! (the bottleneck), and the attacker's rating averages its **Hacking** with that
+//! channel:
 //!
 //! ```text
-//! 3d6 + min(Link, Hacking)   vs   Firewall
+//! 3d6 + avg(Hacking, min(Link_attacker, Link_target))   vs   Firewall
 //! ```
 //!
-//! — a skilled runner on a thin connection is throttled, and a fat pipe with no
-//! skill is still weak (you need both). **Defense is Link-blind:** the target
-//! number is the Firewall wall alone. Both ends are still hard-gated by
-//! reachability — **zero Link** means *no surface to reach* (the target is
-//! air-gapped/immune) or *no presence to reach with* (the attacker is dark), §7F.
-//! The deck / equipment's digital strength flows through **Link** and **Hacking**
-//! (cyberdeck → Link, skill chip → Hacking, §7D/§13), so there is no separate
-//! roll add-on. On a success the hack lands its **payload** — a status: a tripped
-//! hack-effect or a deployed program (§7F/§10.8) — with stacks scaling on the
+//! — skill and channel each pull half the weight (a master runner on a thin pipe
+//! is dragged down but not gutted). The target's Link feeds the **channel**, not
+//! the wall, so a darker target is harder to hack while **defense stays the
+//! Firewall alone** (Link-blind). Both ends are still hard-gated by reachability —
+//! **zero Link** means *no surface to reach* (immune target) or *no presence to
+//! reach with* (dark attacker), §7F. Equipment arms the roll through the stats
+//! (cyberdeck → Link, skill chip → Hacking, §7D/§13), so there is no separate roll
+//! add-on. On a success the hack lands its **payload** — a status (a tripped
+//! hack-effect or a deployed program, §7F/§10.8) — with stacks scaling on the
 //! **margin** (degree of success).
 //!
-//! The roll itself lives in [`resolve_contest`](crate::resolve_contest); the
-//! Link-capping and payload application happen in
+//! Link's *other* job is **latency → digital initiative**: a unit's own Link sets
+//! when it acts on the net (high Link = sooner), independent of the channel.
+//!
+//! The roll lives in [`resolve_contest`](crate::resolve_contest); the channel /
+//! rating and payload application happen in
 //! [`Battle::resolve_hack`](crate::Battle::resolve_hack).
 
 use crate::{RollOutcome, StatusSpec};
@@ -29,11 +33,19 @@ use crate::{RollOutcome, StatusSpec};
 /// scaling, §13). Placeholder tuning value — numbers are TBD.
 const MARGIN_PER_STACK: i32 = 3;
 
+/// The attacker's effective hack rating: its **Hacking** averaged with the
+/// **connection channel** (the weaker endpoint's Link bandwidth), floored —
+/// `(hacking + channel) / 2`. Skill and channel each carry half the weight, so a
+/// thin channel drags a master runner down without gutting it.
+pub fn hack_rating(hacking: i32, channel: i32) -> i32 {
+    (hacking + channel) / 2
+}
+
 /// A unit's hack loadout — the digital action it can take on its turn (§7F).
 ///
-/// The hack's *strength* is the unit's own Link & Hacking (capped against each
-/// other); this struct only says *what program* it runs and *how far*. The
-/// `payload`'s own 9-axis spec governs how it behaves once it lands.
+/// The hack's *strength* is the unit's own Hacking and the connection channel
+/// (the weaker endpoint's Link); this struct only says *what program* it runs and
+/// *how far*. The `payload`'s own 9-axis spec governs how it behaves once it lands.
 #[derive(Clone, Copy, Debug)]
 pub struct Hack {
     /// Antenna reach in hexes the hack carries across (§7F beam / proximity).
@@ -90,6 +102,14 @@ mod tests {
 
     fn hack() -> Hack {
         Hack::new(2, StatusSpec::lockware(), 1, 5)
+    }
+
+    #[test]
+    fn rating_averages_skill_with_the_channel_floored() {
+        assert_eq!(hack_rating(6, 4), 5);
+        assert_eq!(hack_rating(6, 1), 3); // 3.5 → floor 3
+        assert_eq!(hack_rating(9, 2), 5); // 5.5 → floor 5
+        assert_eq!(hack_rating(0, 0), 0);
     }
 
     #[test]
