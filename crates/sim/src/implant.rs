@@ -218,6 +218,7 @@ impl Implant {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::chargen::{Event, Tag};
     use crate::{BaseLine, Character};
 
     /// A blank chassis whose innate Firewall (9) is the netrunning baseline, so a
@@ -310,5 +311,41 @@ mod tests {
         assert_eq!(r.max_integrity(), 38.0);
         assert!(r.hack().is_some());
         assert_eq!(c.integrity, 38.0);
+    }
+
+    #[test]
+    fn emp_fries_all_chrome_at_once() {
+        // EMP is the gen-op `scale_where(Implant, 0)` — every implant Offline at once
+        // (docs/cyberware.md §5; the per-roll Cascade gating stays with the resolver).
+        let mut c = Character::new(chassis());
+        c.install(Implant::cyberdeck().to_decorator());
+        c.install(Implant::subdermal_plating().to_decorator());
+        c.install(Implant::metabolic_pump().to_decorator());
+        assert_eq!(c.realize().link(), 5);
+        assert!(c.realize().hack().is_some());
+
+        c.scale_where(Tag::Implant, 0.0); // pulse
+        let r = c.realize();
+        assert_eq!(r.link(), 0); // surface gone
+        assert_eq!(r.plating(), 0.0); // plating gone
+        assert_eq!(r.max_integrity(), 30.0); // resilience gone
+        assert!(r.hack().is_none()); // deck bricked
+    }
+
+    #[test]
+    fn breach_fires_a_liability_as_a_decorator() {
+        // The §6 ladder, on the Character path: disable the implant (scale 0), then
+        // install its hack_effect as a status decorator — the liability now ticks.
+        let mut c = Character::new(chassis());
+        let stim = Implant::combat_stim(); // Overdose: Bleed + Crash
+        let id = c.install(stim.to_decorator());
+        c.fill();
+        c.set_scale(id, Condition::Offline.benefit_factor()); // disable floor
+
+        // fire the degrade-class liability (Bleed) at margin-scaled stacks.
+        c.install(stim.hack_effects[0].to_decorator(2, 0));
+        let before = c.integrity;
+        c.dispatch(Event::TickStart, 1);
+        assert!(c.integrity < before); // the liability bites
     }
 }

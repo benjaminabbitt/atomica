@@ -11,6 +11,9 @@
 //! remaining `Trigger`/`Timing`/`Targeting` variants are declared to document the
 //! schema and are extension points.
 
+use crate::chargen::{
+    Amount as GenAmount, Decorator, Event, Expiration, Factor, Flag, HookEffect, Stat, Tag, Wear,
+};
 use crate::{PenTier, Unit};
 
 /// Axis: magnitude — how an amount is computed from the target.
@@ -25,6 +28,15 @@ pub enum Magnitude {
 }
 
 impl Magnitude {
+    /// Project onto the layer architecture's [`GenAmount`] (`docs/layers.md` L2b).
+    pub fn to_gen(self) -> GenAmount {
+        match self {
+            Magnitude::Flat(a) => GenAmount::Flat(a),
+            Magnitude::PctMax(p) => GenAmount::PctMax(p),
+            Magnitude::PctCurrent(p) => GenAmount::PctCurrent(p),
+        }
+    }
+
     pub fn amount(self, unit: &Unit) -> f32 {
         match self {
             Magnitude::Flat(a) => a,
@@ -263,5 +275,135 @@ impl StatusSpec {
             targeting: Targeting::Enemy,
             resist: Resist::None,
         }
+    }
+
+    /// Project this status onto the layer architecture as a decaying [`Decorator`]
+    /// (`docs/layers.md` L2b): the `effect` becomes either a `TickStart` **hook** (a
+    /// DoT / shred — the active face) or a passive **flag**/**factor** (Stun / Vuln /
+    /// Slow), the `decay` axis becomes the decorator's [`GenDecay`], and `stacks` /
+    /// `duration` seed its lifetime.
+    ///
+    /// What does *not* port here (still the loop's job): the `behavior` axis's
+    /// **stochastic** resist-roll (Poison gates on a 3d6-vs-resist roll that needs the
+    /// RNG seam), `stacking` merge-on-reapply, and `targeting` — these enter when the
+    /// live loop adopts the `Character` path.
+    pub fn to_decorator(&self, stacks: u32, duration: u32) -> Decorator {
+        let wear = match self.decay {
+            Decay::Duration => Wear::ByDuration,
+            Decay::Stacks => Wear::ByStacks,
+        };
+        let expiration = match self.decay {
+            Decay::Duration => Expiration::Duration(duration),
+            Decay::Stacks => Expiration::Permanent, // lifetime is the stack count
+        };
+        // Statuses are debuffs by default (the pool the loop applies to enemies).
+        let mut d = Decorator::status(Tag::Debuff, stacks, expiration, wear);
+        match self.effect {
+            Effect::Dot { magnitude, pen } => {
+                d = d.with_hook(
+                    Event::TickStart,
+                    HookEffect::Damage {
+                        amount: magnitude.to_gen(),
+                        pen,
+                        can_kill: magnitude.can_kill(),
+                    },
+                );
+            }
+            Effect::PlatingShred(mag) => {
+                d = d.with_hook(
+                    Event::TickStart,
+                    HookEffect::ShredPlating { amount: mag.to_gen() },
+                );
+            }
+            Effect::Stun => d = d.with_flag(Flag::Stun),
+            Effect::Vuln(f) => d = d.with_flag(Flag::Vuln(f)),
+            // Lag: a `More` factor on Initiative (×f); products with other slows.
+            Effect::Slow(f) => d.factors.push(Factor::more(Stat::Initiative, f - 1.0)),
+        }
+        d
+    }
+}
+
+#[cfg(test)]
+mod l2b_tests {
+    use super::*;
+    use crate::chargen::{BaseLine, Character, Event};
+
+    fn chassis() -> BaseLine {
+        BaseLine {
+            initiative: 6.0,
+            max_integrity: 30.0,
+            plating: 10.0,
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn burn_is_a_tickstart_dot_against_the_pools() {
+        // Burn: Contact DoT, Flat 2/stack. 3 stacks → 6 per tick, hits Plating first.
+        let mut c = Character::new(chassis());
+        c.install(StatusSpec::burn().to_decorator(3, 4));
+        let r = c.dispatch(Event::TickStart, 1);
+        assert_eq!(r.len(), 1);
+        assert_eq!(c.plating, 4.0); // 10 - (2*3) Contact
+        assert_eq!(c.integrity, 30.0); // soaked by plating
+    }
+
+    #[test]
+    fn bleed_decays_by_stacks_and_wears_off() {
+        // Bleed: Internal DoT, Flat 3/stack, decays by stacks.
+        let mut c = Character::new(chassis());
+        c.install(StatusSpec::bleed().to_decorator(2, 0));
+        c.dispatch(Event::TickStart, 1);
+        assert_eq!(c.integrity, 24.0); // 30 - 3*2, Internal straight through
+        c.decay(); // 2 stacks -> 1
+        c.dispatch(Event::TickStart, 2);
+        assert_eq!(c.integrity, 21.0); // -3*1
+        c.decay(); // 1 -> 0, dropped
+        assert!(c.generators().is_empty());
+    }
+
+    #[test]
+    fn crash_stuns_passively() {
+        let mut c = Character::new(chassis());
+        assert!(!c.realize().stunned());
+        c.install(StatusSpec::crash().to_decorator(1, 2));
+        assert!(c.realize().stunned()); // gates the action phase
+        // it's passive: dispatch produces no reaction.
+        assert!(c.dispatch(Event::TickStart, 1).is_empty());
+    }
+
+    #[test]
+    fn lag_folds_into_initiative_as_a_more_factor() {
+        let mut c = Character::new(chassis()); // base init 6
+        c.install(StatusSpec::lag().to_decorator(1, 2)); // Slow(0.5) → ×0.5
+        assert_eq!(c.realize().initiative(), 3.0);
+    }
+
+    #[test]
+    fn breach_exposes_the_vuln_multiplier() {
+        let mut c = Character::new(chassis());
+        assert_eq!(c.realize().vuln(), 1.0);
+        c.install(StatusSpec::breach().to_decorator(1, 2)); // Vuln(1.5)
+        assert_eq!(c.realize().vuln(), 1.5);
+    }
+
+    #[test]
+    fn corrode_shreds_plating() {
+        let mut c = Character::new(chassis()); // plating 10
+        c.install(StatusSpec::corrode().to_decorator(2, 0)); // 2/stack, 2 stacks
+        c.dispatch(Event::TickStart, 1);
+        assert_eq!(c.plating, 6.0); // 10 - 4
+        assert_eq!(c.integrity, 30.0); // shred doesn't touch Integrity
+    }
+
+    #[test]
+    fn poison_softener_never_kills() {
+        // Poison: PctCurrent 0.08 Internal — the softener (can_kill = false).
+        let mut c = Character::new(BaseLine { max_integrity: 30.0, ..Default::default() });
+        c.apply_damage(0, 0, 29.0); // down to 1
+        c.install(StatusSpec::poison().to_decorator(5, 3));
+        c.dispatch(Event::TickStart, 1);
+        assert!(c.integrity > 0.0 && c.alive); // softener shrinks but never kills
     }
 }

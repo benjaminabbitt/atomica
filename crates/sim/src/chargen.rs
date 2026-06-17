@@ -22,7 +22,7 @@
 //! pool refactor *onto* (L2 / L2b); it coexists with the current `Unit` fold until
 //! those land.
 
-use crate::{Hex, MovementProfile, TargetingProfile};
+use crate::{Hex, MovementProfile, PenTier, TargetingProfile};
 
 /// A decorator's stable handle. A [`Modifier`]'s `source` links back to the
 /// decorator that spawned it, so removing/expiring the decorator drops exactly its
@@ -121,6 +121,17 @@ pub enum Capability {
     Hack(crate::Hack),
 }
 
+/// A non-numeric passive **flag** a status imposes — read by other phases, not a
+/// number on the stat line. `Stun` gates the owner's action (Crash / Seizure);
+/// `Vuln(f)` multiplies **incoming** damage (Breach). The passive face of the status
+/// effects that aren't DoTs; `Slow` instead folds in as a `More` factor on Initiative
+/// (Lag), so it isn't here.
+#[derive(Clone, Copy, PartialEq, Debug)]
+pub enum Flag {
+    Stun,
+    Vuln(f32),
+}
+
 /// A modifier's category, for matching on removal (a cleanse strips `Virus`-tagged).
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Tag {
@@ -133,11 +144,13 @@ pub enum Tag {
     Spoof,
 }
 
-/// What a [`Modifier`] carries — a numeric [`Factor`] or a behavior [`Override`].
+/// What a [`Modifier`] carries — a numeric [`Factor`], a behavior [`Override`], or a
+/// passive [`Flag`].
 #[derive(Clone, Copy, Debug)]
 pub enum ModifierKind {
     Factor(Factor),
     Override(Override),
+    Flag(Flag),
 }
 
 /// The **standard interface** every modifying component shares (§1). Its `source` is
@@ -158,8 +171,7 @@ pub struct Modifier {
 pub enum Expiration {
     /// Gear / augments — never expires on its own.
     Permanent,
-    /// Lasts `n` more ticks (a buff / debuff); decremented by
-    /// [`Character::tick_expirations`].
+    /// Lasts `n` more ticks (a buff / debuff); decremented by [`Character::decay`].
     Duration(u32),
 }
 
@@ -182,10 +194,73 @@ impl Remove {
     }
 }
 
+/// A battle event a decorator's **active face** reacts to (taxonomy §6.6 trigger
+/// set). Dispatched by [`Character::dispatch`].
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum Event {
+    /// Start of the owner's activation — DoTs / contagion ticks fire here.
+    TickStart,
+    TickEnd,
+    /// The owner was hit (on-hit riders).
+    OnHit,
+    /// The owner died (death triggers).
+    OnDeath,
+}
+
+/// How a reaction's magnitude is computed from the owner — the status `magnitude`
+/// axis. `PctCurrent` is the **softener** (never kills); resolved against the owner's
+/// pools at dispatch, per stack.
+#[derive(Clone, Copy, Debug)]
+pub enum Amount {
+    Flat(f32),
+    PctMax(f32),
+    PctCurrent(f32),
+}
+
+/// What a decorator does on an [`Event`] — its reaction *template*, scaled by the
+/// decorator's `stacks` at dispatch.
+#[derive(Clone, Copy, Debug)]
+pub enum HookEffect {
+    /// Damage the owner's pools (a DoT) through a penetration tier.
+    Damage { amount: Amount, pen: PenTier, can_kill: bool },
+    /// Shred the owner's Plating pool (Corrode).
+    ShredPlating { amount: Amount },
+}
+
+/// An event reaction carried by a decorator: when `event` fires, apply `effect`.
+#[derive(Clone, Copy, Debug)]
+pub struct Hook {
+    pub event: Event,
+    pub effect: HookEffect,
+}
+
+/// A concrete reaction produced by [`Character::dispatch`] and applied to the pools —
+/// returned for telemetry / tests (the §3c stream's active-face sibling). `source`
+/// links it to the decorator that fired it.
+#[derive(Clone, Copy, Debug)]
+pub enum Reaction {
+    Damage { amount: f32, pen: PenTier, can_kill: bool, source: GenId },
+    ShredPlating { amount: f32, source: GenId },
+}
+
+/// How a decorator wears off — the decorator-lifetime form of the status `decay`
+/// axis (named `Wear` to stay distinct from [`crate::Decay`]).
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum Wear {
+    /// Never (gear / implants).
+    None,
+    /// Lose one tick of `Duration` per decay step.
+    ByDuration,
+    /// Lose one `stack` per decay step; drop at zero.
+    ByStacks,
+}
+
 /// A **character generator** (`chargen`) — a stateful decorator. Its **passive face**
-/// is the modifiers it contributes (`factors` + `overrides`); its **active face** is
-/// its lifecycle (`expiration`) plus the modifiers it **removes** from earlier
-/// decorators (`removes`). Static gear is a `Permanent` decorator with no removes.
+/// is the modifiers it contributes (`factors` · `overrides` · `flags`); its **active
+/// face** is its lifecycle (`expiration` / `decay` / `stacks`), the modifiers it
+/// **removes** (a standing ward), and the **event `on`-hooks** it reacts through.
+/// Static gear is a `Permanent` decorator with no reactions; a status is a decaying
+/// one that hooks `TickStart`.
 ///
 /// Built without an `id`; [`Character::install`] stamps one on insertion.
 #[derive(Clone, Debug)]
@@ -200,11 +275,20 @@ pub struct Decorator {
     /// contributes **nothing** (factors, overrides, grant, ward all gated off) without
     /// losing its identity (`id`/`source`) — so a breach can degrade then repair it.
     pub scale: f32,
+    /// Mutable self-state: how many stacks the decorator holds — scales its event
+    /// reactions and (under [`Wear::ByStacks`]) is its lifetime.
+    pub stacks: u32,
     pub expiration: Expiration,
+    /// How it wears off (status `decay` axis).
+    pub decay: Wear,
     pub factors: Vec<Factor>,
     pub overrides: Vec<Override>,
+    /// Passive flags it imposes (Stun / Vuln).
+    pub flags: Vec<Flag>,
     /// A capability this decorator grants (a deck's [`Hack`]). Gated by `scale > 0`.
     pub grants: Option<Capability>,
+    /// Event reactions — the active face (a DoT hooks `TickStart`).
+    pub on: Vec<Hook>,
     /// Modifiers this decorator strips from the set — a **standing ward**, applied
     /// order-independently (cleanse, counter-spoof, Ripperdoc).
     pub removes: Vec<Remove>,
@@ -219,33 +303,52 @@ impl Decorator {
             tag,
             priority: Priority::GEAR,
             scale: 1.0,
+            stacks: 1,
             expiration: Expiration::Permanent,
+            decay: Wear::None,
             factors,
             overrides: Vec::new(),
+            flags: Vec::new(),
             grants: None,
+            on: Vec::new(),
             removes: Vec::new(),
             id: GenId(0),
         }
     }
 
-    /// A timed buff/debuff contributing `factors` for `turns` ticks.
+    /// A timed buff/debuff contributing `factors` for `turns` ticks (decays by
+    /// duration).
     pub fn timed(tag: Tag, turns: u32, factors: Vec<Factor>) -> Self {
         Self {
-            tag,
             priority: Priority::BUFF,
-            scale: 1.0,
             expiration: Expiration::Duration(turns),
-            factors,
-            overrides: Vec::new(),
-            grants: None,
-            removes: Vec::new(),
-            id: GenId(0),
+            decay: Wear::ByDuration,
+            ..Self::gear(tag, factors)
         }
+    }
+
+    /// A bare **status** decorator — `stacks` copies, decaying by `decay`, with no
+    /// passive factors of its own (add them with the builders / hooks). The
+    /// status-pool port (`docs/layers.md` L2b); see [`StatusSpec::to_decorator`].
+    pub fn status(tag: Tag, stacks: u32, expiration: Expiration, decay: Wear) -> Self {
+        Self { stacks, expiration, decay, ..Self::gear(tag, Vec::new()) }
     }
 
     /// Builder: add a behavior override (a smartgun, a spoof).
     pub fn with_override(mut self, o: Override) -> Self {
         self.overrides.push(o);
+        self
+    }
+
+    /// Builder: impose a passive [`Flag`] (Stun / Vuln).
+    pub fn with_flag(mut self, f: Flag) -> Self {
+        self.flags.push(f);
+        self
+    }
+
+    /// Builder: react to an [`Event`] with a [`HookEffect`] (a DoT on `TickStart`).
+    pub fn with_hook(mut self, event: Event, effect: HookEffect) -> Self {
+        self.on.push(Hook { event, effect });
         self
     }
 
@@ -278,6 +381,12 @@ impl Decorator {
     /// Does the decorator deliver (some of) its benefit right now? (`scale > 0`.)
     pub fn is_active(&self) -> bool {
         self.scale > 0.0
+    }
+
+    /// Has it worn off — duration ran out, or stack-decay emptied it?
+    pub fn is_expired(&self) -> bool {
+        matches!(self.expiration, Expiration::Duration(0))
+            || (self.decay == Wear::ByStacks && self.stacks == 0)
     }
 }
 
@@ -396,10 +505,25 @@ impl Realized {
     /// The netrunning loadout this character can run, if any active decorator grants
     /// one (the highest-priority deck wins). `None` ⇒ no deck ⇒ can't hack.
     pub fn hack(&self) -> Option<crate::Hack> {
-        match self.capability {
-            Some(Capability::Hack(h)) => Some(h),
-            None => None,
-        }
+        self.capability.map(|Capability::Hack(h)| h)
+    }
+
+    /// Is the character **stunned** (a Crash / Seizure present)? Read by the action
+    /// phase to skip its activation.
+    pub fn stunned(&self) -> bool {
+        self.mods.iter().any(|m| matches!(m.kind, ModifierKind::Flag(Flag::Stun)))
+    }
+
+    /// The **incoming-damage multiplier** from Breach-style `Vuln` flags — the product
+    /// of every active vulnerability (`1.0` if none). Read where damage is applied.
+    pub fn vuln(&self) -> f32 {
+        self.mods
+            .iter()
+            .filter_map(|m| match m.kind {
+                ModifierKind::Flag(Flag::Vuln(f)) => Some(f),
+                _ => None,
+            })
+            .product()
     }
 
     /// The flat modifier set, for inspection / referencing (look-up by `source` or
@@ -497,14 +621,85 @@ impl Character {
         }
     }
 
-    /// Tick all `Duration` expirations down one; drop any that reach zero (§1).
-    pub fn tick_expirations(&mut self) {
+    /// Set the benefit fraction of **every** decorator with `tag` — the gen-level
+    /// op behind EMP (`scale_where(Implant, 0.0)` fries all chrome) and a mass
+    /// repair. (`docs/cyberware.md` §5; the Cascade's crit/mesh gating stays with the
+    /// hack resolver.)
+    pub fn scale_where(&mut self, tag: Tag, scale: f32) {
+        for d in self.gen.iter_mut().filter(|d| d.tag == tag) {
+            d.scale = scale;
+        }
+    }
+
+    /// One **decay step** (the cleanup phase, §1): wear every decorator by its
+    /// `decay` axis — duration loses a tick, stack-decay loses a stack — then drop
+    /// any that have worn off.
+    pub fn decay(&mut self) {
         for d in &mut self.gen {
-            if let Expiration::Duration(n) = &mut d.expiration {
-                *n = n.saturating_sub(1);
+            match d.decay {
+                Wear::None => {}
+                Wear::ByDuration => {
+                    if let Expiration::Duration(n) = &mut d.expiration {
+                        *n = n.saturating_sub(1);
+                    }
+                }
+                Wear::ByStacks => d.stacks = d.stacks.saturating_sub(1),
             }
         }
-        self.gen.retain(|d| !matches!(d.expiration, Expiration::Duration(0)));
+        self.gen.retain(|d| !d.is_expired());
+    }
+
+    // -- the active face: events (§1, L2b) --
+
+    /// Dispatch a battle [`Event`] to every **active** decorator's `on`-hooks: each
+    /// matching hook fires a [`Reaction`] (scaled by the decorator's `stacks`), which
+    /// is applied to the pools and returned for telemetry. A two-pass split (gather,
+    /// then apply) keeps the borrow clean and the order deterministic (gen order).
+    pub fn dispatch(&mut self, event: Event, tick: u32) -> Vec<Reaction> {
+        // Resolve `Amount`s against a snapshot of the pre-dispatch pools (so every
+        // reaction this tick reads the same max / current — deterministic).
+        let max = self.realize().max_integrity();
+        let current = self.integrity;
+        let resolve = |a: Amount| match a {
+            Amount::Flat(v) => v,
+            Amount::PctMax(p) => p * max,
+            Amount::PctCurrent(p) => p * current,
+        };
+        let mut reactions = Vec::new();
+        for d in &self.gen {
+            if !d.is_active() {
+                continue;
+            }
+            let stacks = d.stacks.max(1) as f32;
+            for h in d.on.iter().filter(|h| h.event == event) {
+                reactions.push(match h.effect {
+                    HookEffect::Damage { amount, pen, can_kill } => Reaction::Damage {
+                        amount: resolve(amount) * stacks,
+                        pen,
+                        can_kill,
+                        source: d.id,
+                    },
+                    HookEffect::ShredPlating { amount } => Reaction::ShredPlating {
+                        amount: resolve(amount) * stacks,
+                        source: d.id,
+                    },
+                });
+            }
+        }
+        for r in &reactions {
+            match *r {
+                Reaction::Damage { amount, pen, can_kill, source } => {
+                    self.apply_pool_damage(tick, source.0, amount, pen, can_kill);
+                    if !self.alive {
+                        break; // dead mid-pass; the rest doesn't land
+                    }
+                }
+                Reaction::ShredPlating { amount, .. } => {
+                    self.plating = (self.plating - amount).max(0.0);
+                }
+            }
+        }
+        reactions
     }
 
     /// The gen, for inspection (look-up by id / tag).
@@ -545,6 +740,13 @@ impl Character {
                     kind: ModifierKind::Override(o),
                 });
             }
+            for &fl in &dec.flags {
+                mods.push(Modifier {
+                    source: dec.id,
+                    tag: dec.tag,
+                    kind: ModifierKind::Flag(fl),
+                });
+            }
             if let Some(cap) = dec.grants {
                 capability = Some(cap);
             }
@@ -565,8 +767,9 @@ impl Character {
 
     // -- the pools (live state, §3c) --
 
-    /// Apply `amount` damage to Integrity: clamp at 0, latch death on the crossing,
-    /// and record the [`DamageEvent`] (attribution `source`). Returns the event.
+    /// Apply `amount` damage straight to Integrity (Internal): clamp at 0, latch death
+    /// on the crossing, and record the [`DamageEvent`] (attribution `source`). Returns
+    /// the event.
     pub fn apply_damage(&mut self, tick: u32, source: u32, amount: f32) -> DamageEvent {
         let before = self.integrity;
         self.integrity = (self.integrity - amount).max(0.0);
@@ -577,6 +780,44 @@ impl Character {
         let ev = DamageEvent { tick, source, amount, lethal };
         self.log.push(ev);
         ev
+    }
+
+    /// Apply `amount` damage routed through the **layers** by penetration tier
+    /// (External → Barrier → Plating, Contact → Plating, Internal → straight through),
+    /// then Integrity — the DoT path the active face feeds. `can_kill == false` is the
+    /// **softener** floor: it can drag Integrity to `1`, never to a kill.
+    pub fn apply_pool_damage(
+        &mut self,
+        tick: u32,
+        source: u32,
+        amount: f32,
+        pen: PenTier,
+        can_kill: bool,
+    ) {
+        let mut remaining = amount;
+        if matches!(pen, PenTier::External) {
+            remaining = absorb(&mut self.barrier, remaining);
+        }
+        if matches!(pen, PenTier::External | PenTier::Contact) {
+            remaining = absorb(&mut self.plating, remaining);
+        }
+        if remaining <= 0.0 {
+            return;
+        }
+        let before = self.integrity;
+        let mut after = before - remaining;
+        let mut lethal = false;
+        if after <= 0.0 {
+            if can_kill {
+                after = 0.0;
+                lethal = before > 0.0;
+                self.alive = false;
+            } else {
+                after = 1.0_f32.min(before); // softener never kills
+            }
+        }
+        self.integrity = after;
+        self.log.push(DamageEvent { tick, source, amount: remaining, lethal });
     }
 
     /// Fill every pool to its current composed maximum — the **deploy / spawn** step
@@ -611,6 +852,13 @@ impl Character {
     pub fn log(&self) -> &[DamageEvent] {
         &self.log
     }
+}
+
+/// Subtract from a layer pool, returning the overflow that passes through it.
+fn absorb(layer: &mut f32, amount: f32) -> f32 {
+    let soaked = layer.min(amount);
+    *layer -= soaked;
+    amount - soaked
 }
 
 #[cfg(test)]
@@ -779,9 +1027,9 @@ mod tests {
         let mut c = Character::new(base());
         c.install(Decorator::timed(Tag::Buff, 2, vec![Factor::add(Stat::Damage, 6.0)]));
         assert_eq!(c.realize().damage(), 16.0);
-        c.tick_expirations(); // 2 -> 1
+        c.decay(); // 2 -> 1
         assert_eq!(c.realize().damage(), 16.0);
-        c.tick_expirations(); // 1 -> 0, dropped
+        c.decay(); // 1 -> 0, dropped
         assert_eq!(c.realize().damage(), 10.0);
     }
 
