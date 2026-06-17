@@ -13,27 +13,46 @@
 //! All three are **deterministic** (seeded → reproducible, like the sim they
 //! drive) and share the spine's rules: **permadeath** (the fallen are gone for
 //! good) and **end-on-wipe** (you advance as long as you still field an army,
-//! bleeding the roster as you go). The navigation **tree**, economy / Rep, Jobs,
-//! shops, and async match-making are later layers on top of this combat
-//! progression.
+//! bleeding the roster as you go).
+//!
+//! **Encounters are objective-driven** ([`atomica_sim::ObjectiveKind`]: eliminate /
+//! survive / reach / **hold** (capture)). An encounter is passed only if its
+//! objective stays *satisfied* (not Failed) — so "win the fight" and "complete the
+//! mission" can diverge: wipe the enemy but fail to hold the node and the run is
+//! still lost. (Attack/Defend **posture**, Extract, and Escort objectives, plus
+//! the navigation **tree**, economy / Rep, shops, and async match-making, are
+//! later layers on top of this.)
 
-use atomica_sim::{Battle, Hex, Outcome, Team, Unit, UnitId};
+use atomica_sim::{
+    Battle, Goal, Hex, ObjectiveKind, ObjectiveStatus, Objectives, Outcome, Team, Unit, UnitId,
+};
 
 /// Hard cap on ticks per battle (matches the sim's draw fallback).
 const MAX_TICKS: u32 = 1000;
 /// Depth column the enemy force deploys on (player on column 0).
 const ENEMY_COLUMN: i32 = 8;
 
-/// One planned battle: the enemy force the roster faces. (Team is assigned at
-/// deploy time, so build the enemies however you like.)
+/// One planned battle: the enemy force the roster faces, and the **objective**
+/// that defines winning it. (Team is assigned at deploy time, so build the enemies
+/// however you like.)
 pub struct Encounter {
     pub name: String,
     pub enemies: Vec<Unit>,
+    /// What it takes to pass (eliminate / survive / reach / hold). The encounter
+    /// is passed only if this stays **satisfied** (not Failed) at the end.
+    pub objective: ObjectiveKind,
 }
 
 impl Encounter {
+    /// An **elimination** encounter (wipe the enemy) — the default objective.
     pub fn new(name: impl Into<String>, enemies: Vec<Unit>) -> Self {
-        Self { name: name.into(), enemies }
+        Self { name: name.into(), enemies, objective: ObjectiveKind::Eliminate }
+    }
+
+    /// Set a non-default objective (survive / reach / hold).
+    pub fn with_objective(mut self, objective: ObjectiveKind) -> Self {
+        self.objective = objective;
+        self
     }
 }
 
@@ -78,6 +97,8 @@ pub struct BattleReport {
     pub encounter: String,
     /// The sim verdict (who held the field).
     pub outcome: Outcome,
+    /// The encounter objective's final status (Achieved / Pending / Failed).
+    pub objective: ObjectiveStatus,
     /// Names of the roster units lost this battle (permadeath).
     pub losses: Vec<String>,
     /// How many roster units remain.
@@ -155,10 +176,11 @@ impl Run {
         }
         let mut battle = self.build_battle(&self.encounters[self.index]);
         let outcome = battle.resolve(MAX_TICKS);
+        let objective = battle.objectives_report().first().copied().unwrap_or(ObjectiveStatus::Achieved);
 
         let before: Vec<String> = self.roster.iter().map(|u| u.name.clone()).collect();
         let survivors: Vec<Unit> =
-            battle.units.into_iter().filter(|u| u.team == Team::A && u.is_alive()).collect();
+            battle.units.iter().filter(|u| u.team == Team::A && u.is_alive()).cloned().collect();
         let alive: std::collections::HashSet<&str> =
             survivors.iter().map(|u| u.name.as_str()).collect();
         let losses: Vec<String> =
@@ -168,11 +190,14 @@ impl Run {
         let report = BattleReport {
             encounter: self.encounters[self.index].name.clone(),
             outcome,
+            objective,
             losses,
             survivors: self.roster.len(),
         };
 
-        if self.roster.is_empty() {
+        // Pass the encounter only if the army survived **and** the objective held
+        // (not Failed). Otherwise the run ends — a wipe *or* a failed mission.
+        if self.roster.is_empty() || !objective.is_satisfied() {
             self.outcome = RunOutcome::Lost;
         } else {
             self.index += 1;
@@ -205,7 +230,8 @@ impl Run {
             units.push(deploy(e, &mut next_id, Team::B, Hex::new(ENEMY_COLUMN, row as i32)));
         }
         let seed = self.seed ^ (self.index as u64).wrapping_mul(0x9E37_79B9_7F4A_7C15);
-        Battle::new(units, seed)
+        let objectives = Objectives::new(vec![Goal::new(encounter.objective.build(), 0, 0)]);
+        Battle::new(units, seed).with_objectives(objectives)
     }
 }
 
@@ -279,9 +305,11 @@ impl Game {
         let run_seed = self.seed ^ (self.index as u64).wrapping_mul(0xD1B5_4A32_D192_ED03);
         let mut run = Run::new(roster, encounters, run_seed);
         let battles = run.resolve();
+        let run_lost = run.outcome() == RunOutcome::Lost;
 
         let mut survivors = run.into_survivors();
-        if survivors.is_empty() {
+        if run_lost {
+            // A wipe *or* a failed objective ends the campaign.
             self.outcome = GameOutcome::Lost;
         } else {
             rest_and_recuperate(&mut survivors); // R&R between runs
@@ -379,6 +407,34 @@ mod tests {
         run.resolve();
         assert_eq!(run.outcome(), RunOutcome::Lost);
         assert!(run.roster().is_empty());
+    }
+
+    #[test]
+    fn a_survive_encounter_passes_by_lasting() {
+        // A defend-style objective: pass by staying alive (it's satisfied unless
+        // you're wiped), even though the fight also ends decisively.
+        let roster = vec![fighter("Tank", 10.0, 80.0, 6.0)];
+        let enc = Encounter::new("Hold the line", vec![fighter("Rusher", 8.0, 30.0, 7.0)])
+            .with_objective(ObjectiveKind::Survive(3));
+        let mut run = Run::new(roster, vec![enc], 1);
+        let report = run.fight_next().unwrap();
+        assert!(report.objective.is_satisfied());
+        assert_eq!(run.outcome(), RunOutcome::Won);
+    }
+
+    #[test]
+    fn winning_the_fight_but_missing_the_objective_loses_the_run() {
+        // Capture a node the unit never stands on: it wipes the enemy yet fails
+        // the mission — army alive, run lost.
+        let roster = vec![fighter("Ace", 30.0, 80.0, 9.0)];
+        let enc = Encounter::new("Capture", vec![fighter("Mook", 2.0, 8.0, 1.0)])
+            .with_objective(ObjectiveKind::Hold(Hex::new(-5, -5), 1));
+        let mut run = Run::new(roster, vec![enc], 1);
+        let report = run.fight_next().unwrap();
+        assert!(matches!(report.outcome, Outcome::Winner(Team::A))); // enemy wiped
+        assert_eq!(report.objective, ObjectiveStatus::Failed); // ...but the node wasn't held
+        assert_eq!(run.outcome(), RunOutcome::Lost); // mission failure
+        assert!(!run.roster().is_empty()); // the unit lived
     }
 
     #[test]

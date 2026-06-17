@@ -127,6 +127,61 @@ impl Objective for TimeAttack {
     }
 }
 
+/// **Capture / Hold**: take and keep the target `hex` — **controlled** when a
+/// player unit occupies it and no living enemy shares it. Achieved once held *and*
+/// either the round reaches `by_round` or the enemy is cleared. Fails if the
+/// player is wiped, or the fight ends without control (you must take and hold it).
+pub struct Hold {
+    pub hex: Hex,
+    pub by_round: u32,
+}
+impl Objective for Hold {
+    fn status(&self, units: &[Unit], tick: u32, fight_over: bool) -> ObjectiveStatus {
+        if !any_alive(units, PLAYER) {
+            return ObjectiveStatus::Failed;
+        }
+        let on_hex = |team: Team| {
+            units.iter().any(|u| u.is_alive() && u.team == team && u.pos == self.hex)
+        };
+        let controlled = on_hex(PLAYER) && !on_hex(ENEMY);
+        let cleared = !any_alive(units, ENEMY);
+        if controlled && (tick >= self.by_round || cleared) {
+            ObjectiveStatus::Achieved
+        } else if fight_over {
+            ObjectiveStatus::Failed // the fight ended and you never held it
+        } else {
+            ObjectiveStatus::Pending
+        }
+    }
+}
+
+/// A Clone-able **objective descriptor** — built into a boxed [`Objective`] when a
+/// battle starts. The run layer carries one of these on each encounter (the trait
+/// objects themselves aren't `Clone`, so this is the portable spec).
+#[derive(Clone, Copy, Debug)]
+pub enum ObjectiveKind {
+    /// Wipe the enemy — the standard fight ([`WinFight`]).
+    Eliminate,
+    /// Last until round `rounds` ([`Survive`]).
+    Survive(u32),
+    /// Get a unit onto `hex` ([`Reach`]).
+    Reach(Hex),
+    /// Take and hold `hex` by round `1` ([`Hold`]).
+    Hold(Hex, u32),
+}
+
+impl ObjectiveKind {
+    /// Construct the boxed [`Objective`] for a fresh battle.
+    pub fn build(self) -> Box<dyn Objective> {
+        match self {
+            ObjectiveKind::Eliminate => Box::new(WinFight),
+            ObjectiveKind::Survive(rounds) => Box::new(Survive { rounds }),
+            ObjectiveKind::Reach(hex) => Box::new(Reach { hex }),
+            ObjectiveKind::Hold(hex, by_round) => Box::new(Hold { hex, by_round }),
+        }
+    }
+}
+
 /// An [`Objective`] paired with its stake: `reward` on `Achieved`, `penalty` on `Failed`.
 pub struct Goal {
     pub objective: Box<dyn Objective>,

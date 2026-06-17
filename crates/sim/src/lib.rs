@@ -38,8 +38,8 @@ pub use hack::{hack_rating, Hack, HackResult};
 pub use hex::Hex;
 pub use implant::{Condition, Contribution, Implant, Pan};
 pub use objective::{
-    Goal, MarginLoss, Objective, ObjectiveStatus, Objectives, Reach, Survive, TimeAttack, WinFight,
-    PLAYER,
+    Goal, Hold, MarginLoss, Objective, ObjectiveKind, ObjectiveStatus, Objectives, Reach, Survive,
+    TimeAttack, WinFight, PLAYER,
 };
 pub use rng::{RandomSource, ScriptedRng, SplitMix64};
 pub use roll::{resolve_contest, Contest, RollOutcome};
@@ -1030,6 +1030,30 @@ mod tests {
         let mut dead = vec![unit(0, Team::A, 0)];
         dead[0].alive = false;
         assert_eq!(obj.status(&dead, 1, false), ObjectiveStatus::Failed);
+    }
+
+    #[test]
+    fn hold_captures_by_round_or_by_clearing() {
+        let hex = Hex::new(2, 0);
+        let mut held = vec![unit(0, Team::A, 2), unit(1, Team::B, 5)]; // player on the hex
+        held[0].pos = hex;
+        let obj = Hold { hex, by_round: 3 };
+        assert_eq!(obj.status(&held, 1, false), ObjectiveStatus::Pending); // holds, but too early
+        assert_eq!(obj.status(&held, 3, false), ObjectiveStatus::Achieved); // held to the round
+        let mut cleared = held.clone();
+        cleared[1].alive = false; // enemy gone → captured immediately
+        assert_eq!(obj.status(&cleared, 1, false), ObjectiveStatus::Achieved);
+        let away = vec![unit(0, Team::A, 0), unit(1, Team::B, 5)]; // player not on the hex
+        assert_eq!(obj.status(&away, 9, true), ObjectiveStatus::Failed); // fight over, never held
+    }
+
+    #[test]
+    fn hold_is_not_held_while_contested() {
+        let hex = Hex::new(2, 0);
+        let mut both = vec![unit(0, Team::A, 2), unit(1, Team::B, 2)];
+        both[0].pos = hex;
+        both[1].pos = hex; // an enemy contests the hex
+        assert_eq!(Hold { hex, by_round: 1 }.status(&both, 5, false), ObjectiveStatus::Pending);
     }
 
     #[test]
