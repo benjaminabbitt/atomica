@@ -590,8 +590,7 @@ impl<R: RandomSource> Battle<R> {
         self.tick += 1;
 
         self.status_phase();
-        self.action_phase();
-        self.digital_phase();
+        self.woven_phase();
         self.decay_phase();
 
         self.outcome()
@@ -662,6 +661,9 @@ impl<R: RandomSource> Battle<R> {
         }
     }
 
+    /// The standalone **physical** pass (initiative order) — superseded in `step` by
+    /// [`Battle::woven_phase`]; retained for isolated tests.
+    #[cfg(test)]
     fn action_phase(&mut self) {
         // Deterministic order: effective initiative desc, id asc as the tiebreak.
         let mut order: Vec<usize> =
@@ -678,22 +680,26 @@ impl<R: RandomSource> Battle<R> {
             if !self.units[i].is_alive() || self.units[i].is_stunned() {
                 continue;
             }
-            // §7J/§10.4: pick a target by the **targeting profile**, **move** up to
-            // `speed` hexes by the **movement profile** (through free hexes), **then
-            // act** if a target is in range.
-            let Some(target) = self.select_target(i) else {
-                continue;
-            };
-            for _ in 0..self.units[i].speed.max(0) {
-                let next = self.movement_step(i, target);
-                if next == self.units[i].pos {
-                    break; // at the profile's goal, or boxed in
-                }
-                self.units[i].pos = next;
+            self.physical_activation(i);
+        }
+    }
+
+    /// One unit's **physical** activation (§7J/§10.4): pick a target by its targeting
+    /// profile, move up to `speed` hexes by its movement profile (through free hexes),
+    /// then attack if a target is in range.
+    fn physical_activation(&mut self, i: usize) {
+        let Some(target) = self.select_target(i) else {
+            return;
+        };
+        for _ in 0..self.units[i].speed.max(0) {
+            let next = self.movement_step(i, target);
+            if next == self.units[i].pos {
+                break; // at the profile's goal, or boxed in
             }
-            if self.units[i].pos.distance(self.units[target].pos) <= self.units[i].attack.range {
-                self.resolve_attack(i, target);
-            }
+            self.units[i].pos = next;
+        }
+        if self.units[i].pos.distance(self.units[target].pos) <= self.units[i].attack.range {
+            self.resolve_attack(i, target);
         }
     }
 
@@ -875,11 +881,9 @@ impl<R: RandomSource> Battle<R> {
         }
     }
 
-    /// The digital activation pass (§10.3/§10.8): every unit with a hack and net
-    /// presence (Link > 0) acts in **digital-initiative = Link** order, hacking
-    /// the nearest reachable enemy. A unit frozen by a Crash/Seizure stun is off
-    /// the net too. *(First pass: a discrete phase after the physical one; the
-    /// design's fully interleaved physical+digital order is a later step.)*
+    /// The standalone **digital** pass (Link order) — superseded in `step` by
+    /// [`Battle::woven_phase`]; retained for isolated tests.
+    #[cfg(test)]
     fn digital_phase(&mut self) {
         let mut order: Vec<usize> = (0..self.units.len())
             .filter(|&i| {
@@ -896,8 +900,57 @@ impl<R: RandomSource> Battle<R> {
             if !self.units[i].is_alive() || self.units[i].is_stunned() {
                 continue;
             }
-            if let Some(target) = self.nearest_hackable_enemy(i) {
-                self.resolve_hack(i, target);
+            self.digital_activation(i);
+        }
+    }
+
+    /// One unit's **digital** activation (§10.8): hack the nearest reachable enemy.
+    /// (Caller has already gated alive / not-stunned and the Link-presence filter.)
+    fn digital_activation(&mut self, i: usize) {
+        if let Some(target) = self.nearest_hackable_enemy(i) {
+            self.resolve_hack(i, target);
+        }
+    }
+
+    /// The **woven** activation order (§7C/§10.3): every living unit contributes a
+    /// **physical** activation (ranked by effective Initiative) and, if it can project
+    /// onto the net (a hack + Link > 0), a **digital** one (ranked by Link) — all on
+    /// one descending track, so a high-Link runner hacks before a sluggish bruiser
+    /// swings. Ties: lower `id` first, then physical before digital. Each entry is
+    /// `(unit, is_digital)`.
+    fn woven_order(&self) -> Vec<(usize, bool)> {
+        // (key desc, id, kind-tiebreak, unit, is_digital)
+        let mut order: Vec<(f32, u32, u8, usize, bool)> = Vec::new();
+        for i in 0..self.units.len() {
+            let u = &self.units[i];
+            if !u.is_alive() {
+                continue;
+            }
+            order.push((u.effective_initiative(), u.id.0, 0, i, false));
+            if u.hack.is_some() && u.link > 0 {
+                order.push((u.link as f32, u.id.0, 1, i, true));
+            }
+        }
+        order.sort_by(|a, b| {
+            b.0.partial_cmp(&a.0)
+                .unwrap_or(std::cmp::Ordering::Equal)
+                .then(a.1.cmp(&b.1))
+                .then(a.2.cmp(&b.2))
+        });
+        order.into_iter().map(|(_, _, _, i, d)| (i, d)).collect()
+    }
+
+    /// Run the woven order (§10.3). The order is snapshotted at phase start; the dead /
+    /// stunned are skipped as it runs.
+    fn woven_phase(&mut self) {
+        for (i, digital) in self.woven_order() {
+            if !self.units[i].is_alive() || self.units[i].is_stunned() {
+                continue;
+            }
+            if digital {
+                self.digital_activation(i);
+            } else {
+                self.physical_activation(i);
             }
         }
     }
@@ -1939,5 +1992,32 @@ mod tests {
         b.resolve_attack(0, 1);
         assert!(b.units[1].integrity < hp[1]);
         assert_eq!(b.units[2].integrity, hp[2]); // untouched
+    }
+
+    // -- Phase 4: woven initiative (§7C/§10.3) ---------------------------------
+
+    #[test]
+    fn woven_order_interleaves_physical_and_digital_by_speed() {
+        // Runner: Link 6 (digital key 6) but slow (Initiative 1). Bruiser: no deck,
+        // Initiative 5. The single track interleaves: the runner *hacks* first (6),
+        // the bruiser *swings* (5), then the runner *moves* (1).
+        let mut runner = unit(0, Team::A, 0);
+        runner.initiative = 1.0;
+        runner.link = 6;
+        runner.hack = Some(Hack::new(4, StatusSpec::lockware(), 1, 4));
+        let mut bruiser = unit(1, Team::B, 1);
+        bruiser.initiative = 5.0;
+        let b = Battle::new(vec![runner, bruiser], 1);
+        assert_eq!(b.woven_order(), vec![(0, true), (1, false), (0, false)]);
+    }
+
+    #[test]
+    fn a_non_hacker_has_only_a_physical_activation() {
+        let a = unit(0, Team::A, 0); // link 0, no deck
+        let foe = unit(1, Team::B, 1);
+        let b = Battle::new(vec![a, foe], 1);
+        let order = b.woven_order();
+        assert_eq!(order.len(), 2); // two physicals, no digital entries
+        assert!(order.iter().all(|&(_, digital)| !digital));
     }
 }

@@ -15,8 +15,8 @@ In [`crates/sim`](../crates/sim/src/lib.rs) today:
 
 - **Hex board + math** ([`hex`](../crates/sim/src/hex.rs)) — axial flat-top:
   distance, neighbours, `within` (blast disc), `ring`, `line` (beam), `step_toward`.
-- **The tick loop** (`Battle::step`): **status** (DoTs / shred, may kill) →
-  **action** (physical) → **digital** (hacks) → **decay**.
+- **The tick loop** (`Battle::step`): **status** (DoTs / shred, may kill) → **woven**
+  (one interleaved physical + digital order, §10.3) → **decay**.
 - **Action**: units act in **effective-initiative order** (desc, id tiebreak); each
   non-stunned unit picks a target by its **targeting profile**, **moves** up to its
   `speed` through free hexes by its **movement profile**, **then attacks** if in range
@@ -61,7 +61,7 @@ The designed round:
 | **Targeting profiles** (§7J) | Nearest · Lowest-Integrity · Highest-threat · Backline · Weakest-armor | **all five**, read each activation | ✅ |
 | **Move stat + move-then-act** (§10.4) | move up to `move` hexes, then act | **`speed` hexes, then act** | ✅ |
 | **Occupancy / pathing / boxed-in** (§10.5a) | occupied hexes block; no free hex ⇒ no move | **free-hex stepping + boxed-in** (greedy, no A*) | ✅ |
-| **Woven initiative** (§7C/§10.3) | one interleaved physical+digital order | two discrete phases | 🔭 |
+| **Woven initiative** (§7C/§10.3) | one interleaved physical+digital order | **one woven order** (Initiative + Link on one track) | ✅ |
 | **AoE footprints + friendly fire** (§7G) | blast (radius) · beam (line/width); physical hits allies | **`Blast`/`Beam` wired, friendly fire on** | ✅ (width = 1) |
 | **Range bands / reach** (§10.5) | gun bands · polearm reach | one `range` value | ◑ |
 | **Multiple weapons / selection** | per-target weapon choice | one attack profile | 🔭 |
@@ -97,8 +97,12 @@ Sequenced so each phase is shippable and test-first, hardest-leverage first:
    damage pipeline over `footprint_targets` — **every living unit in the area, allies
    included** (only the attacker is spared). *(Beam width is 1; multi-width is a later
    refinement.)*
-4. **Woven initiative** — collapse the two phases into **one interleaved order**
-   (physical Initiative + Link), the §10.3 model. Affects timing/tie-breaks.
+4. **Woven initiative ✅** — `Battle::woven_order` builds **one descending track**:
+   each living unit a **physical** activation keyed by effective Initiative and, if it
+   can hack (deck + Link > 0), a **digital** one keyed by Link; ties = lower `id`, then
+   physical before digital. `step` runs the single `woven_phase`; the old `action_phase`
+   / `digital_phase` are now test-only. A high-Link runner hacks before a sluggish
+   bruiser swings.
 5. **Weapons & reach** — range bands, polearm reach, multi-weapon selection, the
    **Smartgun/IFF** smart-targeting mod (ties to AR).
 6. **Death triggers** — Detonate / Legacy / Data-spill on removal (§10.9); feeds
