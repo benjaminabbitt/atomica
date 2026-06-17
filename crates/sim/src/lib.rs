@@ -28,6 +28,7 @@ mod hack;
 mod hex;
 mod implant;
 mod objective;
+mod profile;
 mod rng;
 mod roll;
 mod skills;
@@ -37,6 +38,7 @@ pub use armor::ArmorClass;
 pub use hack::{hack_rating, Hack, HackResult};
 pub use hex::Hex;
 pub use implant::{Condition, Contribution, Implant, Pan};
+pub use profile::{MovementProfile, TargetingProfile};
 pub use objective::{
     Goal, Hold, MarginLoss, Objective, ObjectiveKind, ObjectiveStatus, Objectives, Reach, Survive,
     TimeAttack, WinFight, PLAYER,
