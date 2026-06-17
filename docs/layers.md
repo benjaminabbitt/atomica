@@ -17,23 +17,30 @@ until it lands.*
 
 Equipment is **not special-cased**, and the decorator **does not implement the unit
 interface**. Instead, each piece of kit is a **character generator** (`chargen`) ◆ —
-a stateful decorator that **emits a `Character`**: given the character so far, it
-**adds (and may remove) `Modifier`s** on it and returns it. `chargen` is **the
+a stateful decorator that **adds (and may remove) `Modifier`s**. `chargen` is **the
 modification interface** — *every* change to a character flows through it. The
-persistent state is the **decorator set**; the `Character` is **created on demand**
-by running the decorators over the `base` (base → implant → weapon → armor → …),
-accumulating its **referenceable modifier set**; the `Character`'s **accessors** then
-**sum and operate** over those modifiers (the §2 math) to answer each query.
+**`Character` wraps the chargen set** ◆: it *owns* the ordered decorators (the
+persistent modifier state) **plus the live pools** (§3), and exposes
+**`realize()`** — the composed view, produced on demand by running the decorators
+over the `base` (base → implant → weapon → armor → …) into a **referenceable modifier
+set**, whose accessors **sum and operate** (the §2 math) to answer each query.
 
-So the split is three clean roles:
-- **`chargen` (decorators) are the modification interface** — they **emit a
-  `Character`** by decorating it: **add their modifiers** (each stamped with the
-  decorator's id), and **remove** others' where they counter. Stateful: they hold an
-  `expiration` and **receive events** (which may modify them).
-- **The persistent state is the decorator set** (+ base + live state); the
-  **`Character` is the on-demand composed view** — its referenceable modifier set is
-  produced by running the decorators, queried/looked-up by id, `source`, or `tag`.
-- **The `Character`'s accessors do the math** — `link()` / `attack()` / … **sum the
+So reads take one of two paths:
+- **Composed stats / weapon / behavior** → `self.realize().link()` — through the
+  folded modifier set.
+- **Live pools** (current Integrity, Barrier / Plating, pos, alive) → **straight off
+  the `Character`** — they're path-dependent state, not composed (§3).
+
+And the three roles stay clean:
+- **`chargen` (decorators) are the modification interface** — they **add their
+  modifiers** (each stamped with the decorator's id) and **remove** others' where they
+  counter. Stateful: they hold an `expiration` and **receive events** (which may
+  modify them). **Applying a DoT / status / breach mutates the gen** — adds or changes
+  a decorator in the set, which dirties `realize`.
+- **The `Character` wraps the gen + pools** — the persistent thing that saves, ticks,
+  and takes events; `realize()` is its on-demand composed view (cached behind a dirty
+  flag, §4), looked-up by id / `source` / `tag`.
+- **The realized view's accessors do the math** — `link()` / `attack()` / … **sum the
   factors and run the operations** (sum / multiply / pick-override). There is **no
   separate orchestrator**; the calculation lives in the accessors.
 
@@ -93,15 +100,19 @@ reactions). Static gear is just a `Permanent` decorator with no reactions.
 one component type** — a buff is a `Duration` decorator emitting factors; a **DoT** a
 decorator that damages on `TickStart`; an implant a `Permanent` one.
 
-**`Character` — created on demand ◆.** The *persistent* state is the **decorator
-set** (+ `base` + live state §3); the `Character` is **generated on demand** — run
-the decorators over the base (each `generate` adds its modifiers) to get the
-referenceable modifier set, then query it through the **accessors**. Events and the
-mutating API (`add`/`remove`/`remove_where` by `id`/`source`/`tag`) act on the
-**decorator set**; the next `Character` reflects them. **All math lives in the
+**`Character` — wraps the gen, owns the pools ◆.** The `Character` is the durable
+object: it **wraps the chargen set** (`base` + ordered decorators — the persistent
+modifier state) **and holds the live pools** (current Integrity / Barrier / Plating,
+`pos`, `alive` — §3). It exposes **`realize()`** — the composed view, produced on
+demand by running the decorators over the base (each `generate` adds its modifiers)
+into the referenceable modifier set, then queried through the **accessors**. So reads
+split: **`self.realize().link()`** for composed stats, **`self.integrity`** for a
+pool. Events and the mutating API (`add`/`remove`/`remove_where` by
+`id`/`source`/`tag`) act on the **gen** — applying a DoT, status, or breach mutates a
+decorator — and the next `realize()` reflects them. **All composed math lives in the
 accessors:** `link()` / `attack()` / … **sum the relevant `Factor`s and run the
 operations** (§2) over the base — generators never compute. *(In the hot loop, cache
-the composed view behind a dirty flag — re-create only on a loadout / condition /
+the realized view behind a dirty flag — re-`realize` only on a loadout / condition /
 event change. The cache is a pure optimization; it doesn't move the math.)*
 
 > **Removal is the counterplay substrate ◆.** Because every modifier is
@@ -195,39 +206,80 @@ effective = (base + Σadd) × (1 + Σincreased) × Π(1 + moreᵢ)
 
 ## 3. Derived vs. live state ◆
 
-| Composed (derived — recomputed from base + factors) | Live battle-state (on the `Character`, **not** composed) |
+| Composed (`realize()` — recomputed from base + factors) | Live battle-state (on the `Character`, **not** composed) |
 |---|---|
-| the whole §1 query surface (stats / weapon / behavior / capability) | `pos`, **current** Integrity, the depletable **Barrier / Plating pools**, `statuses`, `alive`, and each generator's **condition** (Online/Degraded/Offline — *gates* the factors it adds) |
+| the whole §1 query surface (stats / weapon / behavior / capability) | `pos`, **current** Integrity, the depletable **Barrier / Plating pools**, `alive`, and each generator's **condition** (Online/Degraded/Offline — *gates* the factors it adds) |
 
 The split is the crux: the factor fold gives the **effective maxima / profile**;
-the `Character` instance holds the **mutable fight state** that ticks down during a
-battle.
+the `Character` holds the **mutable fight state** that ticks down during a battle.
+
+### 3a. The dividing-line rule ◆
+
+What goes in the fold vs. on the `Character`:
+
+> **Pure function of the current gen → composed** (`realize`); `max_integrity =
+> base + Σ factors`, no history. **Path-dependent → live state** (a pool/field);
+> `current_integrity` depends on the *sequence* of hits / heals / clamps / deaths.
+
+The two *feel* alike — both are sums — which is the trap. The cut is **order and
+thresholds**: a hit that crosses 0 fires death triggers a later heal can't un-fire;
+pools clamp at 0 and max on *every* op, so `clamp(clamp(x−a)+b) ≠ clamp(x−a+b)`. A
+fold has no order and no thresholds, so **path-dependent quantities can't live in
+it** — HP loss is a pool, not a modifier.
+
+### 3b. The three kinds of transient ◆
+
+Everything tempting to "event-source" is one of these — **none is a modifier-log**:
+
+| Kind | Examples | Where | Semantics |
+|---|---|---|---|
+| **Pools** | Integrity · Barrier · Plating · (Heat · Resolve) | live-state on `Character` | current fill of a composed max; **clamp** on change; threshold → death/break |
+| **Decorators w/ expiration** | buffs · DoTs · stacks · charges | the §1 gen set | stack count + `expiration` = the decorator's mutable self-state, mutated by events |
+| **Per-tick scratch** | "damage taken this tick" · "was hit" | ephemeral | recomputed each activation, fed to reactions, then discarded |
+
+### 3c. Damage is an event against the pool, not a decorator ◆
+
+The instinct to make damage a decorator "with a reference to its event" is right about
+the **reference**, wrong about the **decorator** — current HP is a pool (§3a). So:
+
+- **Damage is a `DamageEvent { tick, source, kind, amount }`** — applied to the pool
+  immediately (ordered, clamped, threshold-checked) and emitted on an **event stream**.
+  *The event* carries the attribution (kill credit, Data-spill `source`, lifesteal,
+  thorns) — reactions read the stream **within the tick**; it's telemetry/output, never
+  a second source of truth (the sim already replays from the seed).
+- **Cause is a decorator; effect is an event.** A **Bleed** is a *decorator*
+  (duration / stacks / removable); each tick it **spawns a `DamageEvent`** that hits the
+  pool. The decorator persists; the −3 this tick is an event.
+- **The one HP change that *is* a decorator:** a **reversible / expiring /
+  identity-removable** one — a −5-max curse for 3 turns, an absorb **shield** pool a
+  decorator *grants*. It expires, it's removable by id, it modifies *capacity*. The
+  **running tally of damage taken is never a modifier** — it's the pool's current value.
 
 ---
 
-## 4. Realization ◆ — the decorator set is the state; the `Character` is composed on demand
+## 4. Realization ◆ — `Character` wraps the gen; `realize()` is the composed view
 
-The generator-decorates-the-character model settles the earlier "decorator chain vs.
-fold" question: there's **no query chain** at all, and the `Character` is **not** the
-durable thing.
+The `Character`-wraps-`chargen` model settles the earlier "decorator chain vs. fold"
+question: there's **no query chain** at all.
 
-- **The persistent state is the decorator set** — the ordered list of `chargen`
-  decorators (+ `base` + the live battle-state of §3), each indexed by `id` so any
-  component can reference / remove another. This is what saves, ticks, and takes
+- **The `Character` is the durable thing** — it wraps the **gen** (the ordered
+  `chargen` decorators, + `base`, each indexed by `id` so any component can reference /
+  remove another) **and the live pools** (§3). This is what saves, ticks, and takes
   events.
-- **The `Character` is created on demand** — running the decorators over the `base`
-  produces a flat, **keyed** modifier set (`id → Modifier`, indexed by `source` /
-  `tag` for removal); the `Character`'s **accessors** then sum the relevant factors
-  per stat (§2). No per-method delegation, no `Box<dyn>` chain to walk.
-- **Caching is a pure optimization** — in the deterministic hot loop, hold the
-  composed view behind a **dirty flag** and **re-create it only on a change to the
-  decorator set**: **loadout / condition / event**. A breach / EMP that flips a
-  generator's condition, an `expiration` ticking out, an event that mutates a
-  decorator — each **marks dirty**, and the next query re-runs the generators. The
-  cache never moves the math out of the accessors.
+- **`realize()` is the composed view, on demand** — running the decorators over the
+  `base` produces a flat, **keyed** modifier set (`id → Modifier`, indexed by `source`
+  / `tag` for removal); its **accessors** then sum the relevant factors per stat (§2).
+  No per-method delegation, no `Box<dyn>` chain to walk.
+- **Caching is a pure optimization** — in the deterministic hot loop, hold the realized
+  view behind a **dirty flag** and **re-`realize` only on a change to the gen**:
+  **loadout / condition / event**. A breach / EMP that flips a generator's condition,
+  an `expiration` ticking out, an event that mutates a decorator — each **marks dirty**,
+  and the next read re-runs the generators. The cache never moves the math out of the
+  accessors.
 
-The **public shape**: `character.link()` / `character.targeting()` read the
-composed value; nothing outside cares that it came from a freshly folded factor list.
+The **public shape**: `character.realize().link()` reads a composed value,
+`character.integrity` a pool; nothing outside cares that the former came from a freshly
+folded factor list.
 
 ---
 
@@ -265,7 +317,7 @@ not a blocker.
 
 | Step | Does | Touches |
 |---|---|---|
-| **L1** | the architecture: **`Modifier`** interface (`id` / `source`→decorator-id / `tag`; `Factor` kind) + the **decorator** (`generate` add/**remove**, **`expiration`**, **event handler**) + the **`Character`** (base + keyed modifier set + `add`/`remove`/`remove_where` + **accessors** that sum factors; dirty-flag cache optional) | `sim` stat reads |
+| **L1** | the architecture: **`Modifier`** interface (`id` / `source`→decorator-id / `tag`; `Factor` kind) + the **decorator** (`generate` add/**remove**, **`expiration`**, **event handler**) + the **`Character`** wrapping the gen + **pools**: `add`/`remove`/`remove_where` on the gen, **`realize()`** → keyed modifier set whose **accessors** sum factors (dirty-flag cache), pools read direct | `sim` stat reads |
 | **L2** | port **implants → decorators** (Contribution/condition → factors); keep breach / EMP / PAN / Cascade behavior | the implant model + ~10 tests re-expressed |
 | **L2b** | port the **status pool → decorators** — `trigger`→events, `decay`→`expiration`, DoTs→`TickStart` reactions; unifies statuses + equipment | the `Status` system + its tests |
 | **L3** | **behavior factors** (movement / targeting compose from factors) → finishes combat **Phase 1** on this model; a smartgun adds an `Override(targeting)` | combat Phase 1 |
