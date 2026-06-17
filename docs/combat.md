@@ -63,8 +63,8 @@ The designed round:
 | **Occupancy / pathing / boxed-in** (§10.5a) | occupied hexes block; no free hex ⇒ no move | **free-hex stepping + boxed-in** (greedy, no A*) | ✅ |
 | **Woven initiative** (§7C/§10.3) | one interleaved physical+digital order | **one woven order** (Initiative + Link on one track) | ✅ |
 | **AoE footprints + friendly fire** (§7G) | blast (radius) · beam (line/width); physical hits allies | **`Blast`/`Beam` wired, friendly fire on** | ✅ (width = 1) |
-| **Range bands / reach** (§10.5) | gun bands · polearm reach | one `range` value | ◑ |
-| **Multiple weapons / selection** | per-target weapon choice | one attack profile | 🔭 |
+| **Range bands / reach** (§10.5) | gun bands · polearm reach | **`min_range..=range` band** (`usable_at`) | ✅ |
+| **Multiple weapons / selection** | per-target weapon choice | **`weapons` + `weapon_at` (best in band)** | ✅ |
 | **Smartgun / IFF targeting** (§7F) | smart profiles, fires on Link | — | 🔭 |
 | **Death triggers** (§10.9) | Detonate · Legacy · Data-spill | none | 🔭 |
 | **Board seam / two boards** (§7B) | ±½-hex seam, frontage pairings | single shared grid | 🔭 |
@@ -103,8 +103,11 @@ Sequenced so each phase is shippable and test-first, hardest-leverage first:
    physical before digital. `step` runs the single `woven_phase`; the old `action_phase`
    / `digital_phase` are now test-only. A high-Link runner hacks before a sluggish
    bruiser swings.
-5. **Weapons & reach** — range bands, polearm reach, multi-weapon selection, the
-   **Smartgun/IFF** smart-targeting mod (ties to AR).
+5. **Weapons & reach ◑** — **range bands** (`Attack.min_range..=range`, `usable_at`)
+   and **multi-weapon selection** (`Unit.weapons` + `weapon_at` picks the
+   highest-damage weapon whose band covers the distance) are built; a closing profile
+   **stands off** once any weapon reaches. Polearm reach = a `2..=2` band. *Deferred:
+   the **Smartgun/IFF** smart-targeting mod (fires on Link / IFF — ties to AR).*
 6. **Death triggers** — Detonate / Legacy / Data-spill on removal (§10.9); feeds
    contagion **Data-spill** later.
 7. **Board geometry** — the two-board **seam** (±½-hex) and frontage pairings (§7B).

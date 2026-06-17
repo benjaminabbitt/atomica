@@ -128,13 +128,23 @@ pub struct Attack {
     pub damage: f32,
     pub dtype: DamageType,
     pub pen: PenTier,
-    /// Reach in hexes (1 = melee/adjacent).
+    /// Maximum reach in hexes — the top of the **range band** (§10.5).
     pub range: i32,
+    /// Minimum reach — the bottom of the band (`1` = usable in melee). A gun band is
+    /// e.g. `2..=6` (no point-blank); a polearm's **reach** is `2..=2`.
+    pub min_range: i32,
     /// EMP weapon: a *physical* pulse that also fries the target's cyberware,
     /// **bypassing Firewall** (§7I) — the physical counter to digital builds.
     pub emp: bool,
     /// The area struck (§7G) — `Single` by default; `Blast`/`Beam` hit allies too.
     pub footprint: Footprint,
+}
+
+impl Attack {
+    /// Is this weapon usable at hex-distance `dist`? (Within its range band.)
+    pub fn usable_at(&self, dist: i32) -> bool {
+        dist >= self.min_range && dist <= self.range
+    }
 }
 
 /// A combatant. The stat line mirrors the design's "Unit anatomy".
@@ -170,7 +180,12 @@ pub struct Unit {
     /// Resist vs Virus — the Target Number a bio stochastic roll must beat, §13.
     pub immunity: i32,
 
+    /// The **primary** weapon — the default profile and the one isolated tests use.
     pub attack: Attack,
+    /// **Extra** weapons (§10.5): the unit selects the best of `attack` + these whose
+    /// **range band** covers the target distance each activation (a rifle + sidearm,
+    /// a polearm + dagger).
+    pub weapons: Vec<Attack>,
     /// Optional netrunning loadout — the digital action this unit takes on its
     /// turn (§7F). `None` ⇒ no deck. Usually **granted by a cyberdeck implant**
     /// (folded in by [`Unit::install`]), not hand-set.
@@ -219,9 +234,11 @@ impl Unit {
                 dtype: DamageType::Piercing,
                 pen: PenTier::Internal,
                 range: 1,
+                min_range: 1,
                 emp: false,
                 footprint: Footprint::Single,
             },
+            weapons: Vec::new(),
             hack: None,
             implants: Vec::new(),
             pan: Pan::Meshed,
@@ -254,6 +271,22 @@ impl Unit {
     pub fn with_speed(mut self, speed: i32) -> Self {
         self.speed = speed;
         self
+    }
+
+    /// Builder: add an extra weapon to the loadout (selected by range band, §10.5).
+    pub fn with_weapon(mut self, weapon: Attack) -> Self {
+        self.weapons.push(weapon);
+        self
+    }
+
+    /// The best weapon usable at hex-distance `dist` — the highest-damage one of the
+    /// primary `attack` + `weapons` whose **range band** covers `dist`, or `None` if
+    /// the target is out of every band (§10.5).
+    pub fn weapon_at(&self, dist: i32) -> Option<Attack> {
+        std::iter::once(self.attack)
+            .chain(self.weapons.iter().copied())
+            .filter(|w| w.usable_at(dist))
+            .max_by(|a, b| a.damage.partial_cmp(&b.damage).unwrap_or(std::cmp::Ordering::Equal))
     }
 
     /// Builder: set the attack profile.
@@ -684,22 +717,33 @@ impl<R: RandomSource> Battle<R> {
         }
     }
 
-    /// One unit's **physical** activation (§7J/§10.4): pick a target by its targeting
-    /// profile, move up to `speed` hexes by its movement profile (through free hexes),
-    /// then attack if a target is in range.
+    /// One unit's **physical** activation (§7J/§10.4/§10.5): pick a target by its
+    /// targeting profile, move up to `speed` hexes by its movement profile (through
+    /// free hexes), then fire the best weapon whose **range band** covers the target.
+    /// A *closing* profile (Advance/Flank/Swarm) halts once any weapon can reach —
+    /// standoff — so a ranged build doesn't walk into melee.
     fn physical_activation(&mut self, i: usize) {
         let Some(target) = self.select_target(i) else {
             return;
         };
+        let closes = matches!(
+            self.units[i].movement(),
+            MovementProfile::Advance | MovementProfile::Flank | MovementProfile::Swarm
+        );
         for _ in 0..self.units[i].speed.max(0) {
+            let dist = self.units[i].pos.distance(self.units[target].pos);
+            if closes && self.units[i].weapon_at(dist).is_some() {
+                break; // standoff: a weapon already reaches — stop closing and fire
+            }
             let next = self.movement_step(i, target);
             if next == self.units[i].pos {
                 break; // at the profile's goal, or boxed in
             }
             self.units[i].pos = next;
         }
-        if self.units[i].pos.distance(self.units[target].pos) <= self.units[i].attack.range {
-            self.resolve_attack(i, target);
+        let dist = self.units[i].pos.distance(self.units[target].pos);
+        if let Some(weapon) = self.units[i].weapon_at(dist) {
+            self.resolve_attack_with(i, target, weapon);
         }
     }
 
@@ -828,12 +872,19 @@ impl<R: RandomSource> Battle<R> {
             .map(|(j, _)| j)
     }
 
+    /// Resolve the attacker's **primary** weapon onto `target` (the simple path used by
+    /// isolated tests).
+    #[cfg(test)]
     fn resolve_attack(&mut self, attacker: usize, target: usize) {
-        let atk = self.units[attacker].attack;
-        // Resolve the footprint to the set of struck units (friendly fire on for
-        // physical AoE), then run the damage pipeline per target — the armor matrix
-        // (type vs class) × that unit's Breach vulnerability.
-        for t in self.footprint_targets(attacker, target) {
+        self.resolve_attack_with(attacker, target, self.units[attacker].attack);
+    }
+
+    /// Resolve a chosen weapon `atk` from `attacker` onto `target`. Resolves the
+    /// footprint to the struck units (friendly fire on for physical AoE), then runs the
+    /// damage pipeline per target — the armor matrix (type vs class) × that unit's
+    /// Breach vulnerability.
+    fn resolve_attack_with(&mut self, attacker: usize, target: usize, atk: Attack) {
+        for t in self.footprint_targets(attacker, target, atk) {
             let mult =
                 armor::matrix(atk.dtype, self.units[t].armor_class) * self.units[t].vuln_mult();
             let dmg = atk.damage * mult;
@@ -848,9 +899,9 @@ impl<R: RandomSource> Battle<R> {
     /// `Blast` is the disc around the target hex; `Beam` is the line from the attacker
     /// along the bearing to the target. AoE includes **allies** (friendly fire) — only
     /// the attacker is spared. Returned in ascending index order (deterministic).
-    fn footprint_targets(&self, attacker: usize, target: usize) -> Vec<usize> {
+    fn footprint_targets(&self, attacker: usize, target: usize, atk: Attack) -> Vec<usize> {
         use std::collections::HashSet;
-        let hexes: HashSet<Hex> = match self.units[attacker].attack.footprint {
+        let hexes: HashSet<Hex> = match atk.footprint {
             Footprint::Single => return vec![target],
             Footprint::Blast(radius) => self.units[target].pos.within(radius).into_iter().collect(),
             Footprint::Beam(length) => {
@@ -1098,9 +1149,11 @@ mod tests {
                 dtype: DamageType::Piercing,
                 pen: PenTier::Internal,
                 range: 1,
+                min_range: 1,
                 emp: false,
                 footprint: Footprint::Single,
             },
+            weapons: Vec::new(),
             hack: None,
             implants: Vec::new(),
             pan: Pan::Meshed,
@@ -2019,5 +2072,63 @@ mod tests {
         let order = b.woven_order();
         assert_eq!(order.len(), 2); // two physicals, no digital entries
         assert!(order.iter().all(|&(_, digital)| !digital));
+    }
+
+    // -- Phase 5: weapons & range bands (§10.5) --------------------------------
+
+    fn gun(damage: f32, min_range: i32, range: i32) -> Attack {
+        Attack {
+            damage,
+            dtype: DamageType::Piercing,
+            pen: PenTier::Internal,
+            range,
+            min_range,
+            emp: false,
+            footprint: Footprint::Single,
+        }
+    }
+
+    #[test]
+    fn weapon_selection_picks_the_band_that_covers_the_distance() {
+        // Rifle 2..=6 (dmg 12) + knife 1..=1 (dmg 8).
+        let mut u = unit(0, Team::A, 0);
+        u.attack = gun(12.0, 2, 6); // primary rifle
+        u.weapons.push(gun(8.0, 1, 1)); // knife sidearm
+        assert_eq!(u.weapon_at(1).map(|w| w.damage), Some(8.0)); // melee → knife
+        assert_eq!(u.weapon_at(4).map(|w| w.damage), Some(12.0)); // mid → rifle
+        assert!(u.weapon_at(7).is_none()); // out of every band
+    }
+
+    #[test]
+    fn a_polearm_cannot_strike_point_blank() {
+        let pike = gun(10.0, 2, 2); // reach 2 only
+        assert!(!pike.usable_at(1)); // adjacent is too close
+        assert!(pike.usable_at(2));
+        assert!(!pike.usable_at(3));
+    }
+
+    #[test]
+    fn a_ranged_closer_halts_at_standoff_then_fires() {
+        // Rifle 2..=6, speed 5, target 6 away. Advance closes only until in band
+        // (distance 6), then fires from there instead of walking into melee.
+        let mut atk = unit(0, Team::A, 0).with_speed(5).with_initiative(10.0);
+        atk.attack = gun(12.0, 2, 6);
+        let mut dummy = unit(1, Team::B, 6).with_movement(MovementProfile::Hold);
+        dummy.integrity = 100.0;
+        let mut b = Battle::new(vec![atk, dummy], 1);
+        b.action_phase();
+        assert_eq!(b.units[0].pos, Hex::new(0, 0)); // already in band — never moved
+        assert!(b.units[1].integrity < 100.0); // fired from range
+    }
+
+    #[test]
+    fn the_knife_finishes_what_the_rifle_started_in_melee() {
+        // No standoff weapon at distance 1, but the knife covers it.
+        let atk = unit(0, Team::A, 0).with_weapon(gun(7.0, 1, 1)); // primary 1..=1 + knife 1..=1
+        let target = unit(1, Team::B, 1);
+        let mut b = Battle::new(vec![atk, target], 1);
+        let before = b.units[1].integrity;
+        b.action_phase();
+        assert!(b.units[1].integrity < before);
     }
 }

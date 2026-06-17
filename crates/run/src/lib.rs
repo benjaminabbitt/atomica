@@ -374,6 +374,7 @@ mod tests {
                 dtype: DamageType::Piercing,
                 pen: PenTier::Internal,
                 range: 1,
+                min_range: 1,
                 emp: false,
                 footprint: Footprint::Single,
             })
