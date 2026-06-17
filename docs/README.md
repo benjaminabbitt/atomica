@@ -9,10 +9,12 @@ Async auto-battler / roguelike-deckbuilder. Cyberpunk, neo-Japan cyber-samurai.
 4. **[rosters.md](rosters.md)** — authored content: named corps / clans / law + the archetype roster.
 5. **[netrunning.md](netrunning.md)** — the digital-attack system: the hack contest (`3d6 + avg(Hacking, channel)` vs Firewall, channel = weaker endpoint's Link), the stat/skill line, payloads, the implant model, and the build order. Marks **built vs planned**.
 6. **[cyberware.md](cyberware.md)** — the augmentation economy: the implant bundle (benefit ↔ liability symmetry), the value equation that makes chrome worth its risk, slots/PAN, breach & repair, and the sim data model. The keystone the netrunning payloads plug into.
+7. **[progression.md](progression.md)** — the meta-structure above one battle: the **Encounter < Run < Game** tiers, permadeath, R&R placement (none within a run, full between runs), and **objective-driven** encounters (the mission gate). Supersedes the delta's §15 within-run model.
+8. **[combat.md](combat.md)** — the fight resolution: what the sim does today vs the full §10 rules (movement/targeting profiles, woven initiative, AoE + friendly fire, …), the gap analysis, and the phased build order. The deepest system, next up to code.
 
 ## Status
 - **Design:** decided down to playtest numbers; remaining open items are tuning (⏳) — see delta §12/§13.
-- **Code:** `crates/sim` (one battle) + `crates/run` (the roguelike run layer — a persistent roster fighting a sequence of battles) + `crates/game` (macroquad/egui front-end), built test-first from the delta's IoC plan. In: the RNG seam + 3d6 contest, the full **netrunning + cyberware** systems (see [netrunning.md](netrunning.md) / [cyberware.md](cyberware.md)), and the **fighting run spine** (permadeath, win/loss). Economy/Rep, Jobs, shops, and the navigation tree are the next run-layer additions.
+- **Code:** `crates/sim` (one battle) + `crates/run` (the **Encounter < Run < Game** progression) + `crates/game` (macroquad/egui front-end), built test-first from the delta's IoC plan. In: the RNG seam + 3d6 contest, the full **netrunning + cyberware** systems ([netrunning.md](netrunning.md) / [cyberware.md](cyberware.md)), and the **progression spine** ([progression.md](progression.md)) — permadeath, R&R between runs, **objective-driven** encounters. **Next, and the deepest: the fight itself** ([combat.md](combat.md)) — behavior profiles, the movement model, AoE/friendly-fire, woven initiative.
 
 ## Build
 `make test` (sim tests) · `make web` (wasm build) · `make run` (native window). See the root [../README.md](../README.md).
