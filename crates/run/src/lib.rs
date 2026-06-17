@@ -16,9 +16,11 @@
 //! - **Permadeath** — a unit that falls is removed from the roster for good.
 //! - **The run ends only on a wipe** — losing units while still fielding an army
 //!   advances you (you can bleed the roster across a winning run).
-//! - **Rest between battles** — survivors redeploy at full Integrity with their
-//!   chrome **repaired** (the downtime heal; the casualty / extraction economy of
-//!   the design §9.4 is a later layer).
+//! - **No R&R within a run** — a run is a *sequence of combats with no rest*.
+//!   Carried **Integrity** damage and **chrome condition** persist across the
+//!   sequence (only transient combat statuses reset between combats); healing and
+//!   chrome repair happen **between runs** (the meta tier). So a run is an
+//!   attrition gauntlet — the deeper you push, the more worn your force.
 
 use atomica_sim::{Battle, Hex, Outcome, Team, Unit, UnitId};
 
@@ -163,20 +165,16 @@ impl Run {
 }
 
 /// Clone a roster template into a fresh battle combatant: unique id, the given
-/// team + position, full Integrity, repaired chrome, no statuses (the between-
-/// battle rest).
+/// team + position, and cleared transient statuses. **No R&R within a run** —
+/// carried Integrity damage and chrome condition persist across the sequence
+/// (healing / repair is between *runs*, the meta tier).
 fn deploy(template: &Unit, next_id: &mut u32, team: Team, pos: Hex) -> Unit {
     let mut u = template.clone();
     u.id = UnitId(*next_id);
     *next_id += 1;
     u.team = team;
     u.pos = pos;
-    for idx in 0..u.implants.len() {
-        u.repair_implant(idx); // un-brick between battles (Destroyed stays gone)
-    }
-    u.integrity = u.max_integrity;
-    u.statuses.clear();
-    u.alive = true;
+    u.statuses.clear(); // transient combat effects don't carry between combats
     u
 }
 
@@ -253,6 +251,23 @@ mod tests {
         assert!(run.fight_next().is_some());
         assert_eq!(run.outcome(), RunOutcome::Won);
         assert!(run.fight_next().is_none()); // run's over — nothing more to fight
+    }
+
+    #[test]
+    fn damage_persists_across_combats_no_rnr() {
+        // A unit wounded in combat 1 enters combat 2 still hurt — no rest heals it.
+        let roster = vec![fighter("Vet", 9.0, 50.0, 6.0)];
+        let encounters = vec![
+            Encounter::new("E1", vec![fighter("Foe1", 8.0, 22.0, 5.0)]),
+            Encounter::new("E2", vec![fighter("Foe2", 8.0, 22.0, 5.0)]),
+        ];
+        let mut run = Run::new(roster, encounters, 11);
+        run.fight_next().unwrap(); // combat 1
+        let after_1 = run.roster()[0].integrity;
+        assert!(after_1 < 50.0); // took damage and carries it (deploy no longer heals)
+        run.fight_next().unwrap(); // combat 2 — fought on from the wounded state
+        assert_eq!(run.outcome(), RunOutcome::Won);
+        assert!(run.roster()[0].integrity < after_1); // even more worn — attrition
     }
 
     #[test]
