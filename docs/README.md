@@ -12,7 +12,7 @@ Async auto-battler / roguelike-deckbuilder. Cyberpunk, neo-Japan cyber-samurai.
 
 ## Status
 - **Design:** decided down to playtest numbers; remaining open items are tuning (⏳) — see delta §12/§13.
-- **Code:** `crates/sim` (engine) + `crates/game` (macroquad/egui front-end), built test-first from the delta's IoC plan. The RNG seam + the 3d6 contest mechanic (Phase 0) are in, plus the **netrunning hack contest** (see [netrunning.md](netrunning.md)); its payloads/implant model are planned.
+- **Code:** `crates/sim` (one battle) + `crates/run` (the roguelike run layer — a persistent roster fighting a sequence of battles) + `crates/game` (macroquad/egui front-end), built test-first from the delta's IoC plan. In: the RNG seam + 3d6 contest, the full **netrunning + cyberware** systems (see [netrunning.md](netrunning.md) / [cyberware.md](cyberware.md)), and the **fighting run spine** (permadeath, win/loss). Economy/Rep, Jobs, shops, and the navigation tree are the next run-layer additions.
 
 ## Build
 `make test` (sim tests) · `make web` (wasm build) · `make run` (native window). See the root [../README.md](../README.md).

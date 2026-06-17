@@ -161,6 +161,65 @@ pub struct Unit {
 }
 
 impl Unit {
+    /// A bare combatant with placeholder stats (Integrity 30, a basic melee hit).
+    /// Tune via the `with_*` builders or by field — the convenience constructor
+    /// the run layer and content build rosters from.
+    pub fn new(id: u32, name: impl Into<String>, team: Team, chassis: Chassis) -> Self {
+        Self {
+            id: UnitId(id),
+            name: name.into(),
+            team,
+            pos: Hex::new(0, 0),
+            integrity: 30.0,
+            max_integrity: 30.0,
+            defense: Defense::default(),
+            armor_class: ArmorClass::default(),
+            chassis,
+            skills: chassis.baseline_skills(),
+            initiative: 5.0,
+            link: 0,
+            firewall: 0,
+            immunity: 0,
+            attack: Attack {
+                damage: 10.0,
+                dtype: DamageType::Piercing,
+                pen: PenTier::Internal,
+                range: 1,
+                emp: false,
+            },
+            hack: None,
+            implants: Vec::new(),
+            pan: Pan::Meshed,
+            statuses: Vec::new(),
+            alive: true,
+        }
+    }
+
+    /// Builder: set the deploy position.
+    pub fn at(mut self, pos: Hex) -> Self {
+        self.pos = pos;
+        self
+    }
+
+    /// Builder: set Integrity (and its max).
+    pub fn with_integrity(mut self, hp: f32) -> Self {
+        self.integrity = hp;
+        self.max_integrity = hp;
+        self
+    }
+
+    /// Builder: set the physical Initiative.
+    pub fn with_initiative(mut self, initiative: f32) -> Self {
+        self.initiative = initiative;
+        self
+    }
+
+    /// Builder: set the attack profile.
+    pub fn with_attack(mut self, attack: Attack) -> Self {
+        self.attack = attack;
+        self
+    }
+
     pub fn is_alive(&self) -> bool {
         self.alive && self.integrity > 0.0
     }
@@ -392,7 +451,7 @@ impl<R: RandomSource> Battle<R> {
         Self { units, tick: 0, rng, objectives, withdrawn: false }
     }
 
-    /// Withdraw from the Flight: forfeit it (objectives resolve as fight-over),
+    /// Withdraw from the battle: forfeit it (objectives resolve as fight-over),
     /// but all still-standing units are preserved (§9.4). The run layer applies
     /// the bail penalty and banks the roster.
     pub fn withdraw(&mut self) {
@@ -405,7 +464,7 @@ impl<R: RandomSource> Battle<R> {
     }
 
     /// Replace the scored objectives (default: just [`WinFight`], the node's
-    /// standard fight). A Flight can carry any number; each is scored independently.
+    /// standard fight). A battle can carry any number; each is scored independently.
     pub fn with_objectives(mut self, objectives: Objectives) -> Self {
         self.objectives = objectives;
         self
@@ -431,7 +490,7 @@ impl<R: RandomSource> Battle<R> {
         self.objectives.unachieved(&self.units, self.tick, self.fight_over())
     }
 
-    /// Has the Flight ended — one army wiped, or the player withdrew?
+    /// Has the battle ended — one army wiped, or the player withdrew?
     fn fight_over(&self) -> bool {
         self.withdrawn || !matches!(self.outcome(), Outcome::Ongoing)
     }

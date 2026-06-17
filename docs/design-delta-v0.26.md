@@ -254,7 +254,7 @@ The **Rep + gear faucet.** Alongside standard battles (which pay currency / surv
 | **Take the dive** | you **lose** — but by **no more than X** (a controlled, convincing loss) |
 | **Time attack** | you win within **N** rounds |
 
-A Flight carries a **list** of these in an objectives container — the simple **WinFight** (the node's standard fight) plus any bonus goals — and can **meet any number** independently. The container **sums winnings** (rewards from met goals) and **losses** (penalties from failed ones) and surfaces the **unachieved**. A goal is *satisfied* (not failed) until its explicit **fail condition** fires — being merely unachieved is not a failure. The standard fight still drives termination.
+A battle carries a **list** of these in an objectives container — the simple **WinFight** (the node's standard fight) plus any bonus goals — and can **meet any number** independently. The container **sums winnings** (rewards from met goals) and **losses** (penalties from failed ones) and surfaces the **unachieved**. A goal is *satisfied* (not failed) until its explicit **fail condition** fires — being merely unachieved is not a failure. The standard fight still drives termination.
 
 ### 9.2 Requirements (the oddball entry / run conditions)
 
@@ -286,7 +286,7 @@ A Flight carries a **list** of these in an objectives container — the simple *
 
 The **run still ends only on a battle loss** (army wiped), but you can now **bleed units permanently across a run while winning** — real stakes. *(Revises the earlier "always resurrect next battle" rule.)*
 
-**Withdraw — forfeit to save units ◆.** The player can **withdraw** from a Flight: the fight is **forfeited** (WinFight + objectives fail, no win rewards; a Job fails), but **all still-standing units escape** — no casualties. The *cut-your-losses* play: when a fight turns, withdraw to **preserve veterans** (their earned skills are unsalvageable, §10) rather than risk a wipe. Cost: the forfeit, plus a withdraw penalty (Rep / Notoriety / morale ding for bailing). It sits beside extraction: **extraction** pulls *downed* units out mid-fight; **withdraw** retreats the *whole army*. Factoring: the `sim` can end a Flight in a **Withdrawn** state (all alive units preserved, objectives forfeited); `atomica-run` applies the penalty and banks the roster.
+**Withdraw — forfeit to save units ◆.** The player can **withdraw** from a battle: the fight is **forfeited** (WinFight + objectives fail, no win rewards; a Job fails), but **all still-standing units escape** — no casualties. The *cut-your-losses* play: when a fight turns, withdraw to **preserve veterans** (their earned skills are unsalvageable, §10) rather than risk a wipe. Cost: the forfeit, plus a withdraw penalty (Rep / Notoriety / morale ding for bailing). It sits beside extraction: **extraction** pulls *downed* units out mid-fight; **withdraw** retreats the *whole army*. Factoring: the `sim` can end a battle in a **Withdrawn** state (all alive units preserved, objectives forfeited); `atomica-run` applies the penalty and banks the roster.
 
 **On death — two offsets, neither prevents the death ◆:**
 - **Insurance is *money*** (pre-paid, financial) — a **payout** when an insured unit dies, standing in for its **next-phase economic contribution** (a dead insured unit still "earns" via the payout). A bet on who falls; it **never saves the unit.**
@@ -379,7 +379,7 @@ None of it breaks the crate split or phase ordering.
 15. **[◑ Mixed]** **Casualty-offset dials (§9.4)** — Insurance pre-combat: premium cost, per-unit vs. blanket, and the purchase window; Medical-benefit conversion: salvage vs. claim model, what "more loss → more benefit" curves to, and whether it harvests the lost unit's *gear*; can a unit carry **both** offsets, and do they stack?
 16. **[⏳ Playtest]** **Extraction & salvage dials (§9.4)** — *sources resolved* (a **vehicle** exiting the board — removing it *and* the rescued — or an extraction membership); *reward gradient resolved* (kills > extraction, slightly). **⏳ Deferred to playtest (needs code):** the **permadeath-rate dial** — the **downed→dead window** (how long a downed unit survives awaiting pickup — the Death's Door clock), extractions-per-battle, membership response time, and whether extraction costs tempo/risk. These are *feel* numbers, untunable on paper. Plus the **salvage tables** (what gear / biomatter a death returns).
 17. **[◑ Mixed]** **Skills & progression (§10)** — the skill list and which rolls each modifies; the **XP curve** and whether levels persist across *runs* (meta-progression) or reset each run; the **skill-chip level cap** and slot cost; when a character's own skill and a chip cover the same domain, do they **stack or take the max**?
-18. **[◑ Mixed]** **Withdraw (§9.4)** — the bail penalty (Rep / Notoriety / morale?); do downed units escape too or only standing ones; can you withdraw from any Flight or only some.
+18. **[◑ Mixed]** **Withdraw (§9.4)** — the bail penalty (Rep / Notoriety / morale?); do downed units escape too or only standing ones; can you withdraw from any battle or only some.
 19. **[⏳ Playtest]** **Upgrade point normalization (§13)** — the hidden point value per upgrade; the **async-PvP matchmaking curve** (budget caps vs. handicapping) that balances different meta-progression; whether shop offers are point-balanced too.
 
 ---
@@ -471,25 +471,25 @@ So Rep has two inputs: **fielding affiliated units** (the live unit-summation, �
 
 ## 15. Run structure — the navigation tree ◆
 
-The roguelike run is a **branching navigation tree** (Slay-the-Spire-style map) of nodes from start to a boss, **rolled per run** (seeded). At each branch you **choose your route**, trading off reward, risk, Rep, and recovery. (**"Flight"** = a battle / combat sortie — the in-world term.)
+The roguelike run is a **branching navigation tree** (Slay-the-Spire-style map) of nodes from start to a boss, **rolled per run** (seeded). At each branch you **choose your route**, trading off reward, risk, Rep, and recovery.
 
 **Node types:**
 
 | Node | What |
 |---|---|
-| **Flight** (battle) | the auto-resolved combats; **elite / boss flights** are tougher |
+| **Battle** | the auto-resolved combats; **elite / boss battles** are tougher |
 | **Economy / shop** | a §14 market (2 vendors/category — buy, sell) |
-| **Politicking** | offers a **selection of Jobs** (§9) to accept — contracts negotiated here, fought as objective Flights |
+| **Politicking** | offers a **selection of Jobs** (§9) to accept — contracts negotiated here, fought as objective battles |
 | **Event** | a choice / dilemma (narrative, gambles, faction overtures) |
 | **Fixer** | intel (scout ahead), Rep brokering, black-market |
 | **Clinic / Rest** | heal · chrome-repair · Worm-cleanse (menders as a service) |
 | **Raid** | a forced **cop** encounter spawned by Notoriety (§13 #2) |
 
-**Cadence ◆:** between **flights**, the route runs through **2–3 economy / shopping segments** (shop · Job · event · rest) — the downtime where the casualty economy (§9.4), the *Recovered-units-sit-out-one-segment* rule (§13 #13), and Rep flows play out across **multiple stops**, not one.
+**Cadence ◆:** between **battles**, the route runs through **2–3 economy / shopping segments** (shop · Job · event · rest) — the downtime where the casualty economy (§9.4), the *Recovered-units-sit-out-one-segment* rule (§13 #13), and Rep flows play out across **multiple stops**, not one.
 
 **Routing is the strategy:** you see the tree ahead and plan — dive for Jobs (Rep + gear, risk), stock up at shops, rest to recover downed units, or rush the boss. Branches force trade-offs (you can't hit every node), and **Notoriety + the dynamic rivalry (§13 #3) reshape which nodes and enemies appear** — so no two runs route the same.
 
-**Factoring:** `atomica-run` owns the tree — seeded generation, node resolution, routing; the `sim` only runs **Flight** nodes. The tree is run-state. *(⏳ tuning: tree depth, flights-per-run, node mix, boss structure.)*
+**Factoring:** `atomica-run` owns the tree — seeded generation, node resolution, routing; the `sim` only runs **Battle** nodes. The tree is run-state. *(⏳ tuning: tree depth, battles-per-run, node mix, boss structure.)*
 
 ---
 
@@ -501,7 +501,7 @@ Rep cashes out as **shop access**, not battle-board presence. *(Supersedes the e
 - So §14's *"more vendors unlock over a run"* is **Rep-driven** — build standing, its shop spawns.
 - The **dynamic rivalry** (§13 #3) still bites: a rival's shop may close (or price away) as the aligned one opens.
 
-**Jobs come from politicking nodes, not the board.** A challenge **is a Job** (§9), offered at a **politicking node** (§15) — a run-tree stop presenting a **selection of Jobs** to accept; the accepted Job then runs as an objective **Flight**. No board reps, no board challenges.
+**Jobs come from politicking nodes, not the board.** A challenge **is a Job** (§9), offered at a **politicking node** (§15) — a run-tree stop presenting a **selection of Jobs** to accept; the accepted Job then runs as an objective **battle**. No board reps, no board challenges.
 
 **Factoring:** all `atomica-run` — Rep thresholds gate shop spawns; politicking nodes generate Job offers. The `sim` is untouched.
 

@@ -52,6 +52,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "atomica-run"
+version = "0.0.0"
+dependencies = [
+ "atomica-sim",
+]
+
+[[package]]
 name = "atomica-sim"
 version = "0.0.0"
 

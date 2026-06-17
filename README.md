@@ -16,7 +16,9 @@ reproduce identically (needed for async / replayable auto-resolution):
 
 ```
 crates/
-  sim/    atomica-sim   pure Rust, no engine deps, deterministic (seeded RNG)
+  sim/    atomica-sim   pure Rust, no engine deps, deterministic (seeded RNG) — one battle
+  run/    atomica-run   the roguelike run layer: a persistent roster fighting a sequence
+                        of battles (permadeath, win/loss) — engine-free, deterministic
   game/   atomica-game  thin macroquad + egui front-end that renders sim state
 web/      index.html    macroquad wasm loader
 ```

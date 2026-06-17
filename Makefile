@@ -5,11 +5,11 @@ WASM := target/wasm32-unknown-unknown/release/atomica.wasm
 
 # Pure-logic tests (no system libs / display needed).
 test:
-	cargo test -p atomica-sim
+	cargo test -p atomica-sim -p atomica-run
 
 # Type-check the whole workspace for the web target.
 check:
-	cargo check -p atomica-sim
+	cargo check -p atomica-sim -p atomica-run
 	cargo check -p atomica-game --target wasm32-unknown-unknown
 
 # Native run (needs a display + X11/ALSA dev libs).

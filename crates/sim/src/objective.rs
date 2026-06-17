@@ -1,6 +1,6 @@
 //! Scored objectives (design-delta §9, §13).
 //!
-//! A Flight carries a list of [`Goal`]s in an [`Objectives`] container that tallies
+//! A battle carries a list of [`Goal`]s in an [`Objectives`] container that tallies
 //! **winnings** (rewards from met goals) and **losses** (penalties from failed
 //! ones) and surfaces what's still **unachieved**. A fight can meet any number.
 //!
@@ -140,7 +140,7 @@ impl Goal {
     }
 }
 
-/// A Flight's scored objectives: tally winnings / losses and surface the unmet.
+/// A battle's scored objectives: tally winnings / losses and surface the unmet.
 #[derive(Default)]
 pub struct Objectives {
     goals: Vec<Goal>,
