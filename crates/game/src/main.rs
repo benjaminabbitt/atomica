@@ -5,8 +5,8 @@
 //! timer. All game rules live in the sim crate.
 
 use atomica_sim::{
-    ArmorClass, Attack, Battle, Chassis, DamageType, Defense, Hex, Outcome, StatusSpec, Team, Unit,
-    UnitId,
+    ArmorClass, Attack, Battle, Chassis, DamageType, Defense, Hack, Hex, Outcome, StatusSpec, Team,
+    Unit, UnitId,
 };
 use egui_macroquad::egui;
 use macroquad::prelude::*;
@@ -41,6 +41,7 @@ fn demo_battle() -> Battle {
         firewall: 0,
         immunity: 0,
         attack: Attack { damage: dmg, dtype, pen, range },
+        hack: None,
         statuses: Vec::new(),
         alive: true,
     };
@@ -49,10 +50,18 @@ fn demo_battle() -> Battle {
     use DamageType::*;
     let mut units = vec![
         mk(0, "Katana", Team::A, 0, 0, 14.0, 7.0, 1, Slashing, Internal, Padding),
-        mk(1, "Rifle", Team::A, 0, 2, 9.0, 5.0, 4, Piercing, Contact, Mail),
+        mk(1, "Runner", Team::A, 0, 2, 9.0, 5.0, 4, Piercing, Contact, Mail),
         mk(2, "Bulwark", Team::B, 5, 0, 7.0, 4.0, 1, Bludgeoning, Contact, Plate),
         mk(3, "SMG", Team::B, 5, 2, 8.0, 6.0, 3, Piercing, External, Mail),
     ];
+    // Wire the Runner as a netrunner (Link + a Lockware deck) and give the enemy
+    // line a digital surface (Link + Firewall) so the hack layer is visible.
+    units[1].link = 3.0;
+    units[1].hack = Some(Hack::new(3, 6, StatusSpec::lockware(), 1, 6));
+    units[2].link = 2.0;
+    units[2].firewall = 8;
+    units[3].link = 2.0;
+    units[3].firewall = 8;
     // Seed a couple of statuses so the pipeline is visible on first run.
     units[2].add_status(StatusSpec::burn(), 6, 3);
     units[3].add_status(StatusSpec::lag(), 6, 1);
@@ -153,9 +162,11 @@ async fn main() {
                         })
                         .collect::<Vec<_>>()
                         .join(", ");
+                    let deck = if u.hack.is_some() { "⚡" } else { " " };
                     ui.label(format!(
-                        "{:?}  {:<8} {:>4.0}/{:<3.0}  [{:?}]  {}",
-                        u.team, u.name, u.integrity, u.max_integrity, u.armor_class, statuses
+                        "{:?}  {:<7}{} {:>4.0}/{:<3.0}  [{:?}]  L{:<2.0} {}",
+                        u.team, u.name, deck, u.integrity, u.max_integrity, u.armor_class, u.link,
+                        statuses
                     ));
                 }
             });

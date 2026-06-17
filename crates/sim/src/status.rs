@@ -232,6 +232,24 @@ impl StatusSpec {
         }
     }
 
+    /// Lockware — a netrunner's landed payload (§7F/§10.8): a deployed intrusion
+    /// that drains the system as an Internal DoT. The hack roll already contested
+    /// Firewall on landing, so it ticks **deterministically**; stacks (scaled by
+    /// the hack's margin) deepen the drain.
+    pub fn lockware() -> Self {
+        Self {
+            name: "Lockware",
+            effect: Effect::Dot { magnitude: Magnitude::Flat(2.0), pen: PenTier::Internal },
+            trigger: Trigger::Tick,
+            timing: Timing::TickStart,
+            decay: Decay::Duration,
+            stacking: Stacking::Stack { max: 6 },
+            behavior: Behavior::Deterministic,
+            targeting: Targeting::Enemy,
+            resist: Resist::Firewall,
+        }
+    }
+
     /// Corrode — plating-shred DoT.
     pub fn corrode() -> Self {
         Self {

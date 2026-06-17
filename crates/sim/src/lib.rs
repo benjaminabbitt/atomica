@@ -15,13 +15,16 @@
 //! - the [`armor`] matrix (damage type vs armor class);
 //! - the [`status`] pool on the design's 9-axis schema (DoTs, Crash/Lag, Breach,
 //!   Corrode), processed each tick;
+//! - [`hack`]ing — the netrunning digital attack (`3d6 + Hacking + deck` vs
+//!   Firewall, Link-gated, §7F/§13);
 //! - an initiative-ordered tick loop with a minimal "attack nearest / step toward"
-//!   resolution.
+//!   resolution plus a digital pass.
 //!
 //! Not yet built: the two contagion families (a spreading special case of
-//! statuses), netrunning, IFF/spoof, and Heat.
+//! statuses), IFF/spoof, and Heat.
 
 pub mod armor;
+mod hack;
 mod hex;
 mod objective;
 mod rng;
@@ -30,6 +33,7 @@ mod skills;
 mod status;
 
 pub use armor::ArmorClass;
+pub use hack::{Hack, HackResult};
 pub use hex::Hex;
 pub use objective::{
     Goal, MarginLoss, Objective, ObjectiveStatus, Objectives, Reach, Survive, TimeAttack, WinFight,
@@ -134,6 +138,9 @@ pub struct Unit {
     pub immunity: i32,
 
     pub attack: Attack,
+    /// Optional netrunning loadout — the digital action this unit takes on its
+    /// turn (§7F). `None` ⇒ no deck (a pure physical fighter).
+    pub hack: Option<Hack>,
     /// Active à-la-carte statuses.
     pub statuses: Vec<Status>,
     pub alive: bool,
@@ -296,7 +303,9 @@ impl<R: RandomSource> Battle<R> {
     /// 1. **status phase** — DoTs and plating-shred fire (may kill);
     /// 2. **action phase** — each non-stunned unit acts in effective-initiative
     ///    order (attack nearest enemy in range, else step toward it);
-    /// 3. **decay phase** — statuses wear off.
+    /// 3. **digital phase** — netrunners hack the nearest reachable enemy, in
+    ///    Link (digital-initiative) order;
+    /// 4. **decay phase** — statuses wear off.
     pub fn step(&mut self) -> Outcome {
         if let o @ (Outcome::Winner(_) | Outcome::Draw) = self.outcome() {
             return o;
@@ -305,6 +314,7 @@ impl<R: RandomSource> Battle<R> {
 
         self.status_phase();
         self.action_phase();
+        self.digital_phase();
         self.decay_phase();
 
         self.outcome()
@@ -440,6 +450,79 @@ impl<R: RandomSource> Battle<R> {
         let dmg = atk.damage * mult;
         apply_damage(&mut self.units[target], dmg, atk.pen, true);
     }
+
+    /// The digital activation pass (§10.3/§10.8): every unit with a hack and net
+    /// presence (Link > 0) acts in **digital-initiative = Link** order, hacking
+    /// the nearest reachable enemy. A unit frozen by a Crash/Seizure stun is off
+    /// the net too. *(First pass: a discrete phase after the physical one; the
+    /// design's fully interleaved physical+digital order is a later step.)*
+    fn digital_phase(&mut self) {
+        let mut order: Vec<usize> = (0..self.units.len())
+            .filter(|&i| {
+                let u = &self.units[i];
+                u.is_alive() && u.hack.is_some() && u.link > 0.0
+            })
+            .collect();
+        order.sort_by(|&a, &b| {
+            let (ua, ub) = (&self.units[a], &self.units[b]);
+            ub.link
+                .partial_cmp(&ua.link)
+                .unwrap_or(std::cmp::Ordering::Equal)
+                .then(ua.id.cmp(&ub.id))
+        });
+
+        for i in order {
+            if !self.units[i].is_alive() || self.units[i].is_stunned() {
+                continue;
+            }
+            if let Some(target) = self.nearest_hackable_enemy(i) {
+                self.resolve_hack(i, target);
+            }
+        }
+    }
+
+    /// Resolve a netrunning hack from `attacker` onto `target` (§7F, §10.8): roll
+    /// `3d6 + Hacking + deck` vs the target's Firewall (the TN, §13), gated by
+    /// Link on both ends, landing the hack's payload (margin-scaled) on success.
+    pub fn resolve_hack(&mut self, attacker: usize, target: usize) -> HackResult {
+        let Some(hack) = self.units[attacker].hack else {
+            return HackResult::NoHack;
+        };
+        // Link gate (§7D/§7F): a runner needs net presence; the target a surface.
+        if self.units[attacker].link <= 0.0 {
+            return HackResult::Offline;
+        }
+        if self.units[target].link <= 0.0 {
+            return HackResult::NoSurface;
+        }
+        let skill = self.units[attacker].skill(Skill::Hacking);
+        let tn = self.units[target].firewall;
+        let outcome = resolve_contest(&mut self.rng, Contest::new(skill, hack.power, tn));
+        let stacks = hack.stacks_for(&outcome);
+        if stacks > 0 {
+            self.units[target].add_status(hack.payload, hack.duration, stacks);
+        }
+        HackResult::Rolled { outcome, stacks }
+    }
+
+    /// Nearest enemy with a digital surface (Link > 0) within the unit's antenna
+    /// range — the hack's target selection.
+    fn nearest_hackable_enemy(&self, i: usize) -> Option<usize> {
+        let me = &self.units[i];
+        let range = me.hack.map_or(0, |h| h.range);
+        self.units
+            .iter()
+            .enumerate()
+            .filter(|(j, u)| {
+                *j != i
+                    && u.is_alive()
+                    && u.team == me.team.enemy()
+                    && u.link > 0.0
+                    && me.pos.distance(u.pos) <= range
+            })
+            .min_by_key(|(_, u)| (me.pos.distance(u.pos), u.id))
+            .map(|(j, _)| j)
+    }
 }
 
 /// Route `amount` through the defense layers selected by `pen`, spilling any
@@ -497,9 +580,26 @@ mod tests {
                 pen: PenTier::Internal,
                 range: 1,
             },
+            hack: None,
             statuses: Vec::new(),
             alive: true,
         }
+    }
+
+    /// A unit wired to hack: net presence + a Lockware deck (`power`, `range`).
+    fn runner(id: u32, team: Team, q: i32, power: i32, range: i32) -> Unit {
+        let mut u = unit(id, team, q);
+        u.link = 3.0;
+        u.hack = Some(Hack::new(power, range, StatusSpec::lockware(), 1, 5));
+        u
+    }
+
+    /// A unit with a hackable digital surface: Link > 0 and a Firewall TN.
+    fn networked(id: u32, team: Team, q: i32, firewall: i32) -> Unit {
+        let mut u = unit(id, team, q);
+        u.link = 2.0;
+        u.firewall = firewall;
+        u
     }
 
     fn duel() -> Battle {
@@ -735,5 +835,88 @@ mod tests {
         assert_eq!(b.objectives_report(), vec![ObjectiveStatus::Failed]); // forfeited
         assert_eq!(b.losses(), 5);
         assert!(b.units[0].is_alive() && b.units[1].is_alive()); // everyone saved
+    }
+
+    #[test]
+    fn zero_link_target_is_immune_to_hacks() {
+        let atk = runner(0, Team::A, 0, 5, 1);
+        let mut tgt = networked(1, Team::B, 0, 0);
+        tgt.link = 0.0; // air-gapped — no surface to reach
+                        // Empty RNG: a roll here would panic, proving the gate short-circuits.
+        let mut b = Battle::with_rng(vec![atk, tgt], ScriptedRng::default());
+        assert_eq!(b.resolve_hack(0, 1), HackResult::NoSurface);
+        assert!(b.units[1].statuses.is_empty());
+    }
+
+    #[test]
+    fn offline_attacker_cannot_hack() {
+        let mut atk = runner(0, Team::A, 0, 5, 1);
+        atk.link = 0.0; // dark — no presence to reach with
+        let tgt = networked(1, Team::B, 0, 8);
+        let mut b = Battle::with_rng(vec![atk, tgt], ScriptedRng::default());
+        assert_eq!(b.resolve_hack(0, 1), HackResult::Offline);
+        assert!(b.units[1].statuses.is_empty());
+    }
+
+    #[test]
+    fn hack_lands_against_a_beatable_firewall() {
+        let atk = runner(0, Team::A, 0, 3, 1); // Augmented Hacking baseline = 1
+        let tgt = networked(1, Team::B, 0, 12);
+        // 3d6 = 12, + skill 1 + deck 3 = 16 vs Firewall 12 → margin 4, lands.
+        let mut b = Battle::with_rng(vec![atk, tgt], ScriptedRng::from_d6([4, 4, 4]));
+        let r = b.resolve_hack(0, 1);
+        assert!(r.landed());
+        assert_eq!(b.units[1].statuses.len(), 1);
+        assert_eq!(b.units[1].statuses[0].spec.name, "Lockware");
+        assert_eq!(b.units[1].statuses[0].stacks, 2); // base 1 + margin 4/3
+    }
+
+    #[test]
+    fn hack_whiffs_against_a_hard_firewall() {
+        let atk = runner(0, Team::A, 0, 3, 1);
+        let tgt = networked(1, Team::B, 0, 20);
+        // 16 < Firewall 20 → whiff; nothing lands.
+        let mut b = Battle::with_rng(vec![atk, tgt], ScriptedRng::from_d6([4, 4, 4]));
+        assert!(!b.resolve_hack(0, 1).landed());
+        assert!(b.units[1].statuses.is_empty());
+    }
+
+    #[test]
+    fn digital_phase_hacks_the_nearest_reachable_enemy() {
+        let atk = runner(0, Team::A, 0, 3, 4);
+        let near = networked(1, Team::B, 2, 10); // distance 2 ≤ antenna range 4
+        let far = networked(2, Team::B, 9, 10); // out of range
+        let mut b = Battle::with_rng(vec![atk, near, far], ScriptedRng::from_d6([4, 4, 4]));
+        b.digital_phase();
+        assert!(!b.units[1].statuses.is_empty()); // near got hacked
+        assert!(b.units[2].statuses.is_empty()); // far one untouched (out of range)
+    }
+
+    #[test]
+    fn a_stunned_runner_skips_its_hack() {
+        let mut atk = runner(0, Team::A, 0, 3, 4);
+        atk.add_status(StatusSpec::crash(), 1, 1); // Seizure freezes the net action too
+        let tgt = networked(1, Team::B, 1, 10);
+        // Empty RNG: a stunned runner must not roll.
+        let mut b = Battle::with_rng(vec![atk, tgt], ScriptedRng::default());
+        b.digital_phase();
+        assert!(b.units[1].statuses.is_empty());
+    }
+
+    #[test]
+    fn hacking_resolution_is_deterministic() {
+        let setup = || {
+            Battle::new(vec![runner(0, Team::A, 0, 3, 4), networked(1, Team::B, 2, 11)], 99)
+        };
+        let mut x = setup();
+        let mut y = setup();
+        for _ in 0..10 {
+            x.step();
+            y.step();
+        }
+        for (a, b) in x.units.iter().zip(&y.units) {
+            assert_eq!(a.integrity, b.integrity);
+            assert_eq!(a.statuses.len(), b.statuses.len());
+        }
     }
 }
