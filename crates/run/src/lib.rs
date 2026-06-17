@@ -1,26 +1,21 @@
-//! `atomica-run` — the roguelike **run** layer: a persistent roster marching
-//! through a sequence of battles.
+//! `atomica-run` — the roguelike progression layers above a single battle.
 //!
-//! **Scope (first pass): the fighting spine.** A [`Run`] carries the player's
-//! **roster** across an ordered list of [`Encounter`]s, building and resolving
-//! each as an [`atomica_sim::Battle`], banking the survivors, and tracking
-//! casualties + win/loss. It is **deterministic** (seeded → reproducible, like
-//! the sim it drives).
+//! **Three nested tiers, each a series of the one below:**
 //!
-//! What lives here vs the `sim`: the sim owns a *single* battle (units, ticks,
-//! the dice); the run owns the **persistence between battles** — who survived,
-//! who's gone, and whether the run is over. The navigation **tree**, economy /
-//! Rep, Jobs, and shops are later layers; this is the combat loop they hang on.
+//! - **[`Encounter`]** — one combat, resolved as an [`atomica_sim::Battle`].
+//! - **[`Run`]** — a *series of encounters* fought as an **attrition gauntlet**:
+//!   **no R&R within a run**, so Integrity damage and chrome condition persist
+//!   from one combat to the next. (Every run is a series; some have length one —
+//!   a single encounter is just a run of one.)
+//! - **[`Game`]** — a *series of runs* with **R&R between them** (full heal +
+//!   chrome repair). The campaign: gauntlet, recover, gauntlet, …
 //!
-//! Rules of the spine (first pass):
-//! - **Permadeath** — a unit that falls is removed from the roster for good.
-//! - **The run ends only on a wipe** — losing units while still fielding an army
-//!   advances you (you can bleed the roster across a winning run).
-//! - **No R&R within a run** — a run is a *sequence of combats with no rest*.
-//!   Carried **Integrity** damage and **chrome condition** persist across the
-//!   sequence (only transient combat statuses reset between combats); healing and
-//!   chrome repair happen **between runs** (the meta tier). So a run is an
-//!   attrition gauntlet — the deeper you push, the more worn your force.
+//! All three are **deterministic** (seeded → reproducible, like the sim they
+//! drive) and share the spine's rules: **permadeath** (the fallen are gone for
+//! good) and **end-on-wipe** (you advance as long as you still field an army,
+//! bleeding the roster as you go). The navigation **tree**, economy / Rep, Jobs,
+//! shops, and async match-making are later layers on top of this combat
+//! progression.
 
 use atomica_sim::{Battle, Hex, Outcome, Team, Unit, UnitId};
 
@@ -100,6 +95,13 @@ impl Run {
         self.index
     }
 
+    /// Consume the run and take its surviving roster (their post-gauntlet state —
+    /// carried damage and chrome condition intact). The [`Game`] tier applies R&R
+    /// to these before the next run.
+    pub fn into_survivors(self) -> Vec<Unit> {
+        self.roster
+    }
+
     /// Resolve the **next** encounter: deploy the surviving roster against the
     /// enemy force, run the battle to completion (seeded → deterministic), bank
     /// the survivors (permadeath for the fallen), and advance — or end the run on
@@ -161,6 +163,107 @@ impl Run {
         }
         let seed = self.seed ^ (self.index as u64).wrapping_mul(0x9E37_79B9_7F4A_7C15);
         Battle::new(units, seed)
+    }
+}
+
+/// Where a [`Game`] stands.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum GameOutcome {
+    Ongoing,
+    Won,
+    Lost,
+}
+
+/// A whole game — the campaign: a persistent roster carried through a **series of
+/// runs**, with **R&R between runs** (full heal + chrome repair). Each run is an
+/// attrition gauntlet (no R&R *within*); the game is the series of gauntlets.
+///
+/// Mirrors [`Run`] one tier up: a run is a series of [`Encounter`]s with no rest
+/// between; a game is a series of runs *with* rest between. Ends `Lost` when a run
+/// wipes the army, `Won` when every run is cleared.
+pub struct Game {
+    roster: Vec<Unit>,
+    runs: Vec<Vec<Encounter>>,
+    index: usize,
+    seed: u64,
+    outcome: GameOutcome,
+}
+
+impl Game {
+    /// Start a game. Each entry in `runs` is one run's encounters (length ≥ 1).
+    /// An empty roster is an instant loss; no runs is an instant win.
+    pub fn new(roster: Vec<Unit>, runs: Vec<Vec<Encounter>>, seed: u64) -> Self {
+        let outcome = if roster.is_empty() {
+            GameOutcome::Lost
+        } else if runs.is_empty() {
+            GameOutcome::Won
+        } else {
+            GameOutcome::Ongoing
+        };
+        Self { roster, runs, index: 0, seed, outcome }
+    }
+
+    pub fn outcome(&self) -> GameOutcome {
+        self.outcome
+    }
+
+    /// The persistent roster (rested between runs, worn within them).
+    pub fn roster(&self) -> &[Unit] {
+        &self.roster
+    }
+
+    /// Index of the next unplayed run.
+    pub fn position(&self) -> usize {
+        self.index
+    }
+
+    /// Play the next **run** to its end (an attrition gauntlet, no rest within),
+    /// then — if the army survives — **R&R** (full heal + chrome repair) before the
+    /// next run. Returns the run's battle reports, or `None` if the game is over.
+    pub fn play_run(&mut self) -> Option<Vec<BattleReport>> {
+        if self.outcome != GameOutcome::Ongoing {
+            return None;
+        }
+        let encounters = std::mem::take(&mut self.runs[self.index]);
+        let roster = std::mem::take(&mut self.roster);
+        let run_seed = self.seed ^ (self.index as u64).wrapping_mul(0xD1B5_4A32_D192_ED03);
+        let mut run = Run::new(roster, encounters, run_seed);
+        let reports = run.resolve();
+
+        let mut survivors = run.into_survivors();
+        if survivors.is_empty() {
+            self.outcome = GameOutcome::Lost;
+        } else {
+            rest_and_recuperate(&mut survivors); // R&R between runs
+            self.index += 1;
+            if self.index >= self.runs.len() {
+                self.outcome = GameOutcome::Won;
+            }
+        }
+        self.roster = survivors;
+        Some(reports)
+    }
+
+    /// Play through to the end (Won or Lost), collecting each run's reports.
+    pub fn play(&mut self) -> Vec<Vec<BattleReport>> {
+        let mut all = Vec::new();
+        while let Some(r) = self.play_run() {
+            all.push(r);
+        }
+        all
+    }
+}
+
+/// **R&R between runs** (the meta-tier rest): survivors heal to full Integrity and
+/// the Ripperdoc repairs their chrome — Degraded / Offline implants come back
+/// Online (Destroyed stays gone, terminal). Transient statuses clear.
+fn rest_and_recuperate(roster: &mut [Unit]) {
+    for u in roster.iter_mut() {
+        for idx in 0..u.implants.len() {
+            u.repair_implant(idx);
+        }
+        u.integrity = u.max_integrity;
+        u.statuses.clear();
     }
 }
 
@@ -268,6 +371,66 @@ mod tests {
         run.fight_next().unwrap(); // combat 2 — fought on from the wounded state
         assert_eq!(run.outcome(), RunOutcome::Won);
         assert!(run.roster()[0].integrity < after_1); // even more worn — attrition
+    }
+
+    #[test]
+    fn rnr_heals_between_runs() {
+        // Contrast with within-run attrition: a unit worn down in run 1 returns to
+        // full Integrity for run 2 — R&R happens *between* runs.
+        let roster = vec![fighter("Vet", 9.0, 50.0, 6.0)];
+        let runs = vec![
+            vec![Encounter::new("R1", vec![fighter("F1", 8.0, 22.0, 5.0)])],
+            vec![Encounter::new("R2", vec![fighter("F2", 4.0, 10.0, 3.0)])],
+        ];
+        let mut game = Game::new(roster, runs, 11);
+        game.play_run().unwrap(); // run 1 wounds the Vet...
+        assert_eq!(game.roster()[0].integrity, 50.0); // ...but R&R restored it before run 2
+        game.play_run().unwrap();
+        assert_eq!(game.outcome(), GameOutcome::Won);
+    }
+
+    #[test]
+    fn a_run_may_be_a_single_encounter() {
+        // Every run is a series; some have length one.
+        let roster = vec![fighter("Solo", 30.0, 60.0, 9.0)];
+        let runs = vec![vec![Encounter::new("OneShot", vec![fighter("Mook", 2.0, 8.0, 1.0)])]];
+        let mut game = Game::new(roster, runs, 2);
+        let reports = game.play_run().unwrap();
+        assert_eq!(reports.len(), 1); // a single combat
+        assert_eq!(game.outcome(), GameOutcome::Won);
+    }
+
+    #[test]
+    fn a_game_is_lost_when_a_run_wipes_the_army() {
+        let roster = vec![fighter("Rookie", 3.0, 12.0, 4.0)];
+        let runs = vec![vec![Encounter::new("Doom", vec![fighter("Killer", 30.0, 120.0, 9.0)])]];
+        let mut game = Game::new(roster, runs, 7);
+        game.play();
+        assert_eq!(game.outcome(), GameOutcome::Lost);
+        assert!(game.roster().is_empty());
+    }
+
+    #[test]
+    fn the_game_is_deterministic() {
+        let setup = || {
+            Game::new(
+                vec![fighter("A", 12.0, 40.0, 6.0), fighter("B", 11.0, 40.0, 5.0)],
+                vec![
+                    vec![Encounter::new("R1E1", vec![fighter("X", 12.0, 40.0, 7.0)])],
+                    vec![
+                        Encounter::new("R2E1", vec![fighter("Y", 10.0, 30.0, 6.0)]),
+                        Encounter::new("R2E2", vec![fighter("Z", 12.0, 45.0, 6.0)]),
+                    ],
+                ],
+                42,
+            )
+        };
+        let take = || {
+            let mut g = setup();
+            g.play();
+            (g.outcome(), g.roster().len())
+        };
+        assert_eq!(take(), take());
     }
 
     #[test]
