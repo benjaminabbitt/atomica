@@ -23,6 +23,7 @@
 
 pub mod armor;
 mod hex;
+mod objective;
 mod rng;
 mod roll;
 mod skills;
@@ -30,6 +31,7 @@ mod status;
 
 pub use armor::ArmorClass;
 pub use hex::Hex;
+pub use objective::{Eliminate, MarginLoss, Objective, Reach, Survive, TimeAttack, PLAYER};
 pub use rng::{RandomSource, ScriptedRng, SplitMix64};
 pub use roll::{resolve_contest, Contest, RollOutcome};
 pub use skills::{Chassis, Skill, Skills};
@@ -213,15 +215,16 @@ pub enum Outcome {
     Draw,
 }
 
-/// A full battle: the units, an injected [`RandomSource`], and a tick counter.
+/// A full battle: the units, an injected [`RandomSource`], an injected
+/// [`Objective`] (the win-condition), and a tick counter.
 ///
 /// Generic over the RNG (defaulting to [`SplitMix64`]) so tests can inject a
 /// [`ScriptedRng`] via [`Battle::with_rng`] and force every roll.
-#[derive(Clone, Debug)]
 pub struct Battle<R: RandomSource = SplitMix64> {
     pub units: Vec<Unit>,
     pub tick: u32,
     rng: R,
+    objective: Box<dyn Objective>,
 }
 
 impl Battle<SplitMix64> {
@@ -233,8 +236,15 @@ impl Battle<SplitMix64> {
 
 impl<R: RandomSource> Battle<R> {
     /// Build a battle over any [`RandomSource`] — inject a `ScriptedRng` in tests.
+    /// Defaults to the [`Eliminate`] objective.
     pub fn with_rng(units: Vec<Unit>, rng: R) -> Self {
-        Self { units, tick: 0, rng }
+        Self { units, tick: 0, rng, objective: Box::new(Eliminate) }
+    }
+
+    /// Set the win-condition (default [`Eliminate`]). Job Flights inject others.
+    pub fn with_objective(mut self, objective: Box<dyn Objective>) -> Self {
+        self.objective = objective;
+        self
     }
 
     /// Advance one tick:
@@ -266,15 +276,9 @@ impl<R: RandomSource> Battle<R> {
         Outcome::Draw
     }
 
+    /// The player-side outcome under the current [`Objective`].
     pub fn outcome(&self) -> Outcome {
-        let a = self.units.iter().any(|u| u.is_alive() && u.team == Team::A);
-        let b = self.units.iter().any(|u| u.is_alive() && u.team == Team::B);
-        match (a, b) {
-            (true, false) => Outcome::Winner(Team::A),
-            (false, true) => Outcome::Winner(Team::B),
-            (false, false) => Outcome::Draw,
-            (true, true) => Outcome::Ongoing,
-        }
+        self.objective.evaluate(&self.units, self.tick)
     }
 
     fn status_phase(&mut self) {
@@ -582,5 +586,47 @@ mod tests {
         u.skills.raise(Skill::Melee, 3); // → 4
         let after = u.contest(Skill::Melee, 0, 12, &mut ScriptedRng::from_d6([3, 3, 3])); // 9+4=13 ≥ 12
         assert!(!before.success && after.success);
+    }
+
+    #[test]
+    fn survive_objective_wins_at_the_deadline() {
+        let obj = Survive { rounds: 3 };
+        let alive = vec![unit(0, Team::A, 0)];
+        assert_eq!(obj.evaluate(&alive, 0), Outcome::Ongoing);
+        assert_eq!(obj.evaluate(&alive, 3), Outcome::Winner(Team::A));
+        let mut dead = vec![unit(0, Team::A, 0)];
+        dead[0].alive = false;
+        assert_eq!(obj.evaluate(&dead, 1), Outcome::Winner(Team::B));
+    }
+
+    #[test]
+    fn margin_loss_rewards_a_close_defeat() {
+        let obj = MarginLoss { max_enemy_survivors: 2 };
+        let both = vec![unit(0, Team::A, 0), unit(1, Team::B, 1)];
+        assert_eq!(obj.evaluate(&both, 5), Outcome::Ongoing); // you must lose first
+        let mut close = vec![unit(0, Team::A, 0), unit(1, Team::B, 1), unit(2, Team::B, 2)];
+        close[0].alive = false; // player down, 2 enemies left ≤ 2
+        assert_eq!(obj.evaluate(&close, 9), Outcome::Winner(Team::A));
+        let mut blown =
+            vec![unit(0, Team::A, 0), unit(1, Team::B, 1), unit(2, Team::B, 2), unit(3, Team::B, 3)];
+        blown[0].alive = false; // 3 enemies left > 2 → lost too badly
+        assert_eq!(obj.evaluate(&blown, 9), Outcome::Winner(Team::B));
+    }
+
+    #[test]
+    fn reach_objective_on_arrival() {
+        let obj = Reach { hex: Hex::new(5, 0), by_round: 10 };
+        let mut us = vec![unit(0, Team::A, 0)];
+        assert_eq!(obj.evaluate(&us, 1), Outcome::Ongoing);
+        us[0].pos = Hex::new(5, 0);
+        assert_eq!(obj.evaluate(&us, 1), Outcome::Winner(Team::A));
+    }
+
+    #[test]
+    fn battle_runs_an_injected_objective() {
+        // Lone player unit + Survive(2): nothing to wipe it, so it wins at the deadline.
+        let mut b = Battle::with_rng(vec![unit(0, Team::A, 0)], SplitMix64::new(1))
+            .with_objective(Box::new(Survive { rounds: 2 }));
+        assert_eq!(b.resolve(100), Outcome::Winner(Team::A));
     }
 }
