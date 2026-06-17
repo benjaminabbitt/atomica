@@ -1,0 +1,178 @@
+# Netrunning — system design & plan
+
+*The digital-attack system: how hacks, worms, and spoofs resolve. Extends
+[`../CHROME-AND-CODE.md`](../CHROME-AND-CODE.md) §7F and
+[`design-delta-v0.26.md`](design-delta-v0.26.md) §13 (the `3d6 + skill` mechanic).
+This doc fixes the **netrunning shapes** and records the resolution decisions; it
+is the at-a-glance reference for the digital realm. **Numbers are TBD.** ◆ =
+decision/synthesis. Status legend: **✅ built** (lives in `crates/sim`) ·
+**🔭 planned** (designed, not implemented) · **⏳ tuning** (a feel number).*
+
+---
+
+## 1. The stat & skill line
+
+A unit's whole netrunning profile is **two stats + one skill** (plus the bio
+parallel). *Skills attack, stats defend* (§13) — so the offense is a **skill**
+(Hacking) and the defenses are **stats** (Link gates, Firewall walls).
+
+| Name | Field | Type | Role | Status |
+|---|---|---|---|---|
+| **Link** | `unit.link` | int◆ | **Three jobs:** ① reachability **gate** both ways (`0` ⇒ immune target / offline attacker); ② **digital initiative** (orders the digital pass); ③ **caps the attacker's Hacking** (`min(Link, Hacking)`). The exposure dial. | ✅ (gate/init/cap); 🔭 exposure (worm-catch) |
+| **Firewall** | `unit.firewall` | int | The **universal digital TN** — every digital contest rolls against it (hacks; the digital statuses Crash/Lag/Lockware via `Resist::Firewall`). **Link-blind** on defense. | ✅ |
+| **Hacking** | `unit.skills[Hacking]` | int | The **sole offensive additive** on a digital roll. No defensive net-skill exists — you buy Firewall (the stat), not a skill. | ✅ |
+| *Immunity* | `unit.immunity` | int | The **bio** parallel (Virus TN) — separate track, not digital. | ✅ |
+
+**Link is an integer ◆.** It is only ever used as a gate (`> 0`), an ordering
+key, and a cap (`min(Link, Hacking)`) — it carries no fractional meaning, so it
+models cleanly as `i32` bandwidth tiers. *(Currently `f32` in code; the int
+migration is a 🔭 cleanup, §6.)*
+
+**Chassis floors (✅).** Only **Augmented** ships innate Hacking (1); Flesh and
+Machine have 0 — they **cannot hack without a skill-chip**. Faithful to "digital
+strength requires cyberware." This makes the **skill-chip** (transferable,
+capped-low, take-the-max vs character skill, §10) load-bearing — and it is
+**🔭 not yet modeled** (no chip type exists).
+
+---
+
+## 2. The hack contest ✅
+
+The core resolution — built in [`crates/sim/src/hack.rs`](../crates/sim/src/hack.rs)
++ `Battle::resolve_hack`:
+
+```text
+3d6 + min(Link, Hacking)   vs   Firewall
+```
+
+- **Skill attacks, the stat defends.** The only additive is the attacker's
+  Hacking, **capped by its Link** (bandwidth: a skilled runner on a thin pipe is
+  throttled; a fat pipe with no skill is still weak — you need both). The TN is
+  the target's **Firewall, in full** — Link is **irrelevant on defense** (a
+  low-Link target does *not* get a softer wall; that earlier `min(Link, Firewall)`
+  shape inverted the design and was dropped).
+- **Equipment arms the roll through the stats, not a separate term** ◆ — a
+  cyberdeck raises **Link**, a skill-chip raises **Hacking**, a Firewall implant
+  raises **Firewall**. So `resolve_contest`'s `equipment` addend is `0` for hacks.
+- **Hard reachability gates** (§7D/§7F): zero-Link **target** ⇒ `NoSurface`
+  (immune); zero-Link **attacker** ⇒ `Offline`. These are the locked
+  immunity cliff — distinct from "Link affecting the math."
+- **Margin = degree of success.** `≥ TN` succeeds; **nat 18 crit**, **nat 3
+  fumble**. The margin scales the payload: `stacks = base + margin / MARGIN_PER_STACK
+  + crit` (placeholder `MARGIN_PER_STACK = 3`).
+
+**Emergent identity ◆ — netrunners are glass cannons.** Because the cap is
+`min(Link, Hacking)`, a real hacker must buy **both** Link *and* Hacking — and
+high Link is (by design) the most exposed state (easier to hack back, higher
+worm-catch). High offense ⇒ high exposure, in one stat. This *is* the `Null`
+archetype; the model produces it for free.
+
+### The digital pass ✅
+
+`Battle::digital_phase` runs after the physical action phase: every unit with a
+hack loadout and `Link > 0` acts in **Link (digital-initiative) order**, hacking
+the nearest reachable enemy (Link > 0) within its antenna **range**. A
+Crash/Seizure **stun** freezes the net action too.
+
+> **🔭 Planned:** the design's *fully interleaved* physical + digital initiative
+> (one woven order, §10.3). Today they are two discrete phases — a deliberate
+> first pass.
+
+---
+
+## 3. What a hack *does* — the payload 🔭
+
+The **contest** is built; the **consequences** are mostly stubs. On success a
+hack lands a **status payload** (margin-scaled stacks). Today the only digital
+payloads are **Lockware** (an Internal DoT, `Resist::Firewall`), **Crash**
+(Seizure-style stun), and **Lag**. The designed payload menu (§7F/§10.8) needs
+substrate that doesn't exist yet:
+
+| Payload | What it does | Needs (🔭) |
+|---|---|---|
+| **Trip a hack-effect** | fire the target implant's loaded liability **on its owner** (Seizure/Misfire/Shed/Overload/Lockout/Blind/Overdose) | the **implant model** (§4) |
+| **Deploy a worm** | plant a spreading, re-rolling contagion strain | the **Worm contagion** family |
+| **Spoof IFF** | Flip-hostile / Masquerade / Scramble / Ghost | an **IFF / targeting** layer |
+| **Disable an implant** | knock a slot **Offline** | **equipment-condition** state |
+
+---
+
+## 4. The implant model 🔭 — the keystone
+
+The single highest-leverage unbuilt piece: it turns hacks from "land a DoT" into
+the **chrome-is-liability** core, and simultaneously gives **worms** their
+payloads.
+
+- **Every implant = a `(Link, Firewall, Hack-effect)` bundle** (§7F). An implant's
+  Link/Firewall **sum into** the unit's stats; its **hack-effect** is a benefit
+  the owner uses **and** a loaded liability that fires *on the owner* when the
+  implant is breached (by a hack or a worm).
+- **Hack-effect roster** (the implant liability pool) — each maps to an existing
+  or new status:
+
+  | Implant (benefit) | Hack-effect (on owner) | Maps to |
+  |---|---|---|
+  | Reflex booster (+Init) | **Seizure** | Crash (stun) ✅ |
+  | Smartgun (IFF-target) | **Misfire** | attack an ally/self 🔭 |
+  | Subdermal plating (+def) | **Shed** | Plating-shred ✅ (`corrode`) |
+  | Metabolic pump (+regen) | **Overload** | Internal DoT ✅ (`lockware`-like) |
+  | Cyberdeck (+Link/hacks) | **Lockout** | −Link / digital disable 🔭 |
+  | Sensor suite (perception) | **Blind** | can't target / off-AR 🔭 |
+  | Combat stim (+dmg/haste) | **Overdose** | self-DoT then Crash 🔭 |
+
+- **PAN & Cascade** (§6 of the delta): implants are networked over a **PAN**; a
+  breach can ride it to trip **every** hack-effect at once (**Cascade**).
+  **Segmented PAN** contains it (no cross-implant synergy). A build commitment,
+  not a toggle.
+- **Worms trip these by name** (Logic-bomb) **or all at once** (Cascade) — so the
+  worm roster and the implant roster are designed together.
+
+---
+
+## 5. Defense & counters 🔭
+
+The answer-half. *Skills attack, stats defend*, so defense is mostly **stats +
+loadout**, not classes.
+
+| Counter | What | Status |
+|---|---|---|
+| **Firewall** | the digital TN — raise it with implants | ✅ (as TN) |
+| **Go dark / zero Link** | total digital immunity, total digital isolation | ✅ (the gate) |
+| **Masking (low Link)** | smaller surface ⇒ harder to hack / lower worm-catch, less throughput | 🔭 (link-effect) |
+| **White-hat mender** | cleanse Worm; restore Firewall / Link | 🔭 |
+| **EMP** | a **physical** attack that hits Link/cyberware and **bypasses Firewall — no hack roll** (a pulse, not a contest); the counter to digital builds | 🔭 |
+| **Anti-Worm specialists** | Antivirus (eat stacks), Signals (lock/reverse IFF), Jammer, Honeypot, Quarantine | 🔭 |
+
+**Link-effects** (the Link slot's flavor, §7F): Uplink / Relay·Mesh / Masking /
+Spike / Leech — loadout choices that shape the Link number and its exposure. 🔭
+
+---
+
+## 6. Open numbers & calibration ⏳
+
+| Knob | Question |
+|---|---|
+| **Link → `i32`** | migrate the field; set typical **bands** (0–N tiers). |
+| **Contest calibration** | set **Hacking / Link / Firewall** ranges so a *matched* contest sits near **50%**. 3d6 mean = 10.5, so `min(Link, Hacking) ≈ Firewall − 10` is the even-odds line. |
+| **`MARGIN_PER_STACK`** (=3) | the margin→stacks curve; `base_stacks`; per-payload stack caps. |
+| **Antenna range** | reach bands for the digital pass; beam (line) vs single delivery. |
+| **Hack-effect severity** | how punishing each tripped liability is — the "chrome is a real-but-fair gamble" dial. |
+
+---
+
+## 7. Build order — the plan ◆
+
+The road from "the contest works" to "the digital realm is whole":
+
+1. **Calibration + `Link → i32`** ⏳ — make the existing layer *feel* right (small).
+2. **Implant model → hack-effect roster** 🔭 — the keystone (§4); gives hacks teeth
+   and worms their payloads. *(Delta Phase 6/7.)*
+3. **Equipment-condition** (Online→Degraded→Offline→Destroyed) 🔭 — what "disable"
+   and "field repair" act on. *(Phase 2/6.)*
+4. **IFF / spoof** 🔭 — the targeting layer + the spoof toolkit. *(Phase 5/8.)*
+5. **Worm contagion** 🔭 — the deploy-worm payload + spread channel. *(Phase 7/8.)*
+6. **EMP · White-hat · Link-effects · PAN/AR** 🔭 — the counters and the
+   intra/perception tiers. *(Phase 7/8.)*
+
+None of it breaks the crate split: the `sim` owns resolution; factions/economy
+stay engine-blind.
