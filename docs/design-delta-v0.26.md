@@ -211,6 +211,8 @@ Link = a unit's projection into **two shared layers**:
 
 ## 8. The archetype roster ◆
 
+> **Full authored roster + locked faction/clan/law names:** [`rosters.md`](rosters.md). The below is the schema + a sample.
+
 An **Archetype** is a content preset (the §7F "inbuilt equipment = identity" lever): a chassis + non-removable signature gear + one signature ability + default profiles. Everything else is shop-bought & re-speccable.
 
 ```
@@ -353,7 +355,7 @@ None of it breaks the crate split or phase ordering.
 
 ## 12. Open questions added this session
 
-*Tagged by how each resolves — **🎯 Design** (decide on paper now) · **◑ Mixed** (settle the structure now, tune the numbers later) · **⏳ Playtest** (feel numbers — need the built game). Tally: **7 design-now · 8 mixed · 2 playtest-only.** **→ Working-pass resolutions in §13 now supersede #1–3, 5–8, 11–15, 17 (structure decided; ⏳ numbers remain). Still fully open: #4, #16 (playtest) · #9, #10 (authoring).***
+*Tagged by how each resolves — **🎯 Design** (decide on paper now) · **◑ Mixed** (settle the structure now, tune the numbers later) · **⏳ Playtest** (feel numbers — need the built game). Tally: **7 design-now · 8 mixed · 2 playtest-only.** **→ Working-pass resolutions in §13 supersede #1–3, 5–8, 11–15, 17 (structure decided; ⏳ numbers remain); #9, #10 authored → [`rosters.md`](rosters.md). Still fully open: just #4, #16 (⏳ playtest).***
 
 1. **[◑ Mixed]** **Per-faction Rep math** — how standing maps to price / access tiers; how the Fixer / Media convert Rep across the web.
 2. **[◑ Mixed]** **Notoriety** — how criminal dealings raise it and how it seeds cop-faction enemies in the run.
@@ -363,8 +365,8 @@ None of it breaks the crate split or phase ordering.
 6. **[🎯 Design]** **Vehicle rules** — occupancy footprint shapes, crew capacity, disembark / spill-damage on death, ram resolution.
 7. **[◑ Mixed]** **PAN segmentation** — the synergy bonuses you forfeit to compartmentalize; throughput penalty; is it a software toggle or a build commitment?
 8. **[◑ Mixed]** **AR detection** — visible-in-AR rules, sensor range, what Jammer / Blind / Scramble do to the AR picture numerically; Heat→AR signature curve.
-9. **[🎯 Design]** **Faction rosters** — fill Runner / Corp archetypes; finalize clan list; cop subdivisions in or out.
-10. **[🎯 Design]** **Naming pass** — confirm corp / clan placeholder names; lock the street-name register across the roster.
+9. **[✅ Authored → rosters.md]** **Faction rosters** — Runner / Corp archetypes filled; 5 clans + 3 cop tiers locked; 19-archetype first-pass roster.
+10. **[✅ Authored → rosters.md]** **Naming pass** — corp / clan / law names locked; street-name register confirmed.
 11. **[◑ Mixed]** **Generic vs. faction gear** — how much edge branded gear buys over the generic 1.0× baseline; the licit/illicit split and its Notoriety cost; whether *any* gear (vs. only specialist depth) is ever truly faction-exclusive.
 12. **[🎯 Design]** **Jobs** *(frequency ⏳)* — run-map availability / frequency; how margin-loss "X" is measured (army-strength differential? surviving units?); does *failing* a Job cost Rep or just forfeit the reward; can you abandon mid-Job; how endorsement requirements interact with the generic tier.
 13. **[🎯 Design]** **Casualty economy** — each unit's downtime contribution model (flat? by tier/cost?); do **mid-battle revives** (a mender standing a downed unit back up before battle's end) count as "survived" for downtime; multi-segment downtime — do Recovered units sit out one segment or several.
@@ -412,7 +414,7 @@ None of it breaks the crate split or phase ordering.
 
 **Casualty offsets (#15, structure) — per-unit insurance, salvage-as-claim, stackable.** Insurance is **per-unit, pre-combat** (pick who to insure — the bet). Salvage is a **tier-scaled claim** (payout per lost unit by value), not gear-by-gear harvesting. A dead unit can be **both** insured and salvaged (money + materials stack). Premiums/curves ⏳.
 
-**Still genuinely open after this pass:** #4 cross-pool costs (⏳), #16 permadeath-rate (⏳), #9 faction rosters (authoring), #10 naming (authoring).
+**Still genuinely open after this pass:** #4 cross-pool costs (⏳), #16 permadeath-rate (⏳). #9 rosters + #10 naming **authored → [`rosters.md`](rosters.md)**.
 
 ---
 
