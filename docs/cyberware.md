@@ -163,7 +163,7 @@ what those points encode.
 | Axis | Cost | Counter / fork |
 |---|---|---|
 | **Link** | the hackable surface (worm-catch, hack channel — `netrunning.md`) — *also* digital capability | Masking / go dark (§7F link-effects) |
-| **EMP** | **physical, bypasses Firewall, no roll** — fries chrome: knocks implants **Offline** and can **trip their hack-effects**. The hard counter; the more chrome, the more an EMP ruins | hardening; **bioware** (no hardware) |
+| **EMP** ✅ | **physical, bypasses Firewall, no roll** — fries **every** active implant **Offline** and fires their **degrade-class** liabilities (no stun knockout — EMP is blunt). The hard counter; the more chrome, the more an EMP ruins | hardening; **bioware** (no hardware) |
 | **Weight** | mass → **−physical Initiative** — heavy chrome = slow body | lean loadouts |
 | **Heat** *(if adopted)* | chrome runs hot → closer to overheat **+ brighter AR signature** (§7D) | vent / coolant |
 
@@ -205,7 +205,7 @@ An implant is **breached** three ways:
 |---|---|---|
 | **Hack** | a netrunner trips the implant (a hack success, `netrunning.md` §3) | Firewall, low Link |
 | **Worm** | **Logic-bomb** trips one by name · **Cascade** trips all (meshed PAN) | Firewall, segment PAN |
-| **EMP** | a physical pulse — **bypasses Firewall**, knocks chrome Offline | hardening, bioware |
+| **EMP** ✅ | a physical pulse (`Attack.emp` → `apply_emp`) — **bypasses Firewall**, fries every active implant Offline + fires degrade liabilities | hardening, bioware |
 
 ### Breach outcome — severity scales with the roll ◆
 
@@ -284,7 +284,7 @@ crit-gated stun; Cascade fires all). The Ripperdoc reverses the disable.
 | **B** ✅ | the **benefit roster** as content (§2 table) | **built**: deck · plating · reflex · firewall · stim (multi-effect Overdose) · pump; smartgun / sensor / skill-chip wait on targeting / AR / §10 |
 | **C** ✅ | **trip-on-breach** — a hack success targets an implant (`first_active_implant`) and applies the **severity ladder** (§6): success ⇒ **disable**, margin ⇒ **degrade**, crit ⇒ **knockout** (stun) | **built** (`Battle::apply_breach`): reuses the margin/crit roll outputs; chromeless targets fall back to the deck payload. Closes the netrunning loop |
 | **D** ✅ | **condition + Ripperdoc** — Degraded (half benefit) / Offline / Destroyed (terminal) ladder + `degrade_implant` / `repair_implant` | **built**: condition-scaled fold (round-trips exact); the mender *unit* is later content |
-| **E** | **EMP** — physical, Firewall-bypassing, knocks chrome Offline + trips effects | the chrome counter |
+| **E** ✅ | **EMP** — physical, Firewall-bypassing pulse (`Attack.emp`); fries **all** active implants Offline + fires degrade liabilities (no stun) | **built** (`apply_emp`): reuses `disable_implant`; bioware/flesh immune |
 | **F** | **PAN** mesh/segment + **Cascade** | delta §6 |
 
 Phase **A** is the load-bearing refactor (the stat line becomes derived);

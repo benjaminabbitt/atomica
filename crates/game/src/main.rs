@@ -40,7 +40,7 @@ fn demo_battle() -> Battle {
         link: 0,
         firewall: 0,
         immunity: 0,
-        attack: Attack { damage: dmg, dtype, pen, range },
+        attack: Attack { damage: dmg, dtype, pen, range, emp: false },
         hack: None,
         implants: Vec::new(),
         statuses: Vec::new(),
@@ -65,6 +65,7 @@ fn demo_battle() -> Battle {
     // "mook" (easy to land but the thin channel keeps it shallow).
     units[2].link = 5;
     units[2].firewall = 15; // hardened + connected
+    units[2].attack.emp = true; // an EMP maul — frying the Runner's deck on contact
     units[3].link = 2;
     units[3].firewall = 9; // soft + dark
     // Seed a couple of statuses so the pipeline is visible on first run.

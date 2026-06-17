@@ -158,7 +158,7 @@ loadout**, not classes.
 | **Go dark / zero Link** | total digital immunity, total digital isolation | ✅ (the gate) |
 | **Masking (low Link)** | smaller surface ⇒ harder to hack / lower worm-catch, less throughput | 🔭 (link-effect) |
 | **White-hat mender** | cleanse Worm; restore Firewall / Link | 🔭 |
-| **EMP** | a **physical** attack that hits Link/cyberware and **bypasses Firewall — no hack roll** (a pulse, not a contest); the counter to digital builds | 🔭 |
+| **EMP** | a **physical** attack that hits Link/cyberware and **bypasses Firewall — no hack roll** (a pulse, not a contest); the counter to digital builds | ✅ (`cyberware.md` §6) |
 | **Anti-Worm specialists** | Antivirus (eat stacks), Signals (lock/reverse IFF), Jammer, Honeypot, Quarantine | 🔭 |
 
 **Link-effects** (the Link slot's flavor, §7F): Uplink / Relay·Mesh / Masking /

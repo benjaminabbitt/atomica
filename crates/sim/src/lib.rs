@@ -108,6 +108,9 @@ pub struct Attack {
     pub pen: PenTier,
     /// Reach in hexes (1 = melee/adjacent).
     pub range: i32,
+    /// EMP weapon: a *physical* pulse that also fries the target's cyberware,
+    /// **bypassing Firewall** (§7I) — the physical counter to digital builds.
+    pub emp: bool,
 }
 
 /// A combatant. The stat line mirrors the design's "Unit anatomy".
@@ -311,6 +314,10 @@ impl Unit {
 /// the action phase), so it needs ≥2 to survive decay and skip the next action.
 /// Placeholder (TBD).
 const KNOCKOUT_STUN: u32 = 2;
+
+/// Fixed magnitude of the degrade-class liabilities an EMP fires — it has no
+/// margin/crit, being a blunt physical pulse. Placeholder (TBD).
+const EMP_MAGNITUDE: u32 = 2;
 
 /// The Target Number a stochastic status rolls against (its `resist` axis, §13).
 fn resist_tn(unit: &Unit, resist: Resist) -> i32 {
@@ -552,6 +559,31 @@ impl<R: RandomSource> Battle<R> {
             * self.units[target].vuln_mult();
         let dmg = atk.damage * mult;
         apply_damage(&mut self.units[target], dmg, atk.pen, true);
+        if atk.emp && self.units[target].is_alive() {
+            self.apply_emp(target);
+        }
+    }
+
+    /// An **EMP** pulse on `target` (§7I) — a *physical* breach that **bypasses
+    /// Firewall** (no roll): fries **every** active implant (→ Offline) and fires
+    /// its **degrade-class** liabilities at a fixed magnitude. The stun-class
+    /// knockout is the hacker's finesse — EMP is blunt. Flesh / bioware (no chrome)
+    /// are immune, and the more implants a target runs, the more an EMP ruins.
+    fn apply_emp(&mut self, target: usize) {
+        let active: Vec<usize> = self.units[target]
+            .implants
+            .iter()
+            .enumerate()
+            .filter(|(_, im)| im.condition.is_active())
+            .map(|(i, _)| i)
+            .collect();
+        for idx in active {
+            for spec in self.units[target].disable_implant(idx) {
+                if !matches!(spec.effect, Effect::Stun) {
+                    self.units[target].add_status(spec, EMP_MAGNITUDE, EMP_MAGNITUDE);
+                }
+            }
+        }
     }
 
     /// The digital activation pass (§10.3/§10.8): every unit with a hack and net
@@ -714,6 +746,7 @@ mod tests {
                 dtype: DamageType::Piercing,
                 pen: PenTier::Internal,
                 range: 1,
+                emp: false,
             },
             hack: None,
             implants: Vec::new(),
@@ -1128,6 +1161,49 @@ mod tests {
         assert!(u.hack.is_some()); // benefit: the unit can now hack
         assert_eq!(u.link, 5); // folded surface
         assert_eq!(u.firewall, 2); // folded wall
+    }
+
+    #[test]
+    fn emp_fries_all_chrome_bypassing_firewall() {
+        let mut tgt = unit(1, Team::B, 0);
+        tgt.firewall = 99; // EMP ignores the wall entirely
+        tgt.install(Implant::subdermal_plating()); // +6 Plating, Shed liability
+        tgt.install(Implant::cyberdeck()); // Link 5, grants hack, Lockout liability
+        assert!(tgt.hack.is_some());
+        let mut atk = unit(0, Team::A, 0);
+        atk.attack.emp = true;
+        // Empty RNG: an EMP rolls nothing (a physical pulse, not a contest).
+        let mut b = Battle::with_rng(vec![atk, tgt], ScriptedRng::default());
+        b.resolve_attack(0, 1);
+        assert_eq!(b.units[1].implants[0].condition, Condition::Offline);
+        assert_eq!(b.units[1].implants[1].condition, Condition::Offline);
+        assert!(b.units[1].hack.is_none()); // deck bricked
+        assert_eq!(b.units[1].defense.plating, 0.0); // plating benefit fried
+    }
+
+    #[test]
+    fn emp_disables_but_does_not_knock_out() {
+        // EMP is blunt — it fires degrade-class liabilities but not the stun.
+        let mut tgt = unit(1, Team::B, 0);
+        tgt.install(Implant::reflex_booster()); // Seizure (stun) liability
+        let mut atk = unit(0, Team::A, 0);
+        atk.attack.emp = true;
+        let mut b = Battle::with_rng(vec![atk, tgt], ScriptedRng::default());
+        b.resolve_attack(0, 1);
+        assert_eq!(b.units[1].implants[0].condition, Condition::Offline); // disabled
+        assert!(!b.units[1].statuses.iter().any(|s| matches!(s.spec.effect, Effect::Stun)));
+    }
+
+    #[test]
+    fn emp_is_harmless_to_unchromed_targets() {
+        let tgt = unit(1, Team::B, 0); // flesh — no implants
+        let mut atk = unit(0, Team::A, 0);
+        atk.attack.emp = true;
+        let mut b = Battle::with_rng(vec![atk, tgt], ScriptedRng::default());
+        b.resolve_attack(0, 1);
+        assert!(b.units[1].implants.is_empty());
+        // no chrome to fry → EMP adds no statuses (only the kinetic hit landed)
+        assert!(b.units[1].statuses.is_empty());
     }
 
     #[test]
