@@ -25,12 +25,14 @@ pub mod armor;
 mod hex;
 mod rng;
 mod roll;
+mod skills;
 mod status;
 
 pub use armor::ArmorClass;
 pub use hex::Hex;
 pub use rng::{RandomSource, ScriptedRng, SplitMix64};
 pub use roll::{resolve_contest, Contest, RollOutcome};
+pub use skills::{Chassis, Skill, Skills};
 pub use status::{
     Behavior, Decay, Effect, Magnitude, Resist, Stacking, Status, StatusSpec, Targeting, Timing,
     Trigger,
@@ -111,6 +113,10 @@ pub struct Unit {
     pub defense: Defense,
     /// Armor class for the [`armor`] matrix.
     pub armor_class: ArmorClass,
+    /// Innate class — sets the skill floor, contagion exposure, etc. (§7J).
+    pub chassis: Chassis,
+    /// Per-character skill levels (chassis baseline + earned) — roll modifiers (§10).
+    pub skills: Skills,
 
     /// Physical Initiative — turn order in the world (higher acts first).
     pub initiative: f32,
@@ -130,6 +136,22 @@ pub struct Unit {
 impl Unit {
     pub fn is_alive(&self) -> bool {
         self.alive && self.integrity > 0.0
+    }
+
+    /// This unit's level in `skill` — the bonus it brings to a contested roll (§13).
+    pub fn skill(&self, skill: Skill) -> i32 {
+        self.skills.level(skill)
+    }
+
+    /// Make a contested roll with this unit's `skill` (+ `equipment`) vs `tn`.
+    pub fn contest<R: RandomSource>(
+        &self,
+        skill: Skill,
+        equipment: i32,
+        tn: i32,
+        rng: &mut R,
+    ) -> RollOutcome {
+        resolve_contest(rng, Contest::new(self.skill(skill), equipment, tn))
     }
 
     /// Apply a status, honoring its stacking axis (merge with any same-named one).
@@ -404,6 +426,8 @@ mod tests {
             max_integrity: 30.0,
             defense: Defense::default(),
             armor_class: ArmorClass::Mail,
+            chassis: Chassis::Augmented,
+            skills: Chassis::Augmented.baseline_skills(),
             initiative: 5.0,
             link: 0.0,
             firewall: 0.0,
@@ -540,5 +564,23 @@ mod tests {
         let before = b.units[0].integrity;
         b.status_phase();
         assert_eq!(b.units[0].integrity, before);
+    }
+
+    #[test]
+    fn unit_contest_uses_its_skill() {
+        let u = unit(0, Team::A, 0); // Augmented baseline Melee = 1
+        let mut rng = ScriptedRng::from_d6([4, 4, 3]); // 3d6 = 11
+        let o = u.contest(Skill::Melee, 0, 12, &mut rng); // 11 + 1 = 12 vs TN 12 ⇒ success
+        assert_eq!(o.total, 12);
+        assert!(o.success);
+    }
+
+    #[test]
+    fn raising_a_skill_flips_a_contest() {
+        let mut u = unit(0, Team::A, 0); // Melee 1
+        let before = u.contest(Skill::Melee, 0, 12, &mut ScriptedRng::from_d6([3, 3, 3])); // 9+1=10 < 12
+        u.skills.raise(Skill::Melee, 3); // → 4
+        let after = u.contest(Skill::Melee, 0, 12, &mut ScriptedRng::from_d6([3, 3, 3])); // 9+4=13 ≥ 12
+        assert!(!before.success && after.success);
     }
 }

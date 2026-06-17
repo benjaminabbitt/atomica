@@ -328,6 +328,7 @@ The **RPG layer** — what a unit *knows*, separate from what it *is* (chassis) 
 
 - **Character skills grow with use:** a unit that *uses* a skill earns **XP**, and XP **raises the skill** → bigger roll modifiers. A leveled character is **irreplaceable progression** you can't buy back.
 - **Skill chips democratize the basics:** slot a chip to give *any* unit low-level competence (a hacking chip on a bruiser for basic netrunning) — transferable and salvageable, but **capped low.** Mastery is earned-only.
+- **Chassis baseline ◆:** every **chassis** ships a **low** innate level in its native skills (Flesh → flesh/melee, Machine → gunnery, etc.); XP-growth and chips build *from* that floor. So a fresh recruit is competent-but-unremarkable, and the gap to a veteran is earned.
 
 **The engine of the two-tier stakes (§9.4) ◆.** A character's **earned skill levels are the core of its unsalvageable essence** — lose a leveled character and that mastery is *gone* (money and chips return; the skill doesn't). So skills are *why* characters are worth extracting at any cost, and chips are the fungible counterpart. The investment compounds: the more a character grows, the more it's worth pulling out.
 
@@ -489,7 +490,7 @@ Rep manifests on the board through **representatives** — *not* capturable empt
 
 - **No blank Rep-capture.** Designated board spots are *not* empty objectives you seize to mint Rep.
 - **Rep threshold → a representative fills the spot.** When your standing with a faction crosses a **threshold** (the Rep tiers, §13 #1), that faction's **vendor / representative** may **fill an empty board spot** — deploying a rep onto the board as an ally / asset. Rep cashes out as **board presence**, earned by trust.
-- **Representatives issue challenges.** A present rep may pose a **challenge** — a goal / duel / task (a §9-style `Objective`). Players **aim for and attempt** these; hitting one pays rewards (Rep, gear, unlocks). Chasing a challenge can cost combat position (§7B) — the gamble.
+- **Representatives issue challenges — a challenge *is* a Job (§9).** A present rep poses a **Job** (faction contract: alt objective, Rep + gear) from the board rather than a tree node. Players attempt it; chasing it can cost combat position (§7B) — the gamble.
 
 So the flow is **Rep → representative on the board → challenge → reward**, *not* board → Rep. Your meta-standing buys a tactical ally that then dangles goals; pursuing them deepens the relationship.
 

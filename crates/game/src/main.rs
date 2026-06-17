@@ -5,7 +5,8 @@
 //! timer. All game rules live in the sim crate.
 
 use atomica_sim::{
-    ArmorClass, Attack, Battle, DamageType, Defense, Hex, Outcome, StatusSpec, Team, Unit, UnitId,
+    ArmorClass, Attack, Battle, Chassis, DamageType, Defense, Hex, Outcome, StatusSpec, Team, Unit,
+    UnitId,
 };
 use egui_macroquad::egui;
 use macroquad::prelude::*;
@@ -33,6 +34,8 @@ fn demo_battle() -> Battle {
         max_integrity: 40.0,
         defense: Defense { barrier: 6.0, plating: 6.0 },
         armor_class,
+        chassis: Chassis::Augmented,
+        skills: Chassis::Augmented.baseline_skills(),
         initiative: init,
         link: 0.0,
         firewall: 0.0,
