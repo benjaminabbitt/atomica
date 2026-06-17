@@ -33,14 +33,17 @@ impl Condition {
 }
 
 /// The stat deltas an implant folds into its owner while active. Link / Firewall
-/// are the digital surface (exposure + defense); plating / initiative the
-/// physical benefit. Weight folds in as **negative** initiative at build time.
+/// are the digital surface (exposure + defense); plating / initiative / damage /
+/// max-Integrity the physical benefit. Weight folds in as **negative** initiative
+/// at build time.
 #[derive(Clone, Copy, Debug, Default)]
 pub struct Contribution {
     pub link: i32,
     pub firewall: i32,
     pub plating: f32,
     pub initiative: f32,
+    pub damage: f32,
+    pub max_integrity: f32,
 }
 
 /// A cyberware implant (`docs/cyberware.md` §1): a bundle of stat contributions,
@@ -95,6 +98,46 @@ impl Implant {
             contribution: Contribution { initiative: 3.0, ..Default::default() },
             grant_hack: None,
             hack_effects: vec![StatusSpec::crash()], // Seizure
+            condition: Condition::Online,
+            removable: true,
+        }
+    }
+
+    /// **Firewall suite** — +Firewall (the wall) + a little Link surface. Breached
+    /// ⇒ **Breach** (incoming-damage vulnerability).
+    pub fn firewall_suite() -> Self {
+        Self {
+            name: "Firewall Suite",
+            contribution: Contribution { firewall: 4, link: 1, ..Default::default() },
+            grant_hack: None,
+            hack_effects: vec![StatusSpec::breach()], // Breach (vuln)
+            condition: Condition::Online,
+            removable: true,
+        }
+    }
+
+    /// **Combat stim** — +damage and a touch of haste. Breached ⇒ **Overdose**: a
+    /// self-DoT *and* a Crash — a **multi-effect** liability (the degrade fires on
+    /// margin, the stun only on a crit, §6).
+    pub fn combat_stim() -> Self {
+        Self {
+            name: "Combat Stim",
+            contribution: Contribution { damage: 4.0, initiative: 1.0, ..Default::default() },
+            grant_hack: None,
+            hack_effects: vec![StatusSpec::bleed(), StatusSpec::crash()], // Overdose
+            condition: Condition::Online,
+            removable: true,
+        }
+    }
+
+    /// **Metabolic pump** — +max Integrity (resilience). Breached ⇒ **Overload**:
+    /// an Internal DoT (it runs hot).
+    pub fn metabolic_pump() -> Self {
+        Self {
+            name: "Metabolic Pump",
+            contribution: Contribution { max_integrity: 8.0, ..Default::default() },
+            grant_hack: None,
+            hack_effects: vec![StatusSpec::bleed()], // Overload (Internal DoT)
             condition: Condition::Online,
             removable: true,
         }

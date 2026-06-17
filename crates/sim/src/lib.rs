@@ -208,6 +208,13 @@ impl Unit {
         self.firewall += s * c.firewall;
         self.defense.plating += s as f32 * c.plating;
         self.initiative += s as f32 * c.initiative;
+        self.attack.damage += s as f32 * c.damage;
+        self.max_integrity += s as f32 * c.max_integrity;
+        if add {
+            self.integrity += c.max_integrity; // gain the extra HP
+        } else {
+            self.integrity = self.integrity.min(self.max_integrity); // clamp on loss
+        }
         if let Some(h) = implant.grant_hack {
             self.hack = add.then_some(h);
         }
@@ -1097,6 +1104,42 @@ mod tests {
         assert!(u.hack.is_some()); // benefit: the unit can now hack
         assert_eq!(u.link, 5); // folded surface
         assert_eq!(u.firewall, 2); // folded wall
+    }
+
+    #[test]
+    fn firewall_suite_folds_the_wall() {
+        let mut u = unit(0, Team::A, 0); // base Firewall 0
+        u.install(Implant::firewall_suite());
+        assert_eq!(u.firewall, 4);
+        assert_eq!(u.link, 1); // a little surface comes with it
+    }
+
+    #[test]
+    fn combat_stim_folds_damage_and_lifts_integrity_with_the_pump() {
+        let mut u = unit(0, Team::A, 0);
+        let (base_dmg, base_hp) = (u.attack.damage, u.max_integrity);
+        u.install(Implant::combat_stim());
+        assert_eq!(u.attack.damage, base_dmg + 4.0);
+        u.install(Implant::metabolic_pump());
+        assert_eq!(u.max_integrity, base_hp + 8.0);
+        assert_eq!(u.integrity, base_hp + 8.0); // gained the HP too
+    }
+
+    #[test]
+    fn breaching_combat_stim_fires_the_dot_on_a_solid_hit_not_the_stun() {
+        // Overdose is multi-effect: the self-DoT is degrade (margin), the Crash is
+        // crit-gated — so a solid, non-crit hit lands only the DoT.
+        let mut atk = runner(0, Team::A, 0, 4);
+        atk.skills.set(Skill::Hacking, 6);
+        let mut tgt = unit(1, Team::B, 1);
+        tgt.link = 4;
+        tgt.firewall = 4; // big margin, no crit
+        tgt.install(Implant::combat_stim());
+        let mut b = Battle::with_rng(vec![atk, tgt], ScriptedRng::from_d6([3, 3, 3]));
+        b.resolve_hack(0, 1);
+        let has_dot = b.units[1].statuses.iter().any(|s| matches!(s.spec.effect, Effect::Dot { .. }));
+        let has_stun = b.units[1].statuses.iter().any(|s| matches!(s.spec.effect, Effect::Stun));
+        assert!(has_dot && !has_stun);
     }
 
     #[test]

@@ -112,6 +112,15 @@ The **Cyberdeck** is the keystone link to the netrunning system: a unit hacks
 already built (`netrunning.md` §2); its Link is why netrunners are exposed glass
 cannons; its **Lockout** is the cost of having a deck breached.
 
+**Built so far (Phase A/B ✅, `implant.rs`):** Cyberdeck, Subdermal Plating,
+Reflex Booster, Firewall Suite, **Combat Stim** (a multi-effect **Overdose** —
+self-DoT + Crash, exercising the per-effect ladder), Metabolic Pump. **Pending a
+subsystem (🔭):** Smartgun (targeting profiles), Sensor suite (AR), Skill chip
+(the §10 *take-the-max* rule, vs the current additive fold) — each waits on its
+own layer. The `Contribution` folds Link / Firewall / Plating / Initiative /
+damage / max-Integrity today; regen, targeting, and AR benefits come with those
+systems.
+
 ---
 
 ## 3. The value equation ◆ — why you chrome up anyway
@@ -265,7 +274,7 @@ crit-gated stun; Cascade fires all). The Ripperdoc reverses the disable.
 | Phase | Deliverable | Notes |
 |---|---|---|
 | **A** ✅ | `Implant` + **stat derivation** — `Unit::install` folds a `Contribution` (Link/Firewall/plating/init) into the line; `disable`/`repair` un/refold (the disable floor). Cyberdeck grants the `Hack` loadout | **built** (`implant.rs`): cyberdeck / subdermal-plating / reflex-booster presets; breach *trigger* is Phase C |
-| **B** | the **benefit roster** as content (§2 table) | deck · plating · reflex · smartgun · firewall · stim · sensor · chip |
+| **B** ✅ | the **benefit roster** as content (§2 table) | **built**: deck · plating · reflex · firewall · stim (multi-effect Overdose) · pump; smartgun / sensor / skill-chip wait on targeting / AR / §10 |
 | **C** ✅ | **trip-on-breach** — a hack success targets an implant (`first_active_implant`) and applies the **severity ladder** (§6): success ⇒ **disable**, margin ⇒ **degrade**, crit ⇒ **knockout** (stun) | **built** (`Battle::apply_breach`): reuses the margin/crit roll outputs; chromeless targets fall back to the deck payload. Closes the netrunning loop |
 | **D** | **condition + Ripperdoc** — Degraded/Offline/Destroyed + repair | delta §3 |
 | **E** | **EMP** — physical, Firewall-bypassing, knocks chrome Offline + trips effects | the chrome counter |
