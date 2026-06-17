@@ -122,6 +122,23 @@ pub enum Footprint {
     Beam(i32),
 }
 
+/// What a unit does **on death** (§10.9) — fired once when it's removed; a
+/// `Detonate` can chain-kill, which fires further triggers. Feeds the contagion
+/// system via `DataSpill`.
+#[derive(Clone, Copy, Debug, Default)]
+pub enum DeathTrigger {
+    #[default]
+    None,
+    /// A parting **blast**: physical AoE to every living unit in `radius` (friendly
+    /// fire — a corpse-bomb doesn't discriminate).
+    Detonate { damage: f32, dtype: DamageType, pen: PenTier, radius: i32 },
+    /// **Data-spill**: leak a status onto living **enemies** in `radius` (the dying
+    /// system's payload infects whoever's near — the contagion seed, §10.9).
+    DataSpill { spec: StatusSpec, stacks: u32, duration: u32, radius: i32 },
+    /// **Legacy**: bequeath a status to living **allies** in `radius` (a martyr's gift).
+    Legacy { spec: StatusSpec, stacks: u32, duration: u32, radius: i32 },
+}
+
 /// A single attack profile. (Weapons/loadouts will compose these later.)
 #[derive(Clone, Copy, Debug)]
 pub struct Attack {
@@ -205,6 +222,10 @@ pub struct Unit {
     /// that wins — "the enemy hacks your script". Stats still read the flat fields
     /// above (the stat read-through is the remaining migration).
     pub character: Character,
+    /// What fires when this unit dies (§10.9). `None` by default.
+    pub on_death: DeathTrigger,
+    /// Has the death trigger already fired? (Set by the reaper so it fires once.)
+    pub death_resolved: bool,
     pub alive: bool,
 }
 
@@ -244,6 +265,8 @@ impl Unit {
             pan: Pan::Meshed,
             statuses: Vec::new(),
             character: Character::new(BaseLine::default()),
+            on_death: DeathTrigger::None,
+            death_resolved: false,
             alive: true,
         }
     }
@@ -276,6 +299,12 @@ impl Unit {
     /// Builder: add an extra weapon to the loadout (selected by range band, §10.5).
     pub fn with_weapon(mut self, weapon: Attack) -> Self {
         self.weapons.push(weapon);
+        self
+    }
+
+    /// Builder: set the on-death trigger (§10.9).
+    pub fn with_on_death(mut self, trigger: DeathTrigger) -> Self {
+        self.on_death = trigger;
         self
     }
 
@@ -623,6 +652,7 @@ impl<R: RandomSource> Battle<R> {
         self.tick += 1;
 
         self.status_phase();
+        self.reap(); // DoTs can kill — fire their death triggers
         self.woven_phase();
         self.decay_phase();
 
@@ -992,7 +1022,8 @@ impl<R: RandomSource> Battle<R> {
     }
 
     /// Run the woven order (§10.3). The order is snapshotted at phase start; the dead /
-    /// stunned are skipped as it runs.
+    /// stunned are skipped as it runs, and death triggers are reaped after each
+    /// activation.
     fn woven_phase(&mut self) {
         for (i, digital) in self.woven_order() {
             if !self.units[i].is_alive() || self.units[i].is_stunned() {
@@ -1002,6 +1033,55 @@ impl<R: RandomSource> Battle<R> {
                 self.digital_activation(i);
             } else {
                 self.physical_activation(i);
+            }
+            self.reap();
+        }
+    }
+
+    /// Fire the **death trigger** (§10.9) of every newly-dead unit, once each. Loops
+    /// because a `Detonate` can chain-kill, which fires further triggers; the
+    /// lowest-index unfired death goes first (deterministic).
+    fn reap(&mut self) {
+        while let Some(i) = (0..self.units.len())
+            .find(|&i| !self.units[i].is_alive() && !self.units[i].death_resolved)
+        {
+            self.units[i].death_resolved = true;
+            self.fire_death_trigger(i);
+        }
+    }
+
+    fn fire_death_trigger(&mut self, i: usize) {
+        let center = self.units[i].pos;
+        match self.units[i].on_death {
+            DeathTrigger::None => {}
+            DeathTrigger::Detonate { damage, dtype, pen, radius } => {
+                use std::collections::HashSet;
+                let hexes: HashSet<Hex> = center.within(radius).into_iter().collect();
+                for t in 0..self.units.len() {
+                    if t != i && self.units[t].is_alive() && hexes.contains(&self.units[t].pos) {
+                        let mult = armor::matrix(dtype, self.units[t].armor_class)
+                            * self.units[t].vuln_mult();
+                        apply_damage(&mut self.units[t], damage * mult, pen, true);
+                    }
+                }
+            }
+            DeathTrigger::DataSpill { spec, stacks, duration, radius } => {
+                let team = self.units[i].team;
+                for t in 0..self.units.len() {
+                    let u = &self.units[t];
+                    if u.is_alive() && u.team != team && center.distance(u.pos) <= radius {
+                        self.units[t].add_status(spec, duration, stacks);
+                    }
+                }
+            }
+            DeathTrigger::Legacy { spec, stacks, duration, radius } => {
+                let team = self.units[i].team;
+                for t in 0..self.units.len() {
+                    let u = &self.units[t];
+                    if t != i && u.is_alive() && u.team == team && center.distance(u.pos) <= radius {
+                        self.units[t].add_status(spec, duration, stacks);
+                    }
+                }
             }
         }
     }
@@ -1159,6 +1239,8 @@ mod tests {
             pan: Pan::Meshed,
             statuses: Vec::new(),
             character: Character::new(BaseLine::default()),
+            on_death: DeathTrigger::None,
+            death_resolved: false,
             alive: true,
         }
     }
@@ -2130,5 +2212,65 @@ mod tests {
         let before = b.units[1].integrity;
         b.action_phase();
         assert!(b.units[1].integrity < before);
+    }
+
+    // -- Phase 6: death triggers (§10.9) ---------------------------------------
+
+    #[test]
+    fn detonate_blasts_neighbours_on_death() {
+        // A bomb dies and explodes, hurting both an enemy and an ally nearby.
+        let mut bomb = unit(0, Team::B, 0);
+        bomb.integrity = 1.0;
+        bomb.on_death =
+            DeathTrigger::Detonate { damage: 20.0, dtype: DamageType::Piercing, pen: PenTier::Internal, radius: 1 };
+        let mut killer = unit(1, Team::A, 0);
+        killer.pos = Hex::new(1, 0); // adjacent → caught in the blast
+        let bystander = unit(2, Team::B, 1); // ally of the bomb, also adjacent
+        let mut b = Battle::new(vec![bomb, killer, bystander], 1);
+        // kill the bomb directly via a status DoT path: just zero it and reap.
+        apply_damage(&mut b.units[0], 5.0, PenTier::Internal, true);
+        assert!(!b.units[0].is_alive());
+        let (k, s) = (b.units[1].integrity, b.units[2].integrity);
+        b.reap();
+        assert!(b.units[1].integrity < k); // the killer caught the blast
+        assert!(b.units[2].integrity < s); // and the bomb's own ally (friendly fire)
+        assert!(b.units[0].death_resolved); // fired exactly once
+    }
+
+    #[test]
+    fn detonate_can_chain_through_a_second_bomb() {
+        let bomb = |id, q| {
+            let mut u = unit(id, Team::B, q);
+            u.integrity = 1.0;
+            u.on_death = DeathTrigger::Detonate {
+                damage: 50.0,
+                dtype: DamageType::Piercing,
+                pen: PenTier::Internal,
+                radius: 1,
+            };
+            u
+        };
+        let mut b = Battle::new(vec![bomb(0, 0), bomb(1, 1)], 1);
+        apply_damage(&mut b.units[0], 5.0, PenTier::Internal, true); // pop the first
+        b.reap();
+        // the first blast killed the second, whose blast fired in turn.
+        assert!(!b.units[1].is_alive());
+        assert!(b.units[1].death_resolved);
+    }
+
+    #[test]
+    fn data_spill_infects_nearby_enemies_on_death() {
+        let mut host = unit(0, Team::B, 0);
+        host.integrity = 1.0;
+        host.on_death =
+            DeathTrigger::DataSpill { spec: StatusSpec::lockware(), stacks: 2, duration: 3, radius: 1 };
+        let mut enemy = unit(1, Team::A, 0);
+        enemy.pos = Hex::new(1, 0); // adjacent enemy
+        let ally = unit(2, Team::B, 1); // adjacent ally — NOT infected by a spill
+        let mut b = Battle::new(vec![host, enemy, ally], 1);
+        apply_damage(&mut b.units[0], 5.0, PenTier::Internal, true);
+        b.reap();
+        assert_eq!(b.units[1].statuses.len(), 1); // the enemy got the leaked payload
+        assert!(b.units[2].statuses.is_empty()); // the ally did not
     }
 }

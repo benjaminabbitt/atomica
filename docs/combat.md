@@ -66,7 +66,7 @@ The designed round:
 | **Range bands / reach** (§10.5) | gun bands · polearm reach | **`min_range..=range` band** (`usable_at`) | ✅ |
 | **Multiple weapons / selection** | per-target weapon choice | **`weapons` + `weapon_at` (best in band)** | ✅ |
 | **Smartgun / IFF targeting** (§7F) | smart profiles, fires on Link | — | 🔭 |
-| **Death triggers** (§10.9) | Detonate · Legacy · Data-spill | none | 🔭 |
+| **Death triggers** (§10.9) | Detonate · Legacy · Data-spill | **all three**, reaped (chain-kills) | ✅ |
 | **Board seam / two boards** (§7B) | ±½-hex seam, frontage pairings | single shared grid | 🔭 |
 | **Heat** (§7D/§10.10) | thermal layer | — | 🔭 |
 | **Morale / Resolve** (delta §4) | Resolve pool, Break (rout/berserk) | — | 🔭 |
@@ -108,8 +108,11 @@ Sequenced so each phase is shippable and test-first, hardest-leverage first:
    highest-damage weapon whose band covers the distance) are built; a closing profile
    **stands off** once any weapon reaches. Polearm reach = a `2..=2` band. *Deferred:
    the **Smartgun/IFF** smart-targeting mod (fires on Link / IFF — ties to AR).*
-6. **Death triggers** — Detonate / Legacy / Data-spill on removal (§10.9); feeds
-   contagion **Data-spill** later.
+6. **Death triggers ✅** — `Unit.on_death`: `Detonate` (physical AoE in radius,
+   friendly fire) · `DataSpill` (leak a status to nearby **enemies** — the contagion
+   seed) · `Legacy` (a status to nearby **allies**). `Battle::reap` fires each once
+   after every activation (and after `status_phase`), looping so a `Detonate`
+   **chain-kills**. Feeds the contagion's **Data-spill** later.
 7. **Board geometry** — the two-board **seam** (±½-hex) and frontage pairings (§7B).
 
 **Cross-cutting layers** (their own systems, slot in later): **Heat** (§7D),
