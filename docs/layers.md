@@ -242,7 +242,7 @@ Everything tempting to "event-source" is one of these — **none is a modifier-l
 
 | Kind | Examples | Where | Semantics |
 |---|---|---|---|
-| **Pools** | Integrity · Barrier · Plating · (Heat · Resolve) | live-state on `Character` | current fill of a composed max; **clamp** on change; threshold → death/break |
+| **Pools** | Integrity · Barrier · Plating · (Resolve) | live-state on `Character` | current fill of a composed max; **clamp** on change; threshold → death/break |
 | **Decorators w/ expiration** | buffs · DoTs · stacks · charges | the §1 gen set | stack count + `expiration` = the decorator's mutable self-state, mutated by events |
 | **Per-tick scratch** | "damage taken this tick" · "was hit" | ephemeral | recomputed each activation, fed to reactions, then discarded |
 

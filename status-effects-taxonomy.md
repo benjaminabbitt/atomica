@@ -974,7 +974,7 @@ Each unit also follows a **targeting profile** — who it attacks:
 7. **Load curves (§7C/§7D):** how steeply equipment/multitasking penalize physical Initiative and drain Link — sets lean-vs-heavy balance.
 8. *(drafted §7H)* **Anti-Worm specialists** — roster drafted (air-gapped blade / antivirus / patcher / bulwark / signals officer / jammer / honeypot / quarantine), with a two-philosophy split (abstain vs out-tech) and a coverage check. Remaining: strength vs the offense (numbers), and which are **units vs deployable programs/abilities**.
 9. **Runaway brakes (§7):** ≥1 hard brake **per virus** (stack cap / cleansed-immune-K-turns / threshold-gated spread / death-purges-carrier) — and decide the **death interaction (§7G):** does a dying carrier **spill** stacks to neighbors (Data-spill) or **purge** them (the brake)? Split per strain.
-10. **Magnitude (§3.4):** which effects are % vs flat. **Heat — full thermal layer (§7D) in or out?** (bare overclock is already cut). **Weapon numbers** (§7I — range bands, damage, volume hit-counts, footprint costs) + **Barrier/Plating order** (§7A). **Faction layer (§7E):** neo-Japan clans/dueling/honor in scope or aesthetic?
+10. **Magnitude (§3.4):** which effects are % vs flat. ~~**Heat — full thermal layer (§7D) in or out?**~~ — **resolved: dropped for now** (cut from scope; §10.10 parked). **Weapon numbers** (§7I — range bands, damage, volume hit-counts, footprint costs) + **Barrier/Plating order** (§7A). **Faction layer (§7E):** neo-Japan clans/dueling/honor in scope or aesthetic?
 11. **Inbuilt equipment (§7F):** removability rules (which integral implants can/can't be stripped) and how built-in chrome is priced into a unit's cost.
 12. **Grenade & beam tuning (§7G/§7F):** footprint **shapes defined** — explosion scales by **radius** (footprint 1 = 7 hexes, footprint 2 = 19), beam by **width** (footprint 1 = line, footprint 2 = 3-wide); both default footprint 1. Remaining: **footprint cost / range / cap**. *Friendly fire = on (decided).*
 13. **Spoof resolution (§7F):** *spoof menu drafted* (Flip-hostile / Masquerade / Scramble / Ghost); *physical-weapon question resolved* — the **Smartgun mod** (§7I) is the one IFF-guided (thus spoofable) gun upgrade; dumb weapons can't be spoofed. Remaining: how a spoof **resolves** (hack-power vs Firewall, Link-gated).
@@ -1028,7 +1028,7 @@ Two armies face off across the seam. **A battle is won by eliminating the enemy 
 ### 10.2 Setup
 Each player deploys their units on their board half — **columns = depth ranks**, the long edge = frontage (§7B). Roll the **seam offset** (±½ hex ◆) to set the cross-board front-line pairings. Each unit enters with its full profile:
 
-> **chassis** (Flesh / Augmented / Machine) · **Integrity** · **Barrier**, **Plating** (+ material) · **physical Initiative** · **Link** (= digital Initiative) · **Immunity** · **Firewall** · **[Heat]** · **weapon(s) + mods** · **augments** (cyberware / bioware) · **software** · a **movement profile** · a **targeting profile**.
+> **chassis** (Flesh / Augmented / Machine) · **Integrity** · **Barrier**, **Plating** (+ material) · **physical Initiative** · **Link** (= digital Initiative) · **Immunity** · **Firewall** · **weapon(s) + mods** · **augments** (cyberware / bioware) · **software** · a **movement profile** · a **targeting profile**. *(Heat — a thermal axis — was here; dropped for now.)*
 
 ### 10.3 Round structure
 A battle runs in **rounds** until one army is gone. Each round:
@@ -1097,8 +1097,8 @@ An infected unit carries **[stacks]** of a Virus or Worm strain (§7G). **At the
 ### 10.9 Death & removal
 Integrity ≤ 0 → the unit is **destroyed and removed**. Resolve its **death triggers** on removal (§7G): **Detonate** (blast neighbors), **Legacy** (its effect), **Data-spill / Spore** (release its contagion). A carrier's contagion **spills or purges** per strain (10.7).
 
-### 10.10 Heat *(if adopted, §7D)*
-A unit's **Heat** rises from overclocking, energy / EMP weapons, and heavy cyberware. Effects: **overclock / heat-scaling** (upside), **thermal signature → +detectability / targetability** (exposure), and at **[ceiling]** → **throttle (−Initiative) / shutdown (skip) / Integrity damage** (risk). **Vent** (skip to cool) or **coolant** gear reduces it.
+### 10.10 Heat *(dropped for now, §7D)*
+**Cut from scope** — parked, not deleted. The design, for the record: a unit's **Heat** rises from overclocking, energy / EMP weapons, and heavy cyberware. Effects: **overclock / heat-scaling** (upside), **thermal signature → +detectability / targetability** (exposure), and at **[ceiling]** → **throttle (−Initiative) / shutdown (skip) / Integrity damage** (risk). **Vent** (skip to cool) or **coolant** gear reduces it.
 
 ### 10.11 Between battles — the economy
 In the roguelike shop, spend **[currency]** to draft / upgrade units and buy **weapons + mods, cyberware, bioware, software, and consumables** — and assign each unit a **movement** and **targeting profile**. Augments are the major purchasable; every piece adds **weight** (→ physical Initiative) and cyberware adds the **(Link, Firewall, Hack-effect)** bundle (§7C / §7F).

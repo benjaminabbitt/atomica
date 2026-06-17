@@ -6,7 +6,8 @@ model, AoE + friendly fire, woven initiative, weapons & range bands, death trigg
 and the board seam (taxonomy §7B board · §7C initiative · §7G footprints · §7I
 weapons · §7J movement/targeting · **§10 full rules**). The auto-battler's soul ("you
 program your units; the enemy hacks your script") is built; what remains is the
-**cross-cutting layers** (Heat / Morale / Vehicles) and polish on the ◑ items. ◆ =
+**cross-cutting layers** (Morale / Vehicles — *Heat dropped for now*) and polish on the
+◑ items. ◆ =
 decision. Status: **✅ built** · **◑ partial** · **🔭 planned**.*
 
 ---
@@ -70,7 +71,7 @@ The designed round:
 | **Smartgun / IFF targeting** (§7F) | smart profiles, fires on Link | — | 🔭 |
 | **Death triggers** (§10.9) | Detonate · Legacy · Data-spill | **all three**, reaped (chain-kills) | ✅ |
 | **Board seam / two boards** (§7B) | ±½-hex seam, frontage pairings | **single grid + seam rule** (`Board`/`SeamOffset`, `engages`) | ✅ |
-| **Heat** (§7D/§10.10) | thermal layer | — | 🔭 |
+| ~~**Heat** (§7D/§10.10)~~ | ~~thermal layer~~ | **dropped for now** | ✂️ |
 | **Morale / Resolve** (delta §4) | Resolve pool, Break (rout/berserk) | — | 🔭 |
 | **Vehicles / multi-hex** (delta §5) | 2–3-hex occupancy, ram, crew | — | 🔭 |
 
@@ -126,9 +127,9 @@ Sequenced so each phase is shippable and test-first, hardest-leverage first:
    validation isn't enforced. Orientation per the design's "confirm diagram" is the
    `Up`/`Down` choice here.*
 
-**Cross-cutting layers** (their own systems, slot in later): **Heat** (§7D),
-**Morale/Resolve** (delta §4), **Vehicles** (delta §5, the multi-hex one — the
-biggest engine change).
+**Cross-cutting layers** (their own systems, slot in later): **Morale/Resolve**
+(delta §4) and **Vehicles** (delta §5, the multi-hex one — the biggest engine change).
+*(**Heat** (§7D) was a third such layer — **dropped for now**.)*
 
 ---
 
@@ -143,5 +144,6 @@ biggest engine change).
   all read combat state, so its shape constrains everything above it.
 
 **Phases 1–7 are built** (Phase 1 first, highest-leverage, through the board seam).
-What's left is the **cross-cutting layers** above and polish on the ◑ items
-(Smartgun/IFF, beam width, deploy-half validation, ranged seam distance).
+What's left is the **cross-cutting layers** above (Morale, Vehicles — *Heat dropped*)
+and polish on the ◑ items (Smartgun/IFF, beam width, deploy-half validation, ranged
+seam distance).

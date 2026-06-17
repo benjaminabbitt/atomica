@@ -14,7 +14,7 @@ Every system mirrors across **two realms**, and the asymmetry between them *is* 
 - **Digital / Code** — **smart & corruptible.** Effects read friend/foe (IFF), target selectively, and reach through a unit's **Link**; you defend by Firewall, going dark, and counter-programs — but all of it can be **hacked**.
 
 Three recurring throughlines:
-1. **"Loud = capable but exposed."** Three exposure axes — **Link** (digital), **Heat** (thermal), **clustering/position** (physical) — each buys power and costs safety.
+1. **"Loud = capable but exposed."** Exposure axes — **Link** (digital) and **clustering/position** (physical) — each buys power and costs safety. *(A thermal **Heat** axis was the third; dropped for now — see below.)*
 2. **Chrome-is-liability.** More cyberware = more power *and* more attack surfaces (hackable, EMP-able, runs hot).
 3. **You program your units; the enemy hacks your script.** Behavior is code, so the digital layer attacks *minds*, not just health.
 
@@ -39,7 +39,7 @@ Flat-top **hex**. Columns = depth ranks; the **long edge = frontage**. Two board
 | **Link** | net presence — digital Initiative + action throughput + Worm exposure + hack surface. Continuous, **equipment-set**; **zero Link = immune to all digital attack** |
 | **Immunity** | resist vs **Virus** (bio) |
 | **Firewall** | resist vs **Worm** + hacks (digital) |
-| **Heat** *(optional)* | thermal layer — see below |
+| ~~**Heat**~~ *(dropped for now)* | thermal layer — cut from scope, see below |
 
 ## Damage model
 
@@ -154,9 +154,14 @@ Units follow **scripted profiles** (auto-resolve), and **move only if not boxed 
 
 Profiles are **code → hackable**: spoofs/Lockware/worms corrupt *behavior*, not just stats.
 
-## Heat *(optional thermal layer)*
+## Heat *(dropped for now)*
 
-A gauge that builds from overclocking, energy/EMP weapons, and heavy chrome, doing three things: **upside** (overclock + heat-scaling abilities), **exposure** (thermal signature → more detectable), **risk** (overheat → throttle / shutdown / Integrity). Counterplay: vent · coolant · play cool. Adopt as the *full* layer (a third exposure axis) or cut — bare overclock isn't worth a slot.
+**Cut from scope** ◆ — parked, not deleted; revisit if a thermal axis is ever wanted.
+The design (kept for the record): a gauge that builds from overclocking, energy/EMP
+weapons, and heavy chrome, doing three things — **upside** (overclock + heat-scaling
+abilities), **exposure** (thermal signature → more detectable), **risk** (overheat →
+throttle / shutdown / Integrity); counterplay vent · coolant · play cool. It only ever
+earned a slot as the *full* layer; as bare overclock it didn't — and for now it's out.
 
 ---
 
@@ -166,7 +171,7 @@ A gauge that builds from overclocking, energy/EMP weapons, and heavy chrome, doi
 
 **Open (mostly numbers + roster fills):**
 - All **values** — magnitudes, durations, caps, roll odds, ranges, weights, costs.
-- **Heat** in or out (as the full layer).
+- ~~**Heat** in or out~~ — **resolved: dropped for now** (cut from scope; revisit later).
 - Specific **bioware roster**; **gun-mod roster**; **chassis stat lines** + Link floors.
 - **Resolution math** — netrunner hack-power vs Firewall; spoof resolution; Worm catch odds.
 - Which **Link-effects / movement profiles / targeting profiles** ship.
