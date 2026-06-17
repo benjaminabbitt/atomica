@@ -1,14 +1,15 @@
-# Equipment layers — the character-generator / factor model
+# Character architecture — generators, modifiers, composition
 
-*How a `Character`'s effective profile is **composed** from a **base** (chassis)
-plus **equipment layers** — where each layer is a **character generator** (`chargen`)
-that **emits a character** by adding **factors** (modifiers) onto it, and the
-`Character`'s **accessors sum / multiply** those factors into effective stats.
-Generalises the hand-rolled cyberware fold
-([`cyberware.md`](cyberware.md) Phases A–F) into one uniform model that also carries
-weapons, armor, and behavior-corruption. ◆ = decision (overridable, per repo
-convention). Status: 🔭 **planned** — the architecture to refactor toward; the
-current code keeps the fold model until it lands.*
+*The **architecture** for building a `Character`: **generators** (`chargen`) decorate
+it by **adding / removing `Modifier`s**; the `Character` holds a **referenceable
+modifier set** (with **summation**, **tags**, **add/remove** — not just a stat
+formula); its **accessors compose** the effective stats. Every modifier **links back
+to the decorator id that spawned it**, and any component can **reference and remove
+another's** — the counterplay substrate. Generalises the hand-rolled cyberware fold
+([`cyberware.md`](cyberware.md) Phases A–F) to also carry weapons, armor, buffs, and
+behavior-corruption. ◆ = decision (overridable, per repo convention). Status: 🔭
+**planned** — the architecture to refactor toward; the current code keeps the fold
+until it lands.*
 
 ---
 
@@ -16,18 +17,18 @@ current code keeps the fold model until it lands.*
 
 Equipment is **not special-cased**, and the decorator **does not implement the unit
 interface**. Instead, each piece of kit is a **character generator** (`chargen`) ◆ —
-a decorator that **emits a `Character`**: given the character so far, it **adds its
-factors (and any other modifiers) onto it** and returns it. A pipeline of generators
+a decorator that **emits a `Character`**: given the character so far, it **adds (and
+may remove) `Modifier`s** on it and returns it. A pipeline of generators
 (base → implant → weapon → armor → …) **builds the `Character`**, accumulating its
-factor list; the `Character`'s **accessors** then **sum the factors and perform the
-operations** (the §2 math) to answer each query.
+**referenceable modifier set**; the `Character`'s **accessors** then **sum and
+operate** over those modifiers (the §2 math) to answer each query.
 
 So the split is three clean roles:
 - **`chargen` (decorators) emit a `Character`** — their *output is the character*,
-  not a bag of factors. Their job is to **decorate** it: push their factors + other
-  modifiers on.
-- **The `Character` holds** the base + the accumulated factor list (and other
-  modifiers).
+  not a bag of modifiers. Their job is to **decorate** it: **add their modifiers**
+  (each stamped with the decorator's id), and **remove** others' where they counter.
+- **The `Character` holds** the base + the **referenceable modifier set** (add /
+  remove / look-up by id, `source`, or `tag`).
 - **The `Character`'s accessors do the math** — `link()` / `attack()` / … **sum the
   factors and run the operations** (sum / multiply / pick-override). There is **no
   separate orchestrator**; the calculation lives in the accessors.
@@ -41,25 +42,44 @@ This is the architectural expression of two design throughlines:
 
 ---
 
-## 1. The pieces — `Factor`, `CharacterGenerator`, `Character`
+## 1. The pieces — `Modifier`, `CharacterGenerator`, `Character`
 
-**`Factor`** — one contribution to one stat: `{ stat, kind, value }`, where `kind`
-is `Add` · `Increased` · `More` · `Override` (§2). A generator **adds** these onto
-the character (it doesn't *return* them — see below).
+**`Modifier` — the standard interface ◆.** Every modifying component a generator
+puts on a character implements **one `Modifier` interface**, so the `Character` holds
+them **uniformly** and — crucially — can **find and remove** them. Each carries
+identity so it's **referenceable**:
+- **`id`** — a stable handle;
+- **`source`** — a **link to the id of the `chargen` (decorator) that spawned it**,
+  so removing/expiring a decorator drops exactly the modifiers it spawned (a deck
+  going Offline, a buff ending);
+- **`tag`** — a category (`Worm` · `Virus` · `Buff` · `Spoof` · …) for matching.
+
+Kinds of `Modifier`: a numeric **`Factor`** `{ stat, kind: Add/Increased/More, value }`
+(§2) · an **`Override`** (behavior / capability) · and other modifying components (a
+granted pool, a hook). All share the interface — **referenceable, removable**.
 
 **`CharacterGenerator`** (`chargen`) — the **one uniform type** for everything that
-shapes a character: **gear, weapons, armor, augments/implants, consumables, buffs,
-even a spoof** are all `chargen`-typed. `generate(character) → character` **decorates
-the character** — pushes its factors + other modifiers on — and **returns the
-character**. Its output *is a character*, not factors. A generator carries **no
-math**; it only *declares* what it adds, gated/scaled by its condition
-(Online/Degraded/Offline → full / half / none). That's its whole job.
+shapes a character (gear · weapons · armor · augments · consumables · buffs · a
+spoof). `generate(character) → character` **decorates** it: it **adds** its modifiers
+and **may remove** others' (a Vaccinated cleanse removes `Virus`-tagged modifiers; a
+Ripperdoc removes a breach's disable), then **returns the character**. Its output *is
+a character*, not modifiers. It carries **no math** — it only declares what it
+adds/removes, gated by its condition (Online/Degraded/Offline → full / half / none).
 
-**`Character`** — `{ base, factors: Vec<Factor>, … }`, plus the **accessors** the
-`sim` queries. **All math lives in the accessors:** `link()` / `attack()` / … **sum
-the relevant factors and run the operations** (§2 buckets) over the base. Generators
-never compute; only the `Character`'s accessors do. *(Caching the summed values
-behind a dirty flag is a pure optimization, §4 — it doesn't move the math.)*
+**`Character`** — holds `base` + the **referenceable modifier set**, plus the
+**accessors** the `sim` queries. Mutating API: `add(m) → id` · `remove(id)` ·
+`remove_where(pred)` (match by `source` / `tag`). **All math lives in the
+accessors:** `link()` / `attack()` / … **sum the relevant `Factor`s and run the
+operations** (§2) over the base. Generators never compute; only the accessors do.
+*(Caching behind a dirty flag is a pure optimization, §4 — it doesn't move the math.)*
+
+> **Removal is the counterplay substrate ◆.** Because every modifier is
+> referenceable + removable, the design's whole **answer-half *is* removal**:
+> **cleanse / Antimalware / Antivirus** strip contagion modifiers (by `tag`); the
+> **Ripperdoc** removes a breach's disable; **Signals / counter-spoof** removes an
+> `Override`; **dispel** removes a buff; **Quarantine** severs Link. Counterplay =
+> one component **referencing and removing another's modifiers** — one mechanism for
+> the whole mender / anti-Worm / signals layer (taxonomy §7H).
 
 > **Narrative vs. type ◆.** The domain language calls these things **modifiers** —
 > they "modify the character." But the **type is `chargen`**: a modifier doesn't
@@ -155,14 +175,15 @@ battle.
 
 ---
 
-## 4. Realization ◆ — a flat factor `Vec` on the `Character`
+## 4. Realization ◆ — a flat, referenceable modifier set on the `Character`
 
 The generator-decorates-the-character model settles the earlier "decorator chain vs.
 fold" question: there's **no query chain** at all.
 
-- **Generators** run at build / loadout (and on condition change) to **add** their
-  `Factor`s onto the `Character`'s flat `Vec<Factor>` — no per-method delegation, no
-  `Box<dyn>` chain to walk.
+- **Generators** run at build / loadout (and on condition change) to **add** (and
+  sometimes **remove**) `Modifier`s in the `Character`'s flat, **keyed** modifier set
+  (`id → Modifier`, indexed by `source` / `tag` for removal) — no per-method
+  delegation, no `Box<dyn>` chain to walk.
 - **The `Character`'s accessors** sum the relevant factors per stat (§2). Caching
   the summed values behind a **dirty flag** — recomputed only on **loadout /
   condition change** — is a pure optimization for the deterministic hot loop; it
@@ -209,7 +230,7 @@ not a blocker.
 
 | Step | Does | Touches |
 |---|---|---|
-| **L1** | define `Factor` + `CharacterGenerator` + the `Character` (base + `Vec<Factor>` + **accessors** that sum factors, Add/Increased buckets; dirty-flag cache optional) | `sim` stat reads |
+| **L1** | the architecture: **`Modifier`** interface (`id` / `source`→decorator-id / `tag`; `Factor` kind) + **`CharacterGenerator`** (`generate`, add/**remove**) + the **`Character`** (base + keyed modifier set + `add`/`remove`/`remove_where` + **accessors** that sum factors, Add/Increased; dirty-flag cache optional) | `sim` stat reads |
 | **L2** | port **implants → generators** (Contribution/condition → emitted factors); keep breach / EMP / PAN / Cascade behavior | the implant model + ~10 tests re-expressed on the factor API |
 | **L3** | **behavior factors** (movement / targeting compose from factors) → finishes combat **Phase 1** on this model; a smartgun adds an `Override(targeting)` | combat Phase 1 |
 | **L4+** | **weapon** generators, **armor** generators, **corruption** generators (spoof/Lockware) | new content |
