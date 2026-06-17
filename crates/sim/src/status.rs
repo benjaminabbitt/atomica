@@ -12,7 +12,8 @@
 //! schema and are extension points.
 
 use crate::chargen::{
-    Amount as GenAmount, Decorator, Event, Expiration, Factor, Flag, HookEffect, Stat, Tag, Wear,
+    Amount as GenAmount, Decorator, Event, Expiration, Factor, Flag, HookEffect, Resist as GenResist,
+    Stat, Tag, Wear,
 };
 use crate::{PenTier, Unit};
 
@@ -320,6 +321,15 @@ impl StatusSpec {
             // Lag: a `More` factor on Initiative (×f); products with other slows.
             Effect::Slow(f) => d.factors.push(Factor::more(Stat::Initiative, f - 1.0)),
         }
+        // The `behavior` axis: a stochastic status gates its hooks on a per-tick roll.
+        if let Behavior::Stochastic { power } = self.behavior {
+            let resist = match self.resist {
+                Resist::None => GenResist::None,
+                Resist::Firewall => GenResist::Firewall,
+                Resist::Immunity => GenResist::Immunity,
+            };
+            d = d.with_gate(power, resist);
+        }
         d
     }
 }
@@ -343,7 +353,7 @@ mod l2b_tests {
         // Burn: Contact DoT, Flat 2/stack. 3 stacks → 6 per tick, hits Plating first.
         let mut c = Character::new(chassis());
         c.install(StatusSpec::burn().to_decorator(3, 4));
-        let r = c.dispatch(Event::TickStart, 1);
+        let r = c.dispatch(Event::TickStart, 1, &mut crate::SplitMix64::new(0));
         assert_eq!(r.len(), 1);
         assert_eq!(c.plating, 4.0); // 10 - (2*3) Contact
         assert_eq!(c.integrity, 30.0); // soaked by plating
@@ -354,10 +364,10 @@ mod l2b_tests {
         // Bleed: Internal DoT, Flat 3/stack, decays by stacks.
         let mut c = Character::new(chassis());
         c.install(StatusSpec::bleed().to_decorator(2, 0));
-        c.dispatch(Event::TickStart, 1);
+        c.dispatch(Event::TickStart, 1, &mut crate::SplitMix64::new(0));
         assert_eq!(c.integrity, 24.0); // 30 - 3*2, Internal straight through
         c.decay(); // 2 stacks -> 1
-        c.dispatch(Event::TickStart, 2);
+        c.dispatch(Event::TickStart, 2, &mut crate::SplitMix64::new(0));
         assert_eq!(c.integrity, 21.0); // -3*1
         c.decay(); // 1 -> 0, dropped
         assert!(c.generators().is_empty());
@@ -370,7 +380,7 @@ mod l2b_tests {
         c.install(StatusSpec::crash().to_decorator(1, 2));
         assert!(c.realize().stunned()); // gates the action phase
         // it's passive: dispatch produces no reaction.
-        assert!(c.dispatch(Event::TickStart, 1).is_empty());
+        assert!(c.dispatch(Event::TickStart, 1, &mut crate::SplitMix64::new(0)).is_empty());
     }
 
     #[test]
@@ -392,7 +402,7 @@ mod l2b_tests {
     fn corrode_shreds_plating() {
         let mut c = Character::new(chassis()); // plating 10
         c.install(StatusSpec::corrode().to_decorator(2, 0)); // 2/stack, 2 stacks
-        c.dispatch(Event::TickStart, 1);
+        c.dispatch(Event::TickStart, 1, &mut crate::SplitMix64::new(0));
         assert_eq!(c.plating, 6.0); // 10 - 4
         assert_eq!(c.integrity, 30.0); // shred doesn't touch Integrity
     }
@@ -403,7 +413,7 @@ mod l2b_tests {
         let mut c = Character::new(BaseLine { max_integrity: 30.0, ..Default::default() });
         c.apply_damage(0, 0, 29.0); // down to 1
         c.install(StatusSpec::poison().to_decorator(5, 3));
-        c.dispatch(Event::TickStart, 1);
+        c.dispatch(Event::TickStart, 1, &mut crate::SplitMix64::new(0));
         assert!(c.integrity > 0.0 && c.alive); // softener shrinks but never kills
     }
 }

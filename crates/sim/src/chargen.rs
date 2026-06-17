@@ -22,7 +22,7 @@
 //! pool refactor *onto* (L2 / L2b); it coexists with the current `Unit` fold until
 //! those land.
 
-use crate::{Hex, MovementProfile, PenTier, TargetingProfile};
+use crate::{resolve_contest, Contest, Hex, MovementProfile, PenTier, RandomSource, TargetingProfile};
 
 /// A decorator's stable handle. A [`Modifier`]'s `source` links back to the
 /// decorator that spawned it, so removing/expiring the decorator drops exactly its
@@ -243,6 +243,25 @@ pub enum Reaction {
     ShredPlating { amount: f32, source: GenId },
 }
 
+/// Which of the owner's resist stats a **stochastic** gate rolls against (the status
+/// `resist` axis).
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
+pub enum Resist {
+    #[default]
+    None,
+    Firewall,
+    Immunity,
+}
+
+/// A **stochastic gate** (the status `behavior` axis): each tick the decorator rolls
+/// `3d6 + power + stacks` vs the owner's [`Resist`] TN, and fires its hooks **only on
+/// success**. Absent ⇒ deterministic (always fires).
+#[derive(Clone, Copy, Debug)]
+pub struct Gate {
+    pub power: i32,
+    pub resist: Resist,
+}
+
 /// How a decorator wears off — the decorator-lifetime form of the status `decay`
 /// axis (named `Wear` to stay distinct from [`crate::Decay`]).
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -328,6 +347,8 @@ pub struct Decorator {
     pub grants: Option<Capability>,
     /// Event reactions — the active face (a DoT hooks `TickStart`).
     pub on: Vec<Hook>,
+    /// A stochastic roll gating the hooks each dispatch (Poison); `None` ⇒ deterministic.
+    pub gate: Option<Gate>,
     /// Modifiers this decorator strips from the set — a **standing ward**, applied
     /// order-independently (cleanse, counter-spoof, Ripperdoc).
     pub removes: Vec<Remove>,
@@ -350,6 +371,7 @@ impl Decorator {
             flags: Vec::new(),
             grants: None,
             on: Vec::new(),
+            gate: None,
             removes: Vec::new(),
             id: GenId(0),
         }
@@ -388,6 +410,13 @@ impl Decorator {
     /// Builder: react to an [`Event`] with a [`HookEffect`] (a DoT on `TickStart`).
     pub fn with_hook(mut self, event: Event, effect: HookEffect) -> Self {
         self.on.push(Hook { event, effect });
+        self
+    }
+
+    /// Builder: make the hooks **stochastic** — gated by a `3d6 + power` roll vs the
+    /// owner's [`Resist`] each dispatch (Poison).
+    pub fn with_gate(mut self, power: i32, resist: Resist) -> Self {
+        self.gate = Some(Gate { power, resist });
         self
     }
 
@@ -711,10 +740,16 @@ impl Character {
     /// matching hook fires a [`Reaction`] (scaled by the decorator's `stacks`), which
     /// is applied to the pools and returned for telemetry. A two-pass split (gather,
     /// then apply) keeps the borrow clean and the order deterministic (gen order).
-    pub fn dispatch(&mut self, event: Event, tick: u32) -> Vec<Reaction> {
-        // Resolve `Amount`s against a snapshot of the pre-dispatch pools (so every
-        // reaction this tick reads the same max / current — deterministic).
-        let max = self.realize().max_integrity();
+    pub fn dispatch<R: RandomSource>(
+        &mut self,
+        event: Event,
+        tick: u32,
+        rng: &mut R,
+    ) -> Vec<Reaction> {
+        // Resolve `Amount`s and resist TNs against a snapshot of the pre-dispatch
+        // composed view (so every reaction this tick reads the same numbers).
+        let view = self.realize();
+        let (max, fw, imm) = (view.max_integrity(), view.firewall(), view.immunity());
         let current = self.integrity;
         let resolve = |a: Amount| match a {
             Amount::Flat(v) => v,
@@ -725,6 +760,19 @@ impl Character {
         for d in &self.gen {
             if !d.is_active() {
                 continue;
+            }
+            // Stochastic gate (the status `behavior` axis): 3d6 + power + stacks vs the
+            // owner's resist TN; on failure the decorator's hooks don't fire this tick.
+            if let Some(gate) = d.gate {
+                let tn = match gate.resist {
+                    Resist::None => 0,
+                    Resist::Firewall => fw,
+                    Resist::Immunity => imm,
+                };
+                let skill = gate.power + d.stacks as i32;
+                if !resolve_contest(rng, Contest::new(skill, 0, tn)).success {
+                    continue;
+                }
             }
             let stacks = d.stacks.max(1) as f32;
             for h in d.on.iter().filter(|h| h.event == event) {
@@ -1156,6 +1204,33 @@ mod tests {
         );
         c.install(Decorator::gear(Tag::Implant, vec![]).with_grant(a_deck(2)));
         assert_eq!(c.realize().hack().unwrap().range, 9); // priority decides
+    }
+
+    // -- stochastic gate (L5 stage B) --
+
+    #[test]
+    fn a_stochastic_gate_fires_only_on_a_passing_roll() {
+        let mut c = Character::new(BaseLine { firewall: 15.0, max_integrity: 30.0, ..Default::default() });
+        c.install(
+            Decorator::status(Tag::Debuff, 1, Expiration::Duration(3), Wear::ByDuration)
+                .with_hook(
+                    Event::TickStart,
+                    HookEffect::Damage {
+                        amount: Amount::Flat(5.0),
+                        pen: crate::PenTier::Internal,
+                        can_kill: true,
+                    },
+                )
+                .with_gate(0, Resist::Firewall),
+        );
+        // fumble (3d6 = 3) vs Firewall 15 → gated out, no reaction.
+        let r = c.dispatch(Event::TickStart, 1, &mut crate::ScriptedRng::from_d6([1, 1, 1]));
+        assert!(r.is_empty());
+        assert_eq!(c.integrity, 30.0);
+        // crit (3d6 = 18) → fires.
+        let r = c.dispatch(Event::TickStart, 2, &mut crate::ScriptedRng::from_d6([6, 6, 6]));
+        assert_eq!(r.len(), 1);
+        assert_eq!(c.integrity, 25.0);
     }
 
     // -- pools (§3c) --

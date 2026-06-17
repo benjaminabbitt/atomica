@@ -309,7 +309,7 @@ mod tests {
         // fire the degrade-class liability (Bleed) at margin-scaled stacks.
         c.install(stim.hack_effects[0].to_decorator(2, 0));
         let before = c.integrity;
-        c.dispatch(Event::TickStart, 1);
+        c.dispatch(Event::TickStart, 1, &mut crate::SplitMix64::new(0));
         assert!(c.integrity < before); // the liability bites
     }
 }
