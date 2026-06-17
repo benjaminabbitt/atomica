@@ -127,10 +127,11 @@ pub struct Unit {
     pub initiative: f32,
     /// Digital Initiative / net presence. `0.0` ⇒ immune to all digital attack.
     pub link: f32,
-    /// Resist vs Worm + hacks, as a `0.0..=1.0` reduction to stochastic rolls.
-    pub firewall: f32,
-    /// Resist vs Virus, as a `0.0..=1.0` reduction to stochastic rolls.
-    pub immunity: f32,
+    /// Resist vs Worm + hacks — the Target Number a digital stochastic roll must
+    /// beat (`3d6 + power` vs this), §13.
+    pub firewall: i32,
+    /// Resist vs Virus — the Target Number a bio stochastic roll must beat, §13.
+    pub immunity: i32,
 
     pub attack: Attack,
     /// Active à-la-carte statuses.
@@ -201,9 +202,10 @@ impl Unit {
     }
 }
 
-fn resist_value(unit: &Unit, resist: Resist) -> f32 {
+/// The Target Number a stochastic status rolls against (its `resist` axis, §13).
+fn resist_tn(unit: &Unit, resist: Resist) -> i32 {
     match resist {
-        Resist::None => 0.0,
+        Resist::None => 0,
         Resist::Immunity => unit.immunity,
         Resist::Firewall => unit.firewall,
     }
@@ -342,9 +344,11 @@ impl<R: RandomSource> Battle<R> {
             for st in &statuses {
                 let fires = match st.spec.behavior {
                     Behavior::Deterministic => true,
-                    Behavior::Stochastic(p) => {
-                        let resist = resist_value(&self.units[i], st.spec.resist);
-                        self.rng.chance(p - resist)
+                    Behavior::Stochastic { power } => {
+                        // 3d6 + power + stacks vs the target's resist TN (§13).
+                        let tn = resist_tn(&self.units[i], st.spec.resist);
+                        let skill = power + st.stacks as i32;
+                        resolve_contest(&mut self.rng, Contest::new(skill, 0, tn)).success
                     }
                 };
                 if !fires {
@@ -485,8 +489,8 @@ mod tests {
             skills: Chassis::Augmented.baseline_skills(),
             initiative: 5.0,
             link: 0.0,
-            firewall: 0.0,
-            immunity: 0.0,
+            firewall: 0,
+            immunity: 0,
             attack: Attack {
                 damage: 10.0,
                 dtype: DamageType::Piercing,
@@ -545,7 +549,7 @@ mod tests {
     #[test]
     fn full_immunity_blocks_poison() {
         let mut u = unit(0, Team::A, 0);
-        u.immunity = 1.0; // resist == base chance ⇒ p <= 0
+        u.immunity = 30; // resist TN beyond any 3d6 + power roll
         let mut b = Battle::new(vec![u], 7);
         b.units[0].add_status(StatusSpec::poison(), 5, 1);
         let before = b.units[0].integrity;
@@ -602,9 +606,10 @@ mod tests {
     #[test]
     fn injected_scripted_rng_forces_poison_to_fire() {
         let mut u = unit(0, Team::A, 0);
-        u.add_status(StatusSpec::poison(), 5, 1); // stochastic 0.6, PctCurrent softener
-        // next_f32 == 0.0 < 0.6 ⇒ the roll fires.
-        let mut b = Battle::with_rng(vec![u], ScriptedRng::new([0]));
+        u.immunity = 5; // low resist TN
+        u.add_status(StatusSpec::poison(), 5, 1);
+        // 3d6 = 6, + poison power 3 + 1 stack = 10 ≥ TN 5 ⇒ fires.
+        let mut b = Battle::with_rng(vec![u], ScriptedRng::from_d6([2, 2, 2]));
         let before = b.units[0].integrity;
         b.status_phase();
         assert!(b.units[0].integrity < before);
@@ -613,9 +618,10 @@ mod tests {
     #[test]
     fn injected_scripted_rng_forces_poison_to_whiff() {
         let mut u = unit(0, Team::A, 0);
+        u.immunity = 30; // resist TN out of reach
         u.add_status(StatusSpec::poison(), 5, 1);
-        // next_f32 ≈ 1.0 ≥ 0.6 ⇒ the roll whiffs.
-        let mut b = Battle::with_rng(vec![u], ScriptedRng::new([u64::MAX]));
+        // 3d6 = 6, + power + stack = 10 < TN 30 ⇒ whiffs.
+        let mut b = Battle::with_rng(vec![u], ScriptedRng::from_d6([2, 2, 2]));
         let before = b.units[0].integrity;
         b.status_phase();
         assert_eq!(b.units[0].integrity, before);

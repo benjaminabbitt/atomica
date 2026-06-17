@@ -39,12 +39,13 @@ impl Magnitude {
     }
 }
 
-/// Axis: behavior — deterministic vs rolled each tick.
+/// Axis: behavior — deterministic vs rolled each tick (the 3d6 contest, §13).
 #[derive(Clone, Copy, Debug)]
 pub enum Behavior {
     Deterministic,
-    /// Fires with this base probability per tick; the `resist` axis lowers it.
-    Stochastic(f32),
+    /// Rolled each tick: `3d6 + power (+ stacks)` vs the target's resist (the
+    /// `resist` axis picks which stat is the TN). Fires on success.
+    Stochastic { power: i32 },
 }
 
 /// Axis: resist — which defensive stat shifts a stochastic roll.
@@ -180,7 +181,7 @@ impl StatusSpec {
             timing: Timing::TickStart,
             decay: Decay::Duration,
             stacking: Stacking::Refresh,
-            behavior: Behavior::Stochastic(0.6),
+            behavior: Behavior::Stochastic { power: 3 },
             targeting: Targeting::Enemy,
             resist: Resist::Immunity,
         }
