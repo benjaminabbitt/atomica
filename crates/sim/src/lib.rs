@@ -228,6 +228,7 @@ pub struct Battle<R: RandomSource = SplitMix64> {
     pub tick: u32,
     rng: R,
     objectives: Objectives,
+    withdrawn: bool,
 }
 
 impl Battle<SplitMix64> {
@@ -242,7 +243,19 @@ impl<R: RandomSource> Battle<R> {
     /// Defaults to the [`Eliminate`] objective.
     pub fn with_rng(units: Vec<Unit>, rng: R) -> Self {
         let objectives = Objectives::new(vec![Goal::new(Box::new(WinFight), 1, 1)]);
-        Self { units, tick: 0, rng, objectives }
+        Self { units, tick: 0, rng, objectives, withdrawn: false }
+    }
+
+    /// Withdraw from the Flight: forfeit it (objectives resolve as fight-over),
+    /// but all still-standing units are preserved (§9.4). The run layer applies
+    /// the bail penalty and banks the roster.
+    pub fn withdraw(&mut self) {
+        self.withdrawn = true;
+    }
+
+    /// Has the player withdrawn (forfeited to save units)?
+    pub fn is_withdrawn(&self) -> bool {
+        self.withdrawn
     }
 
     /// Replace the scored objectives (default: just [`WinFight`], the node's
@@ -272,9 +285,9 @@ impl<R: RandomSource> Battle<R> {
         self.objectives.unachieved(&self.units, self.tick, self.fight_over())
     }
 
-    /// Has the standard fight terminated (one army wiped)?
+    /// Has the Flight ended — one army wiped, or the player withdrew?
     fn fight_over(&self) -> bool {
-        !matches!(self.outcome(), Outcome::Ongoing)
+        self.withdrawn || !matches!(self.outcome(), Outcome::Ongoing)
     }
 
     /// Advance one tick:
@@ -700,5 +713,21 @@ mod tests {
         assert!(ObjectiveStatus::Pending.is_satisfied());
         assert!(ObjectiveStatus::Achieved.is_satisfied());
         assert!(!ObjectiveStatus::Failed.is_satisfied());
+    }
+
+    #[test]
+    fn withdraw_forfeits_but_saves_units() {
+        // Both sides alive; withdrawing forfeits the fight yet preserves the roster.
+        let mut b = Battle::with_rng(
+            vec![unit(0, Team::A, 0), unit(1, Team::B, 3)],
+            SplitMix64::new(1),
+        )
+        .with_objectives(Objectives::new(vec![Goal::new(Box::new(WinFight), 10, 5)]));
+        assert_eq!(b.objectives_report(), vec![ObjectiveStatus::Pending]); // ongoing
+        b.withdraw();
+        assert!(b.is_withdrawn());
+        assert_eq!(b.objectives_report(), vec![ObjectiveStatus::Failed]); // forfeited
+        assert_eq!(b.losses(), 5);
+        assert!(b.units[0].is_alive() && b.units[1].is_alive()); // everyone saved
     }
 }

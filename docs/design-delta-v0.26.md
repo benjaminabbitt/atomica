@@ -286,6 +286,8 @@ A Flight carries a **list** of these in an objectives container — the simple *
 
 The **run still ends only on a battle loss** (army wiped), but you can now **bleed units permanently across a run while winning** — real stakes. *(Revises the earlier "always resurrect next battle" rule.)*
 
+**Withdraw — forfeit to save units ◆.** The player can **withdraw** from a Flight: the fight is **forfeited** (WinFight + objectives fail, no win rewards; a Job fails), but **all still-standing units escape** — no casualties. The *cut-your-losses* play: when a fight turns, withdraw to **preserve veterans** (their earned skills are unsalvageable, §10) rather than risk a wipe. Cost: the forfeit, plus a withdraw penalty (Rep / Notoriety / morale ding for bailing). It sits beside extraction: **extraction** pulls *downed* units out mid-fight; **withdraw** retreats the *whole army*. Factoring: the `sim` can end a Flight in a **Withdrawn** state (all alive units preserved, objectives forfeited); `atomica-run` applies the penalty and banks the roster.
+
 **On death — two offsets, neither prevents the death ◆:**
 - **Insurance is *money*** (pre-paid, financial) — a **payout** when an insured unit dies, standing in for its **next-phase economic contribution** (a dead insured unit still "earns" via the payout). A bet on who falls; it **never saves the unit.**
 - **Salvage / Medical** is *materials* — harvest the dead unit's detachable gear / chrome (Ripperdoc) + biomatter / **Medical benefit** (Doctor); more loss pays more.
@@ -358,7 +360,7 @@ None of it breaks the crate split or phase ordering.
 
 ## 12. Open questions added this session
 
-*Tagged by how each resolves — **🎯 Design** (decide on paper now) · **◑ Mixed** (settle the structure now, tune the numbers later) · **⏳ Playtest** (feel numbers — need the built game). Tally: **7 design-now · 8 mixed · 2 playtest-only.** **→ Working-pass resolutions in §13 supersede #1–3, 5–8, 11–15, 17 (structure decided; ⏳ numbers remain); #9, #10 authored → [`rosters.md`](rosters.md). Still fully open: just #4, #16 (⏳ playtest).***
+*Tagged by how each resolves — **🎯 Design** (decide on paper now) · **◑ Mixed** (settle the structure now, tune the numbers later) · **⏳ Playtest** (feel numbers — need the built game). Tally: **7 design-now · 8 mixed · 2 playtest-only.** **→ Working-pass resolutions in §13 supersede #1–3, 5–8, 11–15, 17 (structure decided; ⏳ numbers remain); #9, #10 authored → [`rosters.md`](rosters.md). Still fully open: #4, #16, #19 (⏳) · #18 (◑ withdraw).***
 
 1. **[◑ Mixed]** **Per-faction Rep math** — how standing maps to price / access tiers; how the Fixer / Media convert Rep across the web.
 2. **[◑ Mixed]** **Notoriety** — how criminal dealings raise it and how it seeds cop-faction enemies in the run.
@@ -377,6 +379,8 @@ None of it breaks the crate split or phase ordering.
 15. **[◑ Mixed]** **Casualty-offset dials (§9.4)** — Insurance pre-combat: premium cost, per-unit vs. blanket, and the purchase window; Medical-benefit conversion: salvage vs. claim model, what "more loss → more benefit" curves to, and whether it harvests the lost unit's *gear*; can a unit carry **both** offsets, and do they stack?
 16. **[⏳ Playtest]** **Extraction & salvage dials (§9.4)** — *sources resolved* (a **vehicle** exiting the board — removing it *and* the rescued — or an extraction membership); *reward gradient resolved* (kills > extraction, slightly). **⏳ Deferred to playtest (needs code):** the **permadeath-rate dial** — the **downed→dead window** (how long a downed unit survives awaiting pickup — the Death's Door clock), extractions-per-battle, membership response time, and whether extraction costs tempo/risk. These are *feel* numbers, untunable on paper. Plus the **salvage tables** (what gear / biomatter a death returns).
 17. **[◑ Mixed]** **Skills & progression (§10)** — the skill list and which rolls each modifies; the **XP curve** and whether levels persist across *runs* (meta-progression) or reset each run; the **skill-chip level cap** and slot cost; when a character's own skill and a chip cover the same domain, do they **stack or take the max**?
+18. **[◑ Mixed]** **Withdraw (§9.4)** — the bail penalty (Rep / Notoriety / morale?); do downed units escape too or only standing ones; can you withdraw from any Flight or only some.
+19. **[⏳ Playtest]** **Upgrade point normalization (§13)** — the hidden point value per upgrade; how meta-progression doles out budget; whether shop offers are point-balanced too.
 
 ---
 
@@ -417,7 +421,9 @@ None of it breaks the crate split or phase ordering.
 
 **Casualty offsets (#15, structure) — per-unit insurance, salvage-as-claim, stackable.** Insurance is **per-unit, pre-combat** (pick who to insure — the bet). Salvage is a **tier-scaled claim** (payout per lost unit by value), not gear-by-gear harvesting. A dead unit can be **both** insured and salvaged (money + materials stack). Premiums/curves ⏳.
 
-**Still genuinely open after this pass:** #4 cross-pool costs (⏳), #16 permadeath-rate (⏳). #9 rosters + #10 naming **authored → [`rosters.md`](rosters.md)**.
+**Upgrade normalization — a hidden point budget ◆.** Every upgrade (gear, skill, augment, unlock) carries a **hidden power-point value**; meta-progression and shop offers are **normalized against this budget** so equal-cost upgrades are roughly equal power and progression can't snowball. The points are **invisible** to the player (no on-screen number) — a *balancing substrate*, not a currency — keeping the survival-earned meta-progression (#17) and the run economy fair. Factoring: `atomica-content` tags each upgrade with its hidden points; `atomica-run` budgets against them. *(⏳ the values are tuning.)*
+
+**Still genuinely open after this pass:** #4 cross-pool costs (⏳), #16 permadeath-rate (⏳), #18 withdraw, #19 upgrade-points. #9 rosters + #10 naming **authored → [`rosters.md`](rosters.md)**.
 
 ---
 
