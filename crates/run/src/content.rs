@@ -51,7 +51,7 @@ fn body(name: &str, hp: f32, init: f32) -> Unit {
 pub fn blade(name: &str) -> Unit {
     body(name, 68.0, 7.0)
         .with_skill(Skill::Melee, 8) // a duelist — lands the blade
-        .with_evasion(9.0) // and fast enough to slip incoming fire
+        .with_evasion(16.0) // nimble elite — slips most incoming
         .with_attack(weapon(14.0, DamageType::Slashing, PenTier::Internal, 1))
 }
 
@@ -61,7 +61,7 @@ pub fn runner(name: &str) -> Unit {
     let mut u = body(name, 60.0, 6.0)
         .with_skill(Skill::Gunnery, 6)
         .with_skill(Skill::Hacking, 5)
-        .with_evasion(7.0)
+        .with_evasion(14.0)
         .with_attack(awkward(weapon(8.0, DamageType::Piercing, PenTier::Contact, 4))); // a rifle — clumsy in a clinch
     u.install(Implant::cyberdeck());
     u
@@ -74,7 +74,7 @@ pub fn bulwark(name: &str) -> Unit {
     body(name, 94.0, 5.0)
         .with_armor(ArmorClass::Plate)
         .with_skill(Skill::Melee, 6)
-        .with_evasion(3.0)
+        .with_evasion(11.0)
         .with_attack(weapon(12.0, DamageType::Bludgeoning, PenTier::Contact, 1))
 }
 
@@ -91,7 +91,7 @@ fn mook(name: &str) -> Unit {
     body(name, 74.0, 5.0)
         .with_armor(ArmorClass::Mail)
         .with_skill(Skill::Gunnery, 3)
-        .with_evasion(5.0)
+        .with_evasion(14.0)
         .with_attack(weapon(3.0, DamageType::Piercing, PenTier::External, 2))
 }
 
@@ -102,7 +102,7 @@ fn enforcer(name: &str) -> Unit {
     let mut u = body(name, 104.0, 5.0)
         .with_armor(ArmorClass::Plate)
         .with_skill(Skill::Melee, 5)
-        .with_evasion(4.0)
+        .with_evasion(12.0)
         .with_attack(weapon(3.0, DamageType::Bludgeoning, PenTier::Contact, 1));
     u.character.base_mut().link = 4.0; // a networked surface to hack at
     u.character.base_mut().firewall = 6.0;
@@ -116,7 +116,7 @@ fn carrier(name: &str) -> Unit {
     let mut u = body(name, 94.0, 5.0)
         .with_armor(ArmorClass::Mail)
         .with_skill(Skill::Gunnery, 3)
-        .with_evasion(6.0)
+        .with_evasion(14.0)
         .with_attack(weapon(3.0, DamageType::Piercing, PenTier::External, 2));
     u.apply_modifier(Corruption::plague(4.0, 10, 8));
     u
