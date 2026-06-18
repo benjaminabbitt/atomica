@@ -121,10 +121,12 @@ The single highest-leverage unbuilt piece: it turns hacks from "land a DoT" into
 the **chrome-is-liability** core, and simultaneously gives **worms** their
 payloads.
 
-- **Every implant = a `(Link, Firewall, Hack-effect)` bundle** (§7F). An implant's
+- **Most implants = a `(Link, Firewall, Hack-effect)` bundle** (§7F). An implant's
   Link/Firewall **sum into** the unit's stats; its **hack-effect** is a benefit
   the owner uses **and** a loaded liability that fires *on the owner* when the
-  implant is breached (by a hack or a worm).
+  implant is breached (by a hack or a worm). **Exception ✅:** **inert physical
+  cyberware** (subdermal plating) has no digital surface — Link 0, **no hack-effect**,
+  and **unbreachable** by hack / worm / EMP (`Implant::is_digital` gates every vector).
 - **Hack-effect roster** (the implant liability pool) — each maps to an existing
   or new status:
 
@@ -132,7 +134,7 @@ payloads.
   |---|---|---|
   | Reflex booster (+Init) | **Seizure** | Crash (stun) ✅ |
   | Smartgun (IFF-target) | **Misfire** | attack an ally/self 🔭 |
-  | Subdermal plating (+def) | **Shed** | Plating-shred ✅ (`corrode`) |
+  | Subdermal plating (+def) | **— (none)** | inert physical ✅ — unbreachable |
   | Metabolic pump (+regen) | **Overload** | Internal DoT ✅ (`lockware`-like) |
   | Cyberdeck (+Link/hacks) | **Lockout** | −Link / digital disable 🔭 |
   | Sensor suite (perception) | **Blind** | can't target / off-AR 🔭 |

@@ -49,9 +49,11 @@ The designed round:
      before it acts);
    - **move** — up to the unit's **move** stat toward its **movement profile**'s
      goal, pathing only through **free** hexes (boxed-in ⇒ no move);
-   - **act** — pick a target via the **targeting profile**, resolve the attack over
-     its **footprint** (single / blast / beam, **friendly fire on** for physical),
-     then `penetration → defense → magnitude → apply → on-hit statuses → death`.
+   - **act** — pick a target via the **targeting profile**, **roll to-hit**
+     (`3d6 + weapon skill + accuracy` vs the target's **Evasion** + a gun's **range
+     penalty**; an undefended melee blow auto-hits, §7G), and on a hit resolve the
+     attack over its **footprint** (single / blast / beam, **friendly fire on** for
+     physical), then `penetration → defense → magnitude → apply → on-hit statuses → death`.
 3. **Cleanup** — decay / duration ticks; elimination check; **death triggers**.
 
 ---
@@ -66,6 +68,9 @@ The designed round:
 | **Occupancy / pathing / boxed-in** (§10.5a) | occupied hexes block; no free hex ⇒ no move | **free-hex stepping + boxed-in** (greedy, no A*) | ✅ |
 | **Woven initiative** (§7C/§10.3) | one interleaved physical+digital order | **one woven order** (Initiative + Link on one track) | ✅ |
 | **AoE footprints + friendly fire** (§7G) | blast (radius) · beam (line/width); physical hits allies | **`Blast`/`Beam` wired, friendly fire on** | ✅ (width = 1) |
+| **To-hit roll** (§7G, design-delta §394) | `3d6 + weapon skill` vs **Evasion**; undefended melee auto-hits | **`Stat::Evasion` TN; `resolve_attack_with` rolls (TN ≤ 0 ⇒ auto-hit, no RNG)** | ✅ |
+| **Weapon skills / roles** (§10.5) | a weapon's role picks its skill (blade → Melee, gun → Gunnery) | **`Attack.skill` (Melee/Gunnery) + `accuracy` mod** | ✅ |
+| **Range difficulty** (§7G) | guns get harder with distance; melee / hacking exempt | **`Attack.range_penalty` (per-hex, Gunnery only); hacking never routes through it** | ✅ |
 | **Range bands / reach** (§10.5) | gun bands · polearm reach | **`min_range..=range` band** (`usable_at`) | ✅ |
 | **Multiple weapons / selection** | per-target weapon choice | **`Capability::Weapon` grants + `weapon_at` (best in band)** | ✅ |
 | **Smartgun / IFF targeting** (§7F) | smart-linked weapon spares allies in its line of fire | **`Attack.smart` — IFF filters the attacker's team out of the footprint** (`smartlinked()`) | ✅ |
@@ -106,10 +111,16 @@ Sequenced so each phase is shippable and test-first, hardest-leverage first:
    physical before digital. `step` runs the single `woven_phase`; the old `action_phase`
    / `digital_phase` are now test-only. A high-Link runner hacks before a sluggish
    bruiser swings.
-5. **Weapons & reach ◑** — **range bands** (`Attack.min_range..=range`, `usable_at`)
-   and **multi-weapon selection** (`Capability::Weapon` grants + `weapon_at` picks the
-   highest-damage weapon whose band covers the distance) are built; a closing profile
-   **stands off** once any weapon reaches. Polearm reach = a `2..=2` band. The
+5. **Weapons, reach & to-hit ✅** — each weapon has a **role** (`Attack.skill`:
+   Melee / Gunnery) and rolls **to-hit** (`3d6 + skill + accuracy` vs the target's
+   `Stat::Evasion`); an **undefended** melee blow (TN ≤ 0) auto-hits with no roll, so
+   trivial exchanges stay deterministic. **Guns take a range penalty**
+   (`Attack.range_penalty`, per-hex past point-blank) — melee is exempt, and **hacking
+   never routes through it**, so range can't touch the digital realm. **Range bands**
+   (`Attack.min_range..=range`, `usable_at`) and **multi-weapon selection**
+   (`Capability::Weapon` grants + `weapon_at` picks the highest-damage weapon whose band
+   covers the distance) are built; a closing profile **stands off** once any weapon
+   reaches. Polearm reach = a `2..=2` band. The
    **Smartgun/IFF** mod ✅ is `Attack.smart` (`smartlinked()`): a smart-linked weapon
    identifies friend from foe, so its blast / line of fire spares the attacker's team —
    a dumb beam through occupied hexes mows down allies in the path; this holds fire.

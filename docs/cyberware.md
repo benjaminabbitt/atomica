@@ -61,8 +61,11 @@ loadout (delta §13).
 
 The design's elegant lever: **an implant's hack-effect is its own benefit turned
 against the owner.** A reflex booster makes you fast → breached, it **Seizes**
-(you freeze). Plating protects → breached, it **Sheds** (armor drops). A deck lets
-you hack → breached, it **Locks out** (you're bricked off the net).
+(you freeze). A deck lets you hack → breached, it **Locks out** (you're bricked off
+the net). *The exception ✅: **inert physical armor** (subdermal plating) has no digital
+surface — pure benefit, **no liability**, and **unbreachable** by hack / worm / EMP. The
+trade is symmetric: you can't hack its armor off, but neither can the enemy — only a
+maul (Bludgeoning vs Plate) or physical destruction answers it.*
 
 This does three things at once:
 1. **Telegraphed & thematic** — the liability is legible from the benefit, so
@@ -100,7 +103,7 @@ sketches (TBD); the benefit and its corruption are sized to mirror.
 | **Reflex booster** | reflex | +Physical Initiative | low | — | — | **Seizure** — Crash / skip |
 | **Cyberdeck** | deck | grants the **hack loadout** + Hacking + Link | **high** | + | — | **Lockout** — −Link, digital disabled |
 | **Firewall suite** | security | **+Firewall** (the wall) | low | **high** | — | **Breach** — −Firewall, vuln |
-| **Subdermal plating** | armor | **+Plating** | — | low | **heavy** | **Shed** — Plating offline |
+| **Subdermal plating** ✅ | armor | **+Plating** | — | — | **heavy** | **—** *(inert physical — Link 0, unbreachable by any vector)* |
 | **Smartgun link** | targeting | IFF **smart-targeting** profiles + accuracy | mid | — | — | **Misfire** — attack ally / self |
 | **Metabolic pump** | bio-sys | +regen (Adaptive System) | — | — | — | **Overload** — Internal DoT (runs hot) |
 | **Sensor suite** | optics | +AR range, reveal stealth | mid | — | — | **Blind** — off-AR → dumb targeting |
@@ -203,13 +206,19 @@ double-exposed (§7F).
 
 ## 6. Breach & repair
 
-An implant is **breached** three ways:
+Only **digital** chrome can be breached. An implant is *digital* (`Implant::is_digital` ✅)
+if it grants a hack, contributes **Link**, or carries breach liabilities; **inert
+physical cyberware** (subdermal plating — pure armor, no circuitry) is **Link 0 and
+immune to *every* breach vector** — no hack, no worm, **and no EMP** (nothing to fry).
+It only **wears / is destroyed physically**. So a Plate-armored bruiser running only
+plating is a hard wall to the runner, soft to a maul. A breach hits one of the target's
+**digital** implants:
 
 | Vector | How | Defended by |
 |---|---|---|
-| **Hack** | a netrunner trips the implant (a hack success, `netrunning.md` §3) | Firewall, low Link |
-| **Worm** | **Logic-bomb** trips one by name · **Cascade** trips all (meshed PAN) | Firewall, segment PAN |
-| **EMP** ✅ | a physical pulse (`Attack.emp` → `apply_emp`) — **bypasses Firewall**, fries every active implant Offline + fires degrade liabilities | hardening, bioware |
+| **Hack** ✅ | a netrunner trips a **digital** implant (a hack success, `netrunning.md` §3) | Firewall, low Link, **going all-physical** |
+| **Worm** ✅ | **Logic-bomb** trips one digital implant · **Cascade** trips all (meshed PAN) | Firewall, segment PAN, all-physical |
+| **EMP** ✅ | a physical pulse (`Attack.emp` → `apply_emp`) — **bypasses Firewall**, fries every active **digital** implant Offline + fires degrade liabilities; **inert physical chrome is EMP-proof** | hardening, **all-physical builds** |
 
 ### Breach outcome — severity scales with the roll ◆
 
