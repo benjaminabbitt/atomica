@@ -13,7 +13,7 @@
 //! later phases — the fields are here, the wiring is not.
 
 use crate::chargen::{Capability, Condition, Decorator, Factor, Stat, Tag};
-use crate::{Hack, StatusSpec};
+use crate::{EquipmentTags, Hack, StatusSpec};
 
 /// A unit's **Personal Area Network** mode (`docs/cyberware.md` §5, delta §6) — a
 /// loadout commitment, not an in-battle toggle.
@@ -63,19 +63,18 @@ pub struct Implant {
     pub condition: Condition,
     /// Inbuilt implants are non-removable identity (§7F).
     pub removable: bool,
-    /// **Digital tag** (`docs/cyberware.md` §6): does this implant present a surface a
-    /// breach can trip? `true` for networked chrome (decks, smartware); `false` for
-    /// **inert physical** cyberware (subdermal plating), which no hack / worm / EMP can
-    /// touch. Declared per-implant — gates every breach vector via [`Implant::is_digital`].
-    pub digital: bool,
+    /// **Equipment tags** (`docs/cyberware.md` §6) — the shared `const` flag set. Today:
+    /// [`EquipmentTags::DIGITAL`] (networked chrome a breach can trip); its absence marks
+    /// **inert physical** cyberware, immune to every breach vector. See [`Implant::is_digital`].
+    pub tags: EquipmentTags,
 }
 
 impl Implant {
     /// Is this implant **digital** — does it present a surface a breach can trip? Reads
-    /// the explicit [`Implant::digital`] tag. `false` ⇒ inert physical cyberware, immune
-    /// to every breach vector (hack / worm / EMP); only physical wear / destruction.
+    /// the [`EquipmentTags::DIGITAL`] tag. `false` ⇒ inert physical cyberware, immune to
+    /// every breach vector (hack / worm / EMP); only physical wear / destruction.
     pub fn is_digital(&self) -> bool {
-        self.digital
+        self.tags.has(EquipmentTags::DIGITAL)
     }
 
     /// A **cyberdeck** — grants the hack loadout and raises Link (the surface) +
@@ -89,11 +88,12 @@ impl Implant {
             hack_effects: vec![StatusSpec::lockware()], // Lockout (placeholder)
             condition: Condition::Online,
             removable: true,
-            digital: true,
+            tags: EquipmentTags::DIGITAL,
         }
     }
 
-    /// **Subdermal plating** — +Plating. Breached ⇒ **Shed** (plating-shred).
+    /// **Subdermal plating** — +Plating. **Inert physical** chrome (no `DIGITAL` tag):
+    /// unbreachable by hack / worm / EMP; only physical wear degrades it.
     pub fn subdermal_plating() -> Self {
         Self {
             name: "Subdermal Plating",
@@ -104,7 +104,7 @@ impl Implant {
             hack_effects: vec![],
             condition: Condition::Online,
             removable: true,
-            digital: false,
+            tags: EquipmentTags::NONE,
         }
     }
 
@@ -117,7 +117,7 @@ impl Implant {
             hack_effects: vec![StatusSpec::crash()], // Seizure
             condition: Condition::Online,
             removable: true,
-            digital: true,
+            tags: EquipmentTags::DIGITAL,
         }
     }
 
@@ -131,7 +131,7 @@ impl Implant {
             hack_effects: vec![StatusSpec::breach()], // Breach (vuln)
             condition: Condition::Online,
             removable: true,
-            digital: true,
+            tags: EquipmentTags::DIGITAL,
         }
     }
 
@@ -146,7 +146,7 @@ impl Implant {
             hack_effects: vec![StatusSpec::bleed(), StatusSpec::crash()], // Overdose
             condition: Condition::Online,
             removable: true,
-            digital: true,
+            tags: EquipmentTags::DIGITAL,
         }
     }
 
@@ -160,7 +160,7 @@ impl Implant {
             hack_effects: vec![StatusSpec::bleed()], // Overload (Internal DoT)
             condition: Condition::Online,
             removable: true,
-            digital: true,
+            tags: EquipmentTags::DIGITAL,
         }
     }
 

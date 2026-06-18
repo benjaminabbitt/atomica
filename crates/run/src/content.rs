@@ -8,16 +8,16 @@
 use crate::{Encounter, GamePlan, RunPlan};
 use atomica_sim::{
     ArmorClass, Attack, Chassis, Corruption, DamageType, Footprint, Implant, PenTier, Skill, Team,
-    Unit, WeaponTags,
+    Unit, EquipmentTags,
 };
 
 fn weapon(damage: f32, dtype: DamageType, pen: PenTier, range: i32) -> Attack {
     // Role from reach: a reach-1 weapon is Melee, anything longer is a Gunnery weapon —
     // and **ranged** (an inherent to-hit penalty that grows with distance).
     let (skill, tags) = if range > 1 {
-        (Skill::Gunnery, WeaponTags::RANGED)
+        (Skill::Gunnery, EquipmentTags::RANGED)
     } else {
-        (Skill::Melee, WeaponTags::NONE)
+        (Skill::Melee, EquipmentTags::NONE)
     };
     Attack {
         damage,
@@ -36,7 +36,7 @@ fn weapon(damage: f32, dtype: DamageType, pen: PenTier, range: i32) -> Attack {
 /// Builder: mark a weapon **awkward** (a rifle / polearm / heavy weapon) — clumsy
 /// to-hit when an enemy is jammed up close (§7G).
 fn awkward(mut a: Attack) -> Attack {
-    a.tags = a.tags.with(WeaponTags::AWKWARD);
+    a.tags = a.tags.with(EquipmentTags::AWKWARD);
     a
 }
 

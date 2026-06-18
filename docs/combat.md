@@ -70,8 +70,8 @@ The designed round:
 | **AoE footprints + friendly fire** (§7G) | blast (radius) · beam (line/width); physical hits allies | **`Blast`/`Beam` wired, friendly fire on** | ✅ (width = 1) |
 | **To-hit roll** (§7G, design-delta §394) | `3d6 + weapon skill` vs **Evasion**; undefended melee auto-hits | **`Stat::Evasion` TN; `resolve_attack_with` rolls (TN ≤ 0 ⇒ auto-hit, no RNG)** | ✅ |
 | **Weapon skills / roles** (§10.5) | a weapon's role picks its skill (blade → Melee, gun → Gunnery) | **`Attack.skill` (Melee/Gunnery) + `accuracy` mod** | ✅ |
-| **Ranged penalty** (§7G) | all projectile weapons get **harder with distance** | **`WeaponTags::RANGED` → `ranged_penalty`: 0 (≤2) / -2 (3–4) / -4 (≥5)** | ✅ |
-| **Awkward weapons** (§7G) | rifles / polearms / heavy weapons are clumsy **up close**; handy weapons & hacking exempt | **`WeaponTags::AWKWARD` → `awkward_penalty`: +2 TN adjacent, +4 same-hex (≈never), 0 at range ≥ 2; discrete from `RANGED` (a rifle is both)** | ✅ |
+| **Ranged penalty** (§7G) | all projectile weapons get **harder with distance** | **`EquipmentTags::RANGED` → `ranged_penalty`: 0 (≤2) / -2 (3–4) / -4 (≥5)** | ✅ |
+| **Awkward weapons** (§7G) | rifles / polearms / heavy weapons are clumsy **up close**; handy weapons & hacking exempt | **`EquipmentTags::AWKWARD` → `awkward_penalty`: +2 TN adjacent, +4 same-hex (≈never), 0 at range ≥ 2; discrete from `RANGED` (a rifle is both)** | ✅ |
 | **Range bands / reach** (§10.5) | gun bands · polearm reach | **`min_range..=range` band** (`usable_at`) | ✅ |
 | **Multiple weapons / selection** | per-target weapon choice | **`Capability::Weapon` grants + `weapon_at` (best in band)** | ✅ |
 | **Smartgun / IFF targeting** (§7F) | smart-linked weapon spares allies in its line of fire | **`Attack.smart` — IFF filters the attacker's team out of the footprint** (`smartlinked()`) | ✅ |
@@ -116,7 +116,7 @@ Sequenced so each phase is shippable and test-first, hardest-leverage first:
    Melee / Gunnery) and rolls **to-hit** (`3d6 + skill + accuracy` vs the target's
    `Stat::Evasion`); an **undefended** melee blow (TN ≤ 0) auto-hits with no roll, so
    trivial exchanges stay deterministic. Two **discrete** weapon tags bump the TN by
-   distance (`WeaponTags`, summed): **`RANGED`** — every projectile weapon is harder the
+   distance (`EquipmentTags`, summed): **`RANGED`** — every projectile weapon is harder the
    farther the shot (`0` ≤2, `-2` at 3–4, `-4` at ≥5); and **`AWKWARD`** — a long /
    unwieldy weapon (rifle, polearm, heavy) is **clumsy up close** (`+2` adjacent, `+4`
    same-hex ≈unreachable, `0` at range ≥ 2). A rifle carries **both** (`RANGED | AWKWARD`)

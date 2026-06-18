@@ -135,42 +135,50 @@ pub enum DeathTrigger {
     Legacy { spec: StatusSpec, stacks: u32, duration: u32, radius: i32 },
 }
 
-/// A **set of weapon tags** (`docs/combat.md`) — boolean weapon traits packed as a
-/// bitset of `const` flags, so a weapon carries any combination (`SMART | AWKWARD`, …)
-/// in one field instead of a bool per trait. Test membership with [`WeaponTags::has`].
+/// A **set of equipment tags** — boolean traits on a piece of equipment (a weapon's
+/// `Attack`, an `Implant`, …) packed as a bitset of `const` flags, so equipment carries
+/// any combination (`SMART | AWKWARD`, …) in one field instead of a bool per trait. The
+/// shared tag set for the equipment base; test membership with [`EquipmentTags::has`].
 #[derive(Clone, Copy, PartialEq, Eq, Default)]
-pub struct WeaponTags(u32);
+pub struct EquipmentTags(u32);
 
-impl WeaponTags {
-    /// A plain weapon — no tags.
-    pub const NONE: WeaponTags = WeaponTags(0);
+impl EquipmentTags {
+    /// No tags.
+    pub const NONE: EquipmentTags = EquipmentTags(0);
+
+    // -- Weapon tags (`docs/combat.md`) --
     /// **IFF / smartgun** (§7F): the line of fire / blast spares the attacker's team.
-    pub const SMART: WeaponTags = WeaponTags(1 << 0);
+    pub const SMART: EquipmentTags = EquipmentTags(1 << 0);
     /// **Awkward** (§7G): a long / unwieldy weapon (rifle, polearm, heavy) — clumsy up close.
-    pub const AWKWARD: WeaponTags = WeaponTags(1 << 1);
+    pub const AWKWARD: EquipmentTags = EquipmentTags(1 << 1);
     /// **Ranged** (§7G): a projectile weapon — an inherent to-hit penalty that **grows
     /// with distance** (discrete from `AWKWARD`, which bites up close). A gun is `RANGED`;
     /// a rifle is `RANGED | AWKWARD` (penalised far *and* near, sweet spot between).
-    pub const RANGED: WeaponTags = WeaponTags(1 << 2);
+    pub const RANGED: EquipmentTags = EquipmentTags(1 << 2);
+
+    // -- Implant tags (`docs/cyberware.md`) --
+    /// **Digital** (§6): networked chrome a breach can trip (deck, smartware). Absent ⇒
+    /// **inert physical** cyberware (subdermal plating), immune to hack / worm / EMP.
+    pub const DIGITAL: EquipmentTags = EquipmentTags(1 << 3);
 
     /// Does this set contain every flag in `tag`?
-    pub const fn has(self, tag: WeaponTags) -> bool {
+    pub const fn has(self, tag: EquipmentTags) -> bool {
         self.0 & tag.0 == tag.0
     }
     /// This set with `tag` added.
-    pub const fn with(self, tag: WeaponTags) -> WeaponTags {
-        WeaponTags(self.0 | tag.0)
+    pub const fn with(self, tag: EquipmentTags) -> EquipmentTags {
+        EquipmentTags(self.0 | tag.0)
     }
 }
 
-impl std::ops::BitOr for WeaponTags {
-    type Output = WeaponTags;
-    fn bitor(self, rhs: WeaponTags) -> WeaponTags {
-        WeaponTags(self.0 | rhs.0)
+impl std::ops::BitOr for EquipmentTags {
+    type Output = EquipmentTags;
+    fn bitor(self, rhs: EquipmentTags) -> EquipmentTags {
+        EquipmentTags(self.0 | rhs.0)
     }
 }
 
-impl std::fmt::Debug for WeaponTags {
+impl std::fmt::Debug for EquipmentTags {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let mut names = Vec::new();
         if self.has(Self::SMART) {
@@ -182,7 +190,10 @@ impl std::fmt::Debug for WeaponTags {
         if self.has(Self::RANGED) {
             names.push("RANGED");
         }
-        write!(f, "WeaponTags({})", names.join(" | "))
+        if self.has(Self::DIGITAL) {
+            names.push("DIGITAL");
+        }
+        write!(f, "EquipmentTags({})", names.join(" | "))
     }
 }
 
@@ -210,8 +221,8 @@ pub struct Attack {
     /// The area struck (§7G) — `Single` by default; `Blast`/`Beam` hit allies too.
     pub footprint: Footprint,
     /// The weapon's **tags** (`docs/combat.md`) — `SMART` (IFF), `AWKWARD` (clumsy up
-    /// close), … as a set of `const` flags. See [`WeaponTags`].
-    pub tags: WeaponTags,
+    /// close), … as a set of `const` flags. See [`EquipmentTags`].
+    pub tags: EquipmentTags,
 }
 
 impl Attack {
@@ -233,18 +244,18 @@ impl Attack {
             min_range: 1,
             emp: false,
             footprint: Footprint::Single,
-            tags: WeaponTags::NONE,
+            tags: EquipmentTags::NONE,
         }
     }
 
     /// The **awkward** to-hit penalty this weapon suffers at hex-distance `dist` (§7G) —
     /// a TN bump (harder to hit) when a long / unwieldy weapon is **too close**, fading
-    /// to none at proper range. Only weapons tagged [`WeaponTags::AWKWARD`] pay it; a
+    /// to none at proper range. Only weapons tagged [`EquipmentTags::AWKWARD`] pay it; a
     /// handy weapon (pistol, blade) never does. Bands: same-hex `-4` (≈never — occupancy
     /// keeps units apart), adjacent `-2`, range ≥ 2 `0`. **Discrete from
     /// [`ranged_penalty`](Attack::ranged_penalty)** (which bites at *long* range instead).
     pub fn awkward_penalty(&self, dist: i32) -> i32 {
-        if !self.tags.has(WeaponTags::AWKWARD) {
+        if !self.tags.has(EquipmentTags::AWKWARD) {
             return 0;
         }
         match dist {
@@ -256,12 +267,12 @@ impl Attack {
 
     /// The **ranged** to-hit penalty this weapon suffers at hex-distance `dist` (§7G) —
     /// the *inherent* difficulty of a projectile weapon, **growing with distance**. Only
-    /// weapons tagged [`WeaponTags::RANGED`] pay it (a melee weapon never does), and
+    /// weapons tagged [`EquipmentTags::RANGED`] pay it (a melee weapon never does), and
     /// **hacking never routes through here**, so range can't touch the digital realm.
     /// Bands: short (`≤ 2`) `0`, medium (`3–4`) `-2`, long (`≥ 5`) `-4` (small boards
     /// rarely reach the far band). **Discrete from [`awkward_penalty`](Attack::awkward_penalty)**.
     pub fn ranged_penalty(&self, dist: i32) -> i32 {
-        if !self.tags.has(WeaponTags::RANGED) {
+        if !self.tags.has(EquipmentTags::RANGED) {
             return 0;
         }
         match dist {
@@ -274,7 +285,7 @@ impl Attack {
     /// Builder: add the **`SMART`** tag (IFF) — its blast / line of fire spares the
     /// attacker's team (`docs/combat.md`). The "smartgun" mod over any base profile.
     pub fn smartlinked(mut self) -> Self {
-        self.tags = self.tags.with(WeaponTags::SMART);
+        self.tags = self.tags.with(EquipmentTags::SMART);
         self
     }
 }
@@ -1213,7 +1224,7 @@ impl<R: RandomSource> Battle<R> {
                     && self.units[j].is_alive()
                     && hexes.contains(&self.units[j].pos)
                     // IFF: a smart weapon holds fire on the attacker's own team.
-                    && !(atk.tags.has(WeaponTags::SMART) && self.units[j].team == team)
+                    && !(atk.tags.has(EquipmentTags::SMART) && self.units[j].team == team)
             })
             .collect()
     }
@@ -2610,7 +2621,7 @@ mod tests {
         let mut atk = unit(0, Team::A, 0);
         atk.rearm(|w| {
             w.footprint = Footprint::Beam(4);
-            w.tags = w.tags.with(WeaponTags::SMART); // smartgun
+            w.tags = w.tags.with(EquipmentTags::SMART); // smartgun
         });
         let on1 = unit(1, Team::B, 1); // (1,0) — enemy on the beam
         let ally = unit(2, Team::A, 2); // (2,0) — ally in the path
@@ -2675,7 +2686,7 @@ mod tests {
             min_range,
             emp: false,
             footprint: Footprint::Single,
-            tags: WeaponTags::NONE,
+            tags: EquipmentTags::NONE,
         }
     }
 
@@ -2712,15 +2723,15 @@ mod tests {
 
     #[test]
     fn weapon_tags_are_a_set_of_const_flags() {
-        let plain = WeaponTags::NONE;
-        assert!(!plain.has(WeaponTags::SMART) && !plain.has(WeaponTags::AWKWARD));
+        let plain = EquipmentTags::NONE;
+        assert!(!plain.has(EquipmentTags::SMART) && !plain.has(EquipmentTags::AWKWARD));
         // A weapon can carry several tags at once.
-        let both = WeaponTags::SMART | WeaponTags::AWKWARD;
-        assert!(both.has(WeaponTags::SMART) && both.has(WeaponTags::AWKWARD));
+        let both = EquipmentTags::SMART | EquipmentTags::AWKWARD;
+        assert!(both.has(EquipmentTags::SMART) && both.has(EquipmentTags::AWKWARD));
         // `with` adds one without disturbing the rest.
-        let added = WeaponTags::SMART.with(WeaponTags::AWKWARD);
+        let added = EquipmentTags::SMART.with(EquipmentTags::AWKWARD);
         assert_eq!(added, both);
-        assert!(!WeaponTags::SMART.has(WeaponTags::AWKWARD)); // distinct flags
+        assert!(!EquipmentTags::SMART.has(EquipmentTags::AWKWARD)); // distinct flags
     }
 
     #[test]
@@ -2728,7 +2739,7 @@ mod tests {
         // A long / unwieldy weapon (awkward tag) pays a to-hit penalty jammed in close,
         // fading to none at proper range; a handy weapon (and any melee) never pays it.
         let mut rifle = gun(10.0, 1, 8);
-        rifle.tags = rifle.tags.with(WeaponTags::AWKWARD);
+        rifle.tags = rifle.tags.with(EquipmentTags::AWKWARD);
         assert_eq!(rifle.awkward_penalty(1), AWKWARD_ADJACENT); // adjacent: clumsy (-2)
         assert_eq!(rifle.awkward_penalty(2), 0); // at proper range: clean
         assert_eq!(rifle.awkward_penalty(8), 0); // and stays clean however far
@@ -2742,7 +2753,7 @@ mod tests {
         // The RANGED tag adds an inherent penalty that grows with distance — discrete
         // from awkward, and only paid by tagged (projectile) weapons.
         let mut g = gun(10.0, 1, 8);
-        g.tags = g.tags.with(WeaponTags::RANGED);
+        g.tags = g.tags.with(EquipmentTags::RANGED);
         assert_eq!(g.ranged_penalty(1), 0); // short range: clean
         assert_eq!(g.ranged_penalty(2), 0);
         assert_eq!(g.ranged_penalty(3), RANGED_MEDIUM_PENALTY); // medium: -2
@@ -2756,7 +2767,7 @@ mod tests {
         // RANGED | AWKWARD compose: clumsy adjacent (awkward), harder far (ranged),
         // a clean band between — the two discrete tags build the U-curve.
         let mut rifle = gun(10.0, 2, 8);
-        rifle.tags = WeaponTags::AWKWARD | WeaponTags::RANGED;
+        rifle.tags = EquipmentTags::AWKWARD | EquipmentTags::RANGED;
         let tn = |d: i32| rifle.awkward_penalty(d) + rifle.ranged_penalty(d);
         assert_eq!(tn(1), AWKWARD_ADJACENT); // jammed in close: +2 (awkward)
         assert_eq!(tn(2), 0); // the sweet spot: clean

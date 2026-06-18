@@ -206,10 +206,10 @@ double-exposed (§7F).
 
 ## 6. Breach & repair
 
-Only **digital** chrome can be breached. Each implant declares an explicit **`digital`
-tag** (`Implant::is_digital` ✅) — `true` for networked chrome (decks, smartware),
-`false` for **inert physical cyberware** (subdermal plating — pure armor, no circuitry),
-which is **Link 0 and
+Only **digital** chrome can be breached. Each implant declares an explicit
+**`EquipmentTags::DIGITAL`** tag (the shared equipment tag set; `Implant::is_digital` ✅) —
+present on networked chrome (decks, smartware), absent on **inert physical cyberware**
+(subdermal plating — pure armor, no circuitry), which is **Link 0 and
 immune to *every* breach vector** — no hack, no worm, **and no EMP** (nothing to fry).
 It only **wears / is destroyed physically**. So a Plate-armored bruiser running only
 plating is a hard wall to the runner, soft to a maul. A breach hits one of the target's

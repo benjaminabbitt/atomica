@@ -6,7 +6,7 @@
 
 use atomica_sim::{
     ArmorClass, Attack, Battle, Chassis, DamageType, Footprint, Hex, Implant, Outcome, Skill,
-    StatusSpec, Team, Unit, WeaponTags,
+    StatusSpec, Team, Unit, EquipmentTags,
 };
 use egui_macroquad::egui;
 use macroquad::prelude::*;
@@ -39,7 +39,7 @@ fn demo_battle() -> Battle {
                 min_range: 1,
                 emp: false,
                 footprint: Footprint::Single,
-                tags: WeaponTags::NONE,
+                tags: EquipmentTags::NONE,
             });
         u = u.with_armor(armor_class);
         // Beefier base than the default: Integrity 40, Plating / Barrier 6 — then fill.
