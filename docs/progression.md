@@ -61,15 +61,36 @@ An encounter is defined by an **objective**, not just "wipe the enemy"
 | **Survive(N)** | last N rounds (satisfied unless wiped) | defend | ✅ |
 | **Reach(hex)** | get a unit onto a hex | attack | ✅ |
 | **Hold(hex, by)** | take + keep a hex (uncontested) by a round / by clearing | both (capture) | ✅ |
+| **CaptureHold(hex, N)** | control a hex **N cumulative rounds** | capture | ✅ |
+| **Flag(hex, N)** | **sticky** capture (touch once = yours), then hold N | capture | ✅ |
+| **Extract{item, exit}** | grab the item, **carry it to the exit** (two-phase) | attack | ✅ |
+| **Search(spots, correct, then)** | sweep N spots; the right one reveals a **`FoundAction`** follow-up (Capture / Flag / Extract) *at that hex* | recon | ✅ |
 | **TimeAttack / MarginLoss** | win by round N / take-the-dive | — | ✅ (sim, unwired) |
-| **Extract** | reach a hex **and leave the board** | attack | 🔭 |
 | **Escort / Protect** | a named VIP survives | both | 🔭 |
+
+**Stateful + latching.** The richer objectives carry state the battle advances each round
+([`Objective::tick`]): capture progress, an item picked up, which spots are searched. A
+success met at *any* tick **latches** — so a holder can leave to mop up, or a courier can
+grab-and-go, without losing credit when the fight later ends. (`Search` is *compositional*:
+finding the correct spot spins up the follow-up [`Objective`] at that hex and delegates to
+it.)
+
+**Resolve to the decision, not the wipe.** An encounter now ends the moment the objective is
+**decided** (Achieved/Failed), not only on elimination — a taken point needn't grind to a
+full wipe, and a held objective that leaves a stray enemy alive no longer stalls to the
+tick cap. (`Run::fight_next`.)
 
 **The mission gate ◆.** An encounter is **passed only if the army survives *and*
 the objective stays *satisfied*** (not Failed). So **"win the fight" and "complete
 the mission" can diverge** — wipe the enemy but fail to hold the node and the run
 is *still lost*. ([`ObjectiveStatus::is_satisfied`] = not-Failed: a `Pending`
 objective is still satisfied, so a defend-Survive you end alive counts.)
+
+**Objective-seeking AI ◆.** Positional objectives resolve in auto-play because the movement
+AI flows units onto them ([`combat.md`](combat.md) §7) — the **nearest N** (where `N` is the
+objective's `seeker_pct` of the *live* squad) peel off to the point and the rest keep
+fighting, so a fleeing enemy still gets hunted. With several targets at once (a `Search`'s
+unswept spots, via [`Objective::foci`]) the seekers **fan out** across them in parallel.
 
 ---
 

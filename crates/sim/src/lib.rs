@@ -1110,22 +1110,49 @@ impl<R: RandomSource> Battle<R> {
     }
 
     /// Should player unit `i` chase the objective this activation, and toward which hex?
-    /// `Some(hex)` when `i` is a player unit **ranked among the nearest N** living player
-    /// units to an unmet positional objective (Reach / Hold / Extract / …) — so only a
-    /// handful peel off to the point and the rest keep fighting. `None` otherwise.
+    /// `Some(hex)` when `i` is among the **nearest N** living player units to an unmet
+    /// positional objective (`N` = its `seeker_pct` of the live squad, ≥1) — so only a share
+    /// peels off and the rest keep fighting. When the phase has **several foci** (a Search
+    /// with multiple unswept spots) the seekers are **assigned across them** — each focus
+    /// drawn to its nearest free seeker — so they fan out in parallel rather than queue.
     fn seeks_objective(&self, i: usize) -> Option<Hex> {
         if self.units[i].team != Team::A {
             return None;
         }
-        let (focus, pct) = self.objectives.focus(&self.units, self.tick, self.fight_over())?;
-        let mut players: Vec<usize> = (0..self.units.len())
+        let (foci, pct) = self.objectives.foci(&self.units, self.tick, self.fight_over())?;
+        let players: Vec<usize> = (0..self.units.len())
             .filter(|&j| self.units[j].is_alive() && self.units[j].team == Team::A)
             .collect();
-        // N = that percent of the *live* squad (at least one), so the seeker count scales
-        // down as units fall — the nearest N peel off, the rest fight.
+        // N = that percent of the live squad (≥1) — scales down as units fall. Seekers are
+        // the N players nearest *any* focus.
         let n = ((pct as f32 / 100.0 * players.len() as f32).round() as usize).max(1);
-        players.sort_by_key(|&j| (self.units[j].pos.distance(focus), self.units[j].id.0));
-        players.iter().take(n).any(|&j| j == i).then_some(focus)
+        let dist_to_set = |j: usize| {
+            foci.iter().map(|f| self.units[j].pos.distance(*f)).min().unwrap_or(i32::MAX)
+        };
+        let mut ranked = players;
+        ranked.sort_by_key(|&j| (dist_to_set(j), self.units[j].id.0));
+        let seekers: Vec<usize> = ranked.into_iter().take(n).collect();
+        if !seekers.contains(&i) {
+            return None;
+        }
+        // Assign: walk the foci, each claiming its nearest still-free seeker (cycling if
+        // there are more seekers than foci) — i ends up on the focus it's drawn to.
+        let mut free = seekers;
+        let mut f = 0usize;
+        while !free.is_empty() {
+            let focus = foci[f % foci.len()];
+            let pick = free
+                .iter()
+                .enumerate()
+                .min_by_key(|(_, &j)| (self.units[j].pos.distance(focus), self.units[j].id.0))
+                .map(|(p, _)| p)?;
+            let j = free.remove(pick);
+            if j == i {
+                return Some(focus);
+            }
+            f += 1;
+        }
+        None
     }
 
     /// The **engagement distance** between two units — the grid distance, except a
@@ -2061,6 +2088,18 @@ mod tests {
         held[1].character.alive = false;
         obj.tick(&held, 3);
         assert_eq!(obj.status(&held, 3, false), ObjectiveStatus::Achieved);
+    }
+
+    #[test]
+    fn search_lists_every_unswept_spot_so_seekers_fan_out() {
+        let spots = [Hex::new(2, 0), Hex::new(3, 0), Hex::new(4, 0)];
+        let mut obj = ObjectiveKind::search(&spots, 2, FoundAction::Flag(2)).build();
+        assert_eq!(obj.foci(), spots.to_vec()); // all three are targets at once
+        // Sweep the wrong spot 0 → it drops out of the foci, the rest remain.
+        let mut at0 = vec![unit(0, Team::A, 2), unit(1, Team::B, 7)];
+        at0[0].pos = spots[0];
+        obj.tick(&at0, 1);
+        assert_eq!(obj.foci(), vec![spots[1], spots[2]]);
     }
 
     #[test]

@@ -1,14 +1,15 @@
 # Combat — the fight resolution (current vs designed)
 
 *The `sim`'s **battle** resolution: what one fight actually does, tick by tick.
-The **whole phased build order (1–7) is now in** — behavior profiles, the movement
+The **whole phased build order (1–9) is now in** — behavior profiles, the movement
 model, AoE + friendly fire, woven initiative, weapons & range bands, death triggers,
-and the board seam (taxonomy §7B board · §7C initiative · §7G footprints · §7I
-weapons · §7J movement/targeting · **§10 full rules**). The auto-battler's soul ("you
-program your units; the enemy hacks your script") is built; what remains is the
-**cross-cutting layers** (Morale / Vehicles — *Heat dropped for now*) and polish on the
-◑ items. ◆ =
-decision. Status: **✅ built** · **◑ partial** · **🔭 planned**.*
+the board seam, a **terrain board** (soft-zone bounds + blockers / cover / hazards with
+BFS pathing), and a **tactical movement / objective-seeking AI** (taxonomy §7B board ·
+§7C initiative · §7G footprints · §7I weapons · §7J movement/targeting · **§10 full
+rules**). The auto-battler's soul ("you program your units; the enemy hacks your script")
+is built; what remains is the **cross-cutting layers** (Morale / Vehicles — *Heat dropped
+for now*) and polish on the ◑ items. ◆ = decision. Status: **✅ built** · **◑ partial** ·
+**🔭 planned**.*
 
 ---
 
@@ -30,7 +31,15 @@ In [`crates/sim`](../crates/sim/src/lib.rs) today:
   class), **Breach** vulnerability, the **softener** floor; layered Barrier → Plating
   → Integrity.
 - **Digital pass**: Link-ordered hacks (see [`netrunning.md`](netrunning.md)).
-- **Statuses** (the 9-axis pool) and **objectives** ([`progression.md`](progression.md)).
+- **Terrain board** ([`terrain`](../crates/sim/src/terrain.rs)) — a per-encounter map:
+  **soft-zone** bounds (friction past the edge, no hard wall), **blockers** (BFS-pathed
+  around), **cover** (+to-hit TN), **hazards** (per-tick burn). Open/unbounded by default.
+- **Tactical AI** — skirmish (standoff-range) movement, cover-seeking / hazard-dodging,
+  and **objective-seeking** (nearest-N%-of-squad flow onto the point, fanning across a
+  Search's spots) — see §3.8–9.
+- **Statuses** (the 9-axis pool) and **objectives** ([`progression.md`](progression.md)) —
+  the varied, stateful objective family (Eliminate → Survive / Reach / Hold / CaptureHold /
+  Flag / Extract / **Search**).
 
 That's enough to *resolve* a fight deterministically — but it's "attack nearest /
 walk forward," not the designed tactical combat.
@@ -98,8 +107,8 @@ Sequenced so each phase is shippable and test-first, hardest-leverage first:
    **move-then-act** (the unit closes by its movement profile, *then* attacks if in
    range, same activation), and **occupancy** (`occupied_by_other` blocks a hex;
    greedy free-hex stepping; **boxed in** ⇒ no move). Units no longer overlap;
-   positioning is real. *(Greedy single-hex pathing — full A* around obstacles is a
-   later refinement.)*
+   positioning is real. *(On a bounded board this is now real **BFS pathing** around
+   walls — see §8/§9.)*
 3. **AoE footprints + friendly fire ✅** — `Attack.footprint`: `Single` ·
    `Blast(radius)` (disc via `within`, centred on the target hex) · `Beam(length)`
    (line via `line`, along `direction_to` the target). `resolve_attack` runs the
@@ -145,6 +154,30 @@ Sequenced so each phase is shippable and test-first, hardest-leverage first:
    **engagement** (the §7B payoff); ranged/AoE still use grid distance, and deploy-half
    validation isn't enforced. Orientation per the design's "confirm diagram" is the
    `Up`/`Down` choice here.*
+8. **Terrain board ✅** — a per-encounter [`Terrain`](../crates/sim/src/terrain.rs)
+   ([`Encounter::on`]): a **zone** plus sparse tiles. The bare grid was *unbounded* — a
+   fleeing unit was uncatchable and position didn't matter — so the board gains:
+   - **Soft-zone friction** ◆ — the engagement zone is free ground; off-zone hexes stay
+     *steppable* but cost **escalating movement** (`move_cost = 1 + hexes past the edge`).
+     With the small move stats a unit can't afford to push past the fringe, so a kiter
+     **bogs down at the edge and gets run down** — bounds without a hard wall to bump.
+     (Interior blockers are hard; only the map edge is soft.)
+   - **Blockers** (`Tile::Blocked`) — impassable walls movement **routes around** (a BFS
+     flow field, `close_step`/`flow_field`; the open default keeps the greedy step).
+   - **Cover** (`Tile::Cover(tn)`) — its occupant is **harder to hit** (+TN in the to-hit
+     roll, §5) — and **hazards** (`Tile::Hazard`) — burn whoever stands there each tick
+     (`terrain_phase`, a `Damaged{cause:"hazard"}` event).
+9. **Tactical movement & objective-seeking AI ✅** — the profiles (§3.1) made smarter for
+   the board:
+   - **Skirmish** (`Kite`) — hold the weapon's **standoff range**: close when out of
+     range, back off when crowded, hold and fire at the sweet spot (no more flee-to-a-
+     stalemate). **Cover-seeking** and **hazard-dodging** ride the movement tiebreaks.
+   - **Objective-seeking** — player units **flow onto** Reach / Hold / Capture / Extract /
+     Search hexes so positional objectives resolve in auto-play (see
+     [`progression.md`](progression.md) §2). The **nearest N** (N = the objective's
+     `seeker_pct` of the *live* squad) peel off, the rest fight; with several targets at
+     once (a Search's unswept spots, `Objective::foci`) the seekers **fan out** in parallel,
+     pushing the point *through* combat (they fire after moving).
 
 **Cross-cutting layers** (their own systems, slot in later): **Morale/Resolve**
 (delta §4) and **Vehicles** (delta §5, the multi-hex one — the biggest engine change).

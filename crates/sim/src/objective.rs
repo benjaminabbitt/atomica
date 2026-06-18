@@ -51,6 +51,14 @@ pub trait Objective {
         None
     }
 
+    /// **All** hexes worth pursuing right now — usually just [`focus`](Self::focus), but a
+    /// multi-target phase (a Search with several unswept spots) lists them so the seekers
+    /// **fan out** across them in parallel instead of queuing on one. Default: the single
+    /// focus.
+    fn foci(&self) -> Vec<Hex> {
+        self.focus().into_iter().collect()
+    }
+
     /// What **share of the active squad** should pursue the [`focus`](Self::focus), as a
     /// percent — the nearest that many (at least 1) flow to it, the rest hold the line (so a
     /// fleeing enemy still gets hunted). A fraction of the *live* squad, so it scales down as
@@ -362,6 +370,15 @@ impl Objective for Search {
             }
         }
     }
+    fn foci(&self) -> Vec<Hex> {
+        match &self.inner {
+            Some(inner) => inner.foci(), // phase 2: the follow-up's targets
+            None => {
+                // phase 1: every spot still unswept — seekers fan out across them
+                self.spots.iter().zip(self.searched.iter()).filter(|(_, &s)| !s).map(|(h, _)| *h).collect()
+            }
+        }
+    }
     fn seeker_pct(&self) -> u32 {
         50
     }
@@ -462,15 +479,17 @@ impl Objectives {
         self.goals.iter().map(|g| g.objective.status(units, tick, fight_over)).collect()
     }
 
-    /// The board hex the player should flow toward and **what share of the squad** should —
-    /// the first **unmet** positional goal's focus + its seeker percent, or `None`. Drives
-    /// nearest-N objective-seeking movement in the sim (N = that percent of the live squad).
-    pub fn focus(&self, units: &[Unit], tick: u32, fight_over: bool) -> Option<(Hex, u32)> {
+    /// The hexes the player should flow toward and **what share of the squad** should — the
+    /// first **unmet** positional goal's foci + its seeker percent, or `None`. Drives the
+    /// nearest-N objective-seeking movement in the sim (N = that percent of the live squad,
+    /// fanned across the foci).
+    pub fn foci(&self, units: &[Unit], tick: u32, fight_over: bool) -> Option<(Vec<Hex>, u32)> {
         self.goals.iter().find_map(|g| {
             if g.objective.status(units, tick, fight_over) == ObjectiveStatus::Achieved {
                 return None;
             }
-            g.objective.focus().map(|h| (h, g.objective.seeker_pct()))
+            let foci = g.objective.foci();
+            (!foci.is_empty()).then(|| (foci, g.objective.seeker_pct()))
         })
     }
 
