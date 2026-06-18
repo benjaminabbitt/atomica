@@ -12,8 +12,8 @@
 //! - live pools → straight off the `Character` (`character.integrity`).
 //!
 //! Mutation (install / expire / breach / a DoT) acts on **the gen**; the next
-//! `realize()` reflects it (composed fresh each call — the dirty-flag cache of §4 is
-//! a pure optimization, omitted while the fold is cheap). HP loss is **not** a
+//! `realize()` reflects it (composed **fresh each call** — there is intentionally no
+//! cache, so there's no invalidation surface to get wrong). HP loss is **not** a
 //! modifier: it's a clamped, threshold-latched pool, and damage is a
 //! [`DamageEvent`] against it (§3c), carrying attribution as telemetry — never a
 //! second source of truth.
@@ -506,7 +506,8 @@ impl BaseLine {
 
 /// The composed view (§4): the flat, referenceable modifier set produced by running
 /// the decorators over the base, plus the accessors that fold it. Produced **fresh on
-/// each** [`Character::realize`] (no cache — the §4 dirty-flag cache is a deferred opt).
+/// each** [`Character::realize`] — there is intentionally no cache (the fold is cheap;
+/// a dirty-flag cache was deliberately left out to avoid the invalidation surface).
 #[derive(Clone, Debug)]
 pub struct Realized {
     base: BaseLine,
@@ -873,8 +874,8 @@ impl Character {
 
     /// The composed view — runs the decorators over the base into the referenceable
     /// modifier set. Reads go through it: `character.realize().link()`. Composed
-    /// fresh each call; a dirty-flag cache (§4) is a pure optimization to add only if
-    /// the fold ever shows up hot.
+    /// **fresh each call by design** — no cache (the fold is cheap, and a dirty-flag
+    /// cache was intentionally eliminated to keep zero invalidation surface).
     pub fn realize(&self) -> Realized {
         self.realize_with_base(self.base)
     }

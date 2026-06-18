@@ -38,8 +38,8 @@ And the three roles stay clean:
   modify them). **Applying a DoT / status / breach mutates the gen** — adds or changes
   a decorator in the set, which dirties `realize`.
 - **The `Character` wraps the gen + pools** — the persistent thing that saves, ticks,
-  and takes events; `realize()` is its on-demand composed view (cached behind a dirty
-  flag, §4), looked-up by id / `source` / `tag`.
+  and takes events; `realize()` is its on-demand composed view (composed **fresh each
+  call** — no cache, §4), looked-up by id / `source` / `tag`.
 - **The realized view's accessors do the math** — `link()` / `attack()` / … **sum the
   factors and run the operations** (sum / multiply / pick-override). There is **no
   separate orchestrator**; the calculation lives in the accessors.
@@ -117,9 +117,9 @@ pool. Events and the mutating API (`add`/`remove`/`remove_where` by
 `id`/`source`/`tag`) act on the **gen** — applying a DoT, status, or breach mutates a
 decorator — and the next `realize()` reflects them. **All composed math lives in the
 accessors:** `link()` / `attack()` / … **sum the relevant `Factor`s and run the
-operations** (§2) over the base — generators never compute. *(In the hot loop, cache
-the realized view behind a dirty flag — re-`realize` only on a loadout / condition /
-event change. The cache is a pure optimization; it doesn't move the math.)*
+operations** (§2) over the base — generators never compute. *(`realize()` composes
+**fresh each call**: a dirty-flag cache was **intentionally eliminated** — the fold is
+cheap and a cache only buys invalidation bugs. Revisit only if it ever profiles hot.)*
 
 > **Removal is the counterplay substrate ◆.** Because every modifier is
 > referenceable + removable, the design's whole **answer-half *is* removal**:
@@ -279,11 +279,11 @@ question: there's **no query chain** at all.
   `base` produces a flat, **keyed** modifier set (`id → Modifier`, indexed by `source`
   / `tag` for removal); its **accessors** then sum the relevant factors per stat (§2).
   No per-method delegation, no `Box<dyn>` chain to walk.
-- **Caching is a pure optimization — omitted for now** — `realize()` composes the
-  view **fresh each call**; for the current small gen the fold is cheap, so there's no
-  dirty flag. If it ever shows up hot, hold the realized view behind a dirty flag and
-  re-`realize` only on a change to the gen (loadout / condition / event) — a pure
-  optimization that never moves the math out of the accessors.
+- **No cache — intentionally eliminated** — `realize()` composes the view **fresh each
+  call**. The fold is cheap for the gen sizes in play, and a dirty-flag cache only adds
+  invalidation surface (every gen mutation, condition change, and event would have to
+  remember to dirty it) for no measured win — so it was deliberately left out. The
+  accessors stay the single home for the math; revisit a cache only if it profiles hot.
 
 The **public shape**: `character.realize().link()` reads a composed value,
 `character.integrity` a pool; nothing outside cares that the former came from a freshly
@@ -372,7 +372,8 @@ remaining deferrals (Cascade crit-gating, the breach per-effect §6 ladder).
   separate, multiplies); "invest across buckets beats stacking one." [Mobalytics — Damage Buckets](https://mobalytics.gg/diablo-4/guides/damage-buckets-deep-dive)
 - **Implementation pattern** — `Statistic { base, current, modifiers[], altered }`;
   modifiers are `{ value, op: Add|Multiply }`; the accessor recomputes only when
-  `altered` (the optional dirty-flag cache behind the `Character`'s accessors). [RefresherTowel — Modifiable Stats](https://refreshertowelgames.wordpress.com/2024/02/17/how-to-comfortably-deal-with-modifiable-stats/)
+  `altered` (its dirty-flag cache). *We take the bucket model but **not** the cache —
+  `realize()` recomputes fresh (§4).* [RefresherTowel — Modifiable Stats](https://refreshertowelgames.wordpress.com/2024/02/17/how-to-comfortably-deal-with-modifiable-stats/)
 - **Design wisdom** — additive = legible, self-limiting (diminishing returns),
   easy to balance; multiplicative = powerful, compounding, must be rare. The
   bucket separation is the balance lever. [Paradox forums discussion](https://forum.paradoxplaza.com/forum/threads/additive-bonuses-vs-multiplicative-bonuses.1144836/)
