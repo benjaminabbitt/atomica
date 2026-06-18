@@ -505,8 +505,8 @@ impl BaseLine {
 }
 
 /// The composed view (§4): the flat, referenceable modifier set produced by running
-/// the decorators over the base, plus the accessors that fold it. Produced on demand
-/// by [`Character::realize`] and cached behind the `Character`'s dirty flag.
+/// the decorators over the base, plus the accessors that fold it. Produced **fresh on
+/// each** [`Character::realize`] (no cache — the §4 dirty-flag cache is a deferred opt).
 #[derive(Clone, Debug)]
 pub struct Realized {
     base: BaseLine,
@@ -676,7 +676,7 @@ impl Character {
         &mut self.base
     }
 
-    // -- the gen: install / remove (each mutation dirties the realized cache) --
+    // -- the gen: install / remove (each mutation changes what the next realize folds) --
 
     /// Install a decorator, stamping it with a fresh [`GenId`]. Returns the id so the
     /// caller (or another component) can later reference / remove it.

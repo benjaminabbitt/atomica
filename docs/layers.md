@@ -7,9 +7,9 @@ formula); its **accessors compose** the effective stats. Every modifier **links 
 to the decorator id that spawned it**, and any component can **reference and remove
 another's** — the counterplay substrate. Generalises the hand-rolled cyberware fold
 ([`cyberware.md`](cyberware.md) Phases A–F) to also carry weapons, armor, buffs, and
-behavior-corruption. ◆ = decision (overridable, per repo convention). Status: 🔭
-**planned** — the architecture to refactor toward; the current code keeps the fold
-until it lands.*
+behavior-corruption. ◆ = decision (overridable, per repo convention). Status: ✅
+**built — L1–L5** (see §7/§9); the `Character` gen is the single source of truth, the
+flat stat line and the hand-rolled fold are gone. **L6** (content decorators) is next.*
 
 ---
 
@@ -298,11 +298,11 @@ kind of generator**, with its meaning intact:
 
 | Cyberware concept | In the generator/factor model |
 |---|---|
-| `Contribution` fold / `refold` | a generator **adding** `Add`/`Increased` factors; effective = the `Character`'s accessors summing them |
-| Condition (Online/Degraded/Offline) | the decorator's **`scale`** (Online `1.0`, Degraded `0.5`, Offline `0.0`) multiplies its factors; at `0.0` it's gated off entirely — *built* (`set_scale`, in-place, keeps identity) |
-| benefit ↔ liability, hack-effects | the generator carries them; breach **degrades** it (`set_scale`) — identity kept, so repair restores |
+| `Contribution` fold | an implant **decorator adding** `Add`/`Increased` factors; effective = the `Character`'s accessors summing them — *built* (`Implant::to_decorator`; the old `refold` is gone) |
+| Condition (Online/Degraded/Offline/Destroyed) | the decorator's **`condition`** (Online `1.0`, Degraded `0.5`, Offline/Destroyed `0.0`) multiplies its factors; at `0.0` it's gated off entirely — *built* (`set_condition`, in-place, keeps identity; Destroyed terminal) |
+| benefit ↔ liability, hack-effects | the generator carries them; breach **degrades** it (`set_condition`) — identity kept, so repair restores; install/breach `resize_pools` by the Δ in composed maxima |
 | deck **grants** the hack | a `Capability::Hack` on the decorator; highest-priority active grant wins, drops when Offline — *built* |
-| EMP / PAN / Cascade | operate on the generator set (disable all / cascade), unchanged semantics |
+| EMP / PAN / Cascade | operate on the generator set (`condition_where(Implant, Offline)` / cascade), unchanged semantics |
 
 Then it **extends**: **weapons** and **armor** become further generator kinds
 (multi-weapon, layered armor), and **behavior-corruption** (spoof / Lockware) is a
@@ -326,17 +326,18 @@ not a blocker.
 
 | Step | Does | Touches |
 |---|---|---|
-| **L1 ✅** | the architecture: **`Modifier`** (`source`→decorator-id / `tag`; `Factor { Add/Increased/More }` · `Override`) + the **`Decorator`** (priority · **`scale`** (condition) · `expiration` · factors · overrides · **`grants` `Capability`** · `removes` ward) + the **`Character`** wrapping the **priority-ordered gen** + **pools**: `install`/`remove`/`remove_where`/`set_scale` on the gen, **`realize()`** → modifier set whose **accessors** fold the bucket model; pools (`apply_damage`/`heal`) read/written direct (`crates/sim/src/chargen.rs`) | parallel to `Unit` |
-| **L2 ✅** (structural) | **`Implant::to_decorator`**: `Contribution` → `Add` factors, `Condition` → `scale` (`benefit_factor`), deck → `grants: Capability::Hack`; breach/degrade/repair drive `set_scale`; `fill()` is the deploy step (max-rise never refills, §3a). The **breach-liability firing / EMP / Cascade / mesh-synergy** need the status pool → **deferred to L2b** | `implant.rs` `to_decorator` + 5 tests; `Unit` fold still drives the loop |
-| **L2b ✅** | the **active face** (`Event` · `Hook`/`HookEffect` · `Reaction` · `Character::dispatch`) + **`StatusSpec::to_decorator`** (DoT/shred → `TickStart` hooks; Stun/Vuln → `Flag`; Lag → `More`; `decay`→`Wear`; `magnitude`→`Amount`) + generalized `decay()`. Completes L2's behavioral half on the gen: **EMP** = `scale_where(Implant, 0)`, breach **fires liabilities as decorators**. *Deferred:* stochastic resist-roll, stacking-merge, Cascade crit-gating | `chargen.rs` events + `status.rs` `to_decorator` + 9 tests |
+| **L1 ✅** | the architecture: **`Modifier`** (`source`→decorator-id / `tag`; `Factor { Add/Increased/More }` · `Override`) + the **`Decorator`** (priority · **`condition`** (the Online→Degraded→Offline→Destroyed ladder) · `expiration` · factors · overrides · **`grants` `Capability`** · `removes` ward · `label` · `gate`) + the **`Character`** wrapping the **priority-ordered gen** + **pools**: `install`/`remove`/`remove_where`/`set_condition` on the gen, **`realize()`** → modifier set whose **accessors** fold the bucket model; pools (`apply_pool_damage`/`heal`) read/written direct (`crates/sim/src/chargen.rs`) | parallel to `Unit` |
+| **L2 ✅** (structural) | **`Implant::to_decorator`**: `Contribution` → `Add` factors, `Condition` carried on the decorator, deck → `grants: Capability::Hack`; breach/degrade/repair drive `set_condition`; `fill()` is the deploy step (max-rise never refills, §3a). The **breach-liability firing / EMP / Cascade / mesh-synergy** need the status pool → **deferred to L2b** | `implant.rs` `to_decorator` + 5 tests; `Unit` fold still drives the loop |
+| **L2b ✅** | the **active face** (`Event` · `Hook`/`HookEffect` · `Reaction` · `Character::dispatch`) + **`StatusSpec::to_decorator`** (DoT/shred → `TickStart` hooks; Stun/Vuln → `Flag`; Lag → `More`; `decay`→`Wear`; `magnitude`→`Amount`) + generalized `decay()`. Completes L2's behavioral half on the gen: **EMP** = `condition_where(Implant, Offline)`, breach **fires liabilities as decorators**. *Deferred to L5:* stochastic resist-roll, stacking-merge, Cascade crit-gating | `chargen.rs` events + `status.rs` `to_decorator` + 9 tests |
 | **L3 ✅** | **behavior composes from the gen** — `Realized::targeting()/movement()` (last/ highest-priority `Override`); `Unit` embeds a behavior `Character`, the action phase reads it (`select_target` / `movement_step`), `with_targeting`/`with_movement` program it, `spoof` corrupts it. Finishes combat **Phase 1** | `lib.rs` action phase + 5 tests |
-| **L4 ✅** (stat read-through) | the loop reads stats **through the gen**: `Character::realize_with_base(flat base)` + `Unit` composed accessors `link()`/`firewall()`/`immunity()`/`initiative()`/`max_integrity()`; the loop (hack TN/gates, woven order, resist TN, init) calls them. `apply_modifier` installs a stat `Factor` that composes live — a firewall debuff lands a hack, a buff reorders initiative. **Transitional:** flat fields are still the *base*; the **implant fold + status pool haven't moved onto the gen** (the base is folded, the gen is the modifier layer) — that retirement is the next step | `lib.rs` accessors + loop reads + 2 tests |
-| **L5+** | retire the flat base: port the **implant fold** (`refold`→ implant decorators on the gen) and the **status pool** (`Unit.statuses`→ status decorators) into each unit's `Character`, so the flat stat fields drop and the gen is the single source; then **weapon / armor / corruption** decorators (L4-old) as content | the implant + status loop paths |
+| **L4 ✅** (stat read-through) | the loop reads stats **through the gen**: `Unit` composed accessors `link()`/`firewall()`/`immunity()`/`initiative()`/`max_integrity()`; the loop (hack TN/gates, woven order, resist TN, init) calls them. `apply_modifier` installs a stat `Factor` that composes live — a firewall debuff lands a hack, a buff reorders initiative. *(Transitional flat-fields-as-base seam **closed by L5**.)* | `lib.rs` accessors + loop reads + 2 tests |
+| **L5 ✅** (flat-base retirement — the big bang) | the flat stat line is **gone**. The authored base lives in `Character.base` (`BaseLine`); the **live pools** (Integrity / Barrier / Plating / `alive`) live on the `Character`. **Implants** are decorators (`Unit.implants: Vec<InstalledImplant>{spec, gen}`; condition on the decorator; `refold` deleted; install/breach `resize_pools` by the Δ in composed maxima). **Statuses** are decorators (`add_status` installs/merges by `label`; `status_phase` → `Character::dispatch`; passive Stun/Slow/Vuln compose; `decay_phase` → `decay()`; the `Status` struct, `Magnitude::amount`, `resist_tn`, the free `apply_damage`, and `Defense` all deleted). Picks up the L2b deferrals: **stochastic resist-roll** (`Decorator::gate`, RNG into `dispatch`) and **stacking-merge** (`Character::apply_status`). The gen is now the **single source** | `chargen` + `lib.rs` + `status.rs` + game/run; ~190 sites, 142+14 tests |
+| **L6** (content decorators) | the back half: model **weapon / armor / corruption** as decorators on the gen (the armor matrix and `Attack` are still standalone) so a smartgun / debuff-on-hit composes like everything else; plus the remaining deferrals — **Cascade crit-gating** and the breach **per-effect §6 severity ladder** | `lib.rs` combat + `implant.rs` |
 
-**Test impact:** the implant tests (install / disable / degrade / EMP / cascade)
-re-express on the factor API — the breach/condition **semantics are unchanged**, so
-the assertions port. Contest / objective / run tests are untouched: they read
-*effective* stats, which still exist (just composed from factors now).
+**Test impact (as built):** the implant tests (install / disable / degrade / EMP /
+cascade) re-expressed on the factor API — the breach/condition **semantics are
+unchanged**, so the assertions ported. Contest / objective / run tests were untouched:
+they read *effective* stats, which still exist (just composed from factors now).
 
 ---
 
@@ -353,8 +354,12 @@ and
 
 ## 9. Status
 
-🔭 **planned.** The codebase keeps the cyberware **fold** model until L1/L2 land;
-this doc is the **target**. Open to flip §4 to a literal `Box` chain if preferred.
+✅ **built — L1 through L5.** The `Character` (gen + `BaseLine` + pools) is the single
+source of truth: every stat composes through `realize()`, the live pools sit on the
+`Character`, and implants / statuses / behavior are all decorators. The flat stat line
+and the parallel fold / status-pool engines are **gone** (no `refold`, no `Unit.statuses`,
+no `Defense`). **Next: L6** — weapon / armor / corruption as content decorators, plus the
+remaining deferrals (Cascade crit-gating, the breach per-effect §6 ladder).
 
 ---
 
