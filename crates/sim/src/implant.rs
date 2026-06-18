@@ -63,6 +63,14 @@ pub struct Implant {
     pub condition: Condition,
     /// Inbuilt implants are non-removable identity (§7F).
     pub removable: bool,
+    /// **Silhouette coverage** — this implant's share of the hit-location roll (`combat.md`):
+    /// added to the chassis's coverage, so a heavily-chromed body presents more chrome to
+    /// hit. Bulky pieces (plating) cover more than a tucked-away deck.
+    pub coverage: i32,
+    /// **Durability** — the implant's hit points. A physical blow that lands on it (the
+    /// location roll) subtracts from this; at <50% it runs **Degraded** (half benefit), at
+    /// 0 it's **Destroyed** (terminal). The Ripperdoc refills it on repair.
+    pub max_hp: f32,
     /// **Equipment tags** (`docs/cyberware.md` §6) — the shared `const` flag set. Today:
     /// [`EquipmentTags::DIGITAL`] (networked chrome a breach can trip); its absence marks
     /// **inert physical** cyberware, immune to every breach vector. See [`Implant::is_digital`].
@@ -88,6 +96,8 @@ impl Implant {
             hack_effects: vec![StatusSpec::lockware()], // Lockout (placeholder)
             condition: Condition::Online,
             removable: true,
+            coverage: 2, // small, tucked-away electronics
+            max_hp: 18.0, // fragile
             tags: EquipmentTags::DIGITAL,
         }
     }
@@ -104,6 +114,8 @@ impl Implant {
             hack_effects: vec![],
             condition: Condition::Online,
             removable: true,
+            coverage: 6, // bulky — covers a lot of the silhouette
+            max_hp: 40.0, // and it's armor: tough
             tags: EquipmentTags::NONE,
         }
     }
@@ -117,6 +129,8 @@ impl Implant {
             hack_effects: vec![StatusSpec::crash()], // Seizure
             condition: Condition::Online,
             removable: true,
+            coverage: 3, // spinal / limb wiring
+            max_hp: 24.0,
             tags: EquipmentTags::DIGITAL,
         }
     }
@@ -131,6 +145,8 @@ impl Implant {
             hack_effects: vec![StatusSpec::breach()], // Breach (vuln)
             condition: Condition::Online,
             removable: true,
+            coverage: 2,
+            max_hp: 20.0,
             tags: EquipmentTags::DIGITAL,
         }
     }
@@ -146,6 +162,8 @@ impl Implant {
             hack_effects: vec![StatusSpec::bleed(), StatusSpec::crash()], // Overdose
             condition: Condition::Online,
             removable: true,
+            coverage: 2,
+            max_hp: 16.0, // volatile
             tags: EquipmentTags::DIGITAL,
         }
     }
@@ -160,6 +178,8 @@ impl Implant {
             hack_effects: vec![StatusSpec::bleed()], // Overload (Internal DoT)
             condition: Condition::Online,
             removable: true,
+            coverage: 3, // visceral
+            max_hp: 28.0,
             tags: EquipmentTags::DIGITAL,
         }
     }

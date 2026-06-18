@@ -86,6 +86,7 @@ fn probe(seeds: u64, scenario_name: &str, start: u64) {
     let (mut clears, mut losses, mut survivors) = (0u64, 0u64, 0u64);
     let (mut hits, mut misses, mut hacks, mut breaches, mut spreads) = (0u64, 0u64, 0u64, 0u64, 0u64);
     let (mut tick_sum, mut encounters) = (0u64, 0u64);
+    let (mut mangled, mut wrecked) = (0u64, 0u64); // cyberware chewed by physical hits / destroyed
     // What's actually killing the squad: every roster death bucketed by cause
     // ("weapon" for a lethal attack, the DoT's name — Virus / Bleed — for a status tick).
     let mut deaths_by_cause: BTreeMap<&'static str, u64> = BTreeMap::new();
@@ -106,6 +107,10 @@ fn probe(seeds: u64, scenario_name: &str, start: u64) {
                     }
                     CombatEvent::Damaged { unit, cause, killed: true, .. } if unit.0 < roster_size => {
                         *deaths_by_cause.entry(cause).or_default() += 1;
+                    }
+                    CombatEvent::Mangled { destroyed, .. } => {
+                        mangled += 1;
+                        wrecked += *destroyed as u64;
                     }
                     _ => {}
                 }
@@ -135,6 +140,7 @@ fn probe(seeds: u64, scenario_name: &str, start: u64) {
     println!("  avg ticks/enc   : {:>5.1}", avg(tick_sum, encounters));
     println!("  to-hit miss     : {:>5.0}%   ({misses} miss / {attacks} attacks)", pct(misses, attacks));
     println!("  netrunning      : {hacks} hacks, {breaches} breaches");
+    println!("  cyberware dmg   : {mangled} chrome hits, {wrecked} destroyed");
     println!("  contagion       : {spreads} spreads");
     let killed: u64 = deaths_by_cause.values().sum();
     if killed == 0 {

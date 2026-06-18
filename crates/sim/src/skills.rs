@@ -67,6 +67,20 @@ impl Chassis {
         matches!(self, Chassis::Flesh | Chassis::Augmented)
     }
 
+    /// The chassis's **silhouette coverage** — the share of the hit-location roll the
+    /// *body itself* (flesh / frame) occupies, before cyberware adds its own (`combat.md`
+    /// hit location). A blow that reaches Integrity rolls over `chassis + Σ implant`
+    /// coverage; landing here is an ordinary wound, landing on chrome chips that chrome.
+    /// Bigger frames present more silhouette.
+    pub fn coverage(self) -> i32 {
+        match self {
+            Chassis::Flesh => 24,
+            Chassis::Augmented => 22, // some of the meat is already chrome
+            Chassis::Machine => 20,
+            Chassis::Vehicle => 40, // a big target
+        }
+    }
+
     /// The **low** innate skill floor the chassis ships with (§10): a fresh
     /// recruit is competent-but-unremarkable; the gap to a veteran is earned.
     pub fn baseline_skills(self) -> Skills {

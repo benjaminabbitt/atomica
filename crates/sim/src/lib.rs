@@ -306,6 +306,9 @@ fn weapon_grant(attack: Attack) -> Decorator {
 pub struct InstalledImplant {
     pub spec: Implant,
     pub gen: GenId,
+    /// Live **durability** — starts at `spec.max_hp`; physical hits (the hit-location roll)
+    /// chip it, driving the [`Condition`] (Degraded < 50%, Destroyed at 0). Repair refills it.
+    pub hp: f32,
 }
 
 /// A combatant. The stat line mirrors the design's "Unit anatomy".
@@ -618,7 +621,8 @@ impl Unit {
         let before = self.character.maxima();
         let gen = self.character.install(implant.to_decorator());
         self.character.resize_pools(before);
-        self.implants.push(InstalledImplant { spec: implant, gen });
+        let hp = implant.max_hp;
+        self.implants.push(InstalledImplant { spec: implant, gen, hp });
     }
 
     /// The netrunning loadout this unit can run — granted by an active deck implant
@@ -684,8 +688,13 @@ impl Unit {
     }
 
     /// Bring the implant at `idx` back **Online** — the Ripperdoc un-bricking /
-    /// repairing it (§3.2). Destroyed gear is terminal (a no-op).
+    /// repairing it (§3.2): condition restored **and durability refilled**. Destroyed gear
+    /// is terminal (a no-op).
     pub fn repair_implant(&mut self, idx: usize) {
+        if self.implant_condition(idx) == Condition::Destroyed {
+            return; // terminal — nothing to mend
+        }
+        self.implants[idx].hp = self.implants[idx].spec.max_hp;
         self.transition(idx, Condition::Online);
     }
 
@@ -1396,17 +1405,70 @@ impl<R: RandomSource> Battle<R> {
             let dmg = base * mult;
             let (before, was_alive) = (self.units[t].integrity(), self.units[t].is_alive());
             self.units[t].character.apply_pool_damage(self.tick, src, dmg, atk.pen, true);
+            let wound = before - self.units[t].integrity();
             self.emit(CombatEvent::Attacked {
                 attacker: atk_id,
                 target: self.units[t].id,
                 dtype: atk.dtype,
-                amount: before - self.units[t].integrity(),
+                amount: wound,
                 killed: was_alive && !self.units[t].is_alive(),
             });
+            // A **telling blow** (it reached Integrity) rolls hit location: it may have
+            // landed on a piece of cyberware and chewed it up (§ hit location).
+            if wound > 0.0 && self.units[t].is_alive() {
+                self.apply_hit_location(t, wound);
+            }
             if atk.emp && self.units[t].is_alive() {
                 self.apply_emp(t);
             }
         }
+    }
+
+    /// Resolve a telling blow's **hit location** on `t` (which already lost `wound`
+    /// Integrity): roll over the chassis + *active*-implant coverage (additive — more chrome
+    /// = bigger target). A flesh slice does nothing more (the wound already landed); a chrome
+    /// slice chews that implant's HP. **No RNG is drawn when the target carries no chrome**,
+    /// so flesh-and-bone fights stay bit-for-bit as before.
+    fn apply_hit_location(&mut self, t: usize, wound: f32) {
+        let live: Vec<usize> = (0..self.units[t].implants.len())
+            .filter(|&k| self.units[t].implant_condition(k) != Condition::Destroyed)
+            .collect();
+        if live.is_empty() {
+            return;
+        }
+        let chassis = self.units[t].chassis.coverage();
+        let total =
+            chassis + live.iter().map(|&k| self.units[t].implants[k].spec.coverage).sum::<i32>();
+        let roll = (self.rng.next_u64() % total.max(1) as u64) as i32; // 0..total
+        if roll < chassis {
+            return; // struck flesh
+        }
+        let mut acc = chassis;
+        for k in live {
+            acc += self.units[t].implants[k].spec.coverage;
+            if roll < acc {
+                self.damage_implant(t, k, wound);
+                return;
+            }
+        }
+    }
+
+    /// Chew `wound` HP off implant `k` of unit `t`, stepping its [`Condition`] as durability
+    /// falls — **Degraded** under half (its benefit halves), **Destroyed** at zero (terminal,
+    /// benefit gone, no salvage). Physical wreckage fires **no liability** (§3.1 — wear is
+    /// not a breach); it surfaces a `Mangled` event.
+    fn damage_implant(&mut self, t: usize, k: usize, wound: f32) {
+        let name = self.units[t].implants[k].spec.name;
+        let max = self.units[t].implants[k].spec.max_hp;
+        self.units[t].implants[k].hp = (self.units[t].implants[k].hp - wound).max(0.0);
+        let hp = self.units[t].implants[k].hp;
+        let destroyed = hp <= 0.0;
+        if destroyed {
+            let _ = self.units[t].transition(k, Condition::Destroyed);
+        } else if hp < 0.5 * max && self.units[t].implant_condition(k) == Condition::Online {
+            let _ = self.units[t].transition(k, Condition::Degraded);
+        }
+        self.emit(CombatEvent::Mangled { unit: self.units[t].id, implant: name, destroyed });
     }
 
     /// The living units an attack strikes (§7G). `Single` is just the target;
@@ -2547,8 +2609,9 @@ mod tests {
         assert!(tgt.hack().is_some());
         let mut atk = unit(0, Team::A, 0);
         atk.rearm(|w| w.emp = true);
-        // Empty RNG: an EMP rolls nothing (a physical pulse, not a contest).
-        let mut b = Battle::with_rng(vec![atk, tgt], ScriptedRng::default());
+        // The EMP itself rolls nothing; the kinetic hit's hit-location draw of 0 lands on
+        // flesh (no chrome chipped), so the conditions below are purely the EMP's doing.
+        let mut b = Battle::with_rng(vec![atk, tgt], ScriptedRng::new([0]));
         b.resolve_attack(0, 1);
         assert_eq!(b.units[1].implant_condition(0), Condition::Online); // plating survives
         assert_eq!(b.units[1].implant_condition(1), Condition::Offline); // deck bricked
@@ -2579,7 +2642,8 @@ mod tests {
         tgt.install(Implant::reflex_booster()); // Seizure (stun) liability
         let mut atk = unit(0, Team::A, 0);
         atk.rearm(|w| w.emp = true);
-        let mut b = Battle::with_rng(vec![atk, tgt], ScriptedRng::default());
+        // Hit-location draw of 0 lands on flesh; the Offline below is the EMP, not the hit.
+        let mut b = Battle::with_rng(vec![atk, tgt], ScriptedRng::new([0]));
         b.resolve_attack(0, 1);
         assert_eq!(b.units[1].implant_condition(0), Condition::Offline); // disabled
         assert!(!b.units[1].is_stunned());
@@ -2595,6 +2659,36 @@ mod tests {
         assert!(b.units[1].implants.is_empty());
         // no chrome to fry → EMP adds no statuses (only the kinetic hit landed)
         assert!(b.units[1].statuses().is_empty());
+    }
+
+    #[test]
+    fn a_physical_hit_can_chew_through_cyberware() {
+        // Hit location: a telling blow can land on chrome and wear it down by its HP, all
+        // the way to Destroyed (which drops the deck's hack — physical destruction, no hack).
+        let mut tgt = unit(1, Team::B, 0); // Augmented chassis, coverage 22
+        tgt.install(Implant::cyberdeck()); // coverage 2, HP 18 → total coverage 24
+        assert!(tgt.hack().is_some());
+        let atk = unit(0, Team::A, 0); // default melee 10, Internal → ~10 wound a hit
+        // Evasion 0 auto-hits (no to-hit draw); each attack spends one location roll. A roll
+        // of 22 lands in the deck's slice [22,24).
+        let mut b = Battle::with_rng(vec![atk, tgt], ScriptedRng::new([22, 22]));
+        b.resolve_attack(0, 1);
+        assert_eq!(b.units[1].implant_condition(0), Condition::Degraded); // 18 → 8 HP (<50%)
+        b.resolve_attack(0, 1);
+        assert_eq!(b.units[1].implant_condition(0), Condition::Destroyed); // 8 → 0 HP
+        assert!(b.units[1].hack().is_none()); // the deck is wrecked
+    }
+
+    #[test]
+    fn a_flesh_target_draws_no_location_roll() {
+        // A unit with no chrome never rolls location — so a scripted RNG isn't even touched
+        // (the kinetic hit just lands), keeping flesh-and-bone fights bit-for-bit as before.
+        let atk = unit(0, Team::A, 0);
+        let tgt = unit(1, Team::B, 0); // no implants
+        let mut b = Battle::with_rng(vec![atk, tgt], ScriptedRng::default()); // empty: must not draw
+        b.resolve_attack(0, 1);
+        assert!(b.units[1].integrity() < 30.0); // it was hit...
+        assert!(b.units[1].implants.is_empty()); // ...with nothing to mangle
     }
 
     #[test]

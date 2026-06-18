@@ -53,6 +53,9 @@ pub enum CombatEvent {
     Breached { target: UnitId, vector: BreachVector },
     /// A contagion jumped to a fresh victim (`family` = its corruption tag).
     Spread { from: UnitId, to: UnitId, family: &'static str },
+    /// A physical blow chewed through a unit's **cyberware** (the hit-location roll) —
+    /// `implant` is the piece struck, `destroyed` whether that wrecked it for good.
+    Mangled { unit: UnitId, implant: &'static str, destroyed: bool },
     /// A unit died.
     Died { unit: UnitId },
     /// The battle reached a terminal [`Outcome`].
@@ -70,6 +73,7 @@ impl CombatEvent {
             CombatEvent::Hacked { .. } => "hacked",
             CombatEvent::Breached { .. } => "breached",
             CombatEvent::Spread { .. } => "spread",
+            CombatEvent::Mangled { .. } => "mangled",
             CombatEvent::Died { .. } => "died",
             CombatEvent::Ended { .. } => "ended",
         }
@@ -150,6 +154,11 @@ impl CombatEvent {
                 ("amount", Float(*amount as f64)),
                 ("killed", Bool(*killed)),
             ],
+            CombatEvent::Mangled { unit, implant, destroyed } => vec![
+                ("unit", id(unit)),
+                ("implant", Text(implant.to_string())),
+                ("destroyed", Bool(*destroyed)),
+            ],
             CombatEvent::Died { unit } => vec![("unit", id(unit))],
             CombatEvent::Ended { outcome } => vec![("outcome", Text(format!("{outcome:?}")))],
         }
@@ -192,6 +201,13 @@ impl fmt::Display for CombatEvent {
                 write!(f, "#{} took {amount:.1} from {cause}", unit.0)?;
                 if *killed {
                     write!(f, " (killed)")?;
+                }
+                Ok(())
+            }
+            CombatEvent::Mangled { unit, implant, destroyed } => {
+                write!(f, "#{}'s {implant} mangled", unit.0)?;
+                if *destroyed {
+                    write!(f, " (destroyed)")?;
                 }
                 Ok(())
             }
