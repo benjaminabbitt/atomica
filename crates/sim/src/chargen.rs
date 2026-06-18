@@ -326,6 +326,31 @@ impl Condition {
 /// A **character generator** (`chargen`) — a stateful decorator. Its **passive face**
 /// is the modifiers it contributes (`factors` · `overrides` · `flags`); its **active
 /// face** is its lifecycle (`expiration` / `decay` / `stacks`), the modifiers it
+/// How a [`Contagion`] reaches a victim each contagion phase.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Vector {
+    /// **Biological** spread — to any unit within `n` hexes (a plague needs contact).
+    Proximity(i32),
+    /// **Digital** spread — rides the net to any unit with a live surface (`Link > 0`),
+    /// distance-independent (a worm doesn't care where you stand).
+    Net,
+}
+
+/// A **contagion** riding a decorator (`docs/corruption.md`): each contagion phase it
+/// attempts to **jump** to fresh victims along its [`Vector`], a *contested* roll of its
+/// `virulence` vs the victim's `resist` stat (Immunity for a plague, Firewall for a
+/// worm). On a win the whole decorator **copies itself** onto the victim — so a
+/// contagion is self-replicating. Cleansed by the same tag-ward as any corruption.
+#[derive(Clone, Copy, Debug)]
+pub struct Contagion {
+    /// The jump roll's attack rating (`3d6 + virulence` vs the resist TN).
+    pub virulence: i32,
+    /// The victim stat that defends each jump (`Stat::Immunity` / `Stat::Firewall`).
+    pub resist: Stat,
+    /// How it reaches candidates.
+    pub vector: Vector,
+}
+
 /// **removes** (a standing ward), and the **event `on`-hooks** it reacts through.
 /// Static gear is a `Permanent` decorator with no reactions; a status is a decaying
 /// one that hooks `TickStart`.
@@ -365,6 +390,9 @@ pub struct Decorator {
     /// Modifiers this decorator strips from the set — a **standing ward**, applied
     /// order-independently (cleanse, counter-spoof, Ripperdoc).
     pub removes: Vec<Remove>,
+    /// If set, this decorator is **contagious** — the contagion phase tries to copy it
+    /// onto fresh victims along its [`Vector`] (a contested jump).
+    pub contagion: Option<Contagion>,
     /// Set on install — its own [`GenId`], stamped onto every modifier it spawns.
     pub id: GenId,
 }
@@ -387,6 +415,7 @@ impl Decorator {
             on: Vec::new(),
             gate: None,
             removes: Vec::new(),
+            contagion: None,
             id: GenId(0),
         }
     }
@@ -412,6 +441,13 @@ impl Decorator {
     /// Builder: add a behavior override (a smartgun, a spoof).
     pub fn with_override(mut self, o: Override) -> Self {
         self.overrides.push(o);
+        self
+    }
+
+    /// Builder: make this decorator **contagious** — it tries to copy itself onto fresh
+    /// victims each contagion phase (a contested jump along `c.vector`).
+    pub fn with_contagion(mut self, c: Contagion) -> Self {
+        self.contagion = Some(c);
         self
     }
 
@@ -760,6 +796,18 @@ impl Character {
     /// The active labelled decorators (statuses) as `(label, stacks)` — for UI / queries.
     pub fn status_labels(&self) -> Vec<(&'static str, u32)> {
         self.gen.iter().filter_map(|d| d.label.map(|l| (l, d.stacks))).collect()
+    }
+
+    /// Clones of every **active contagious** decorator (those carrying a [`Contagion`]) —
+    /// the spread sources the contagion phase tries to jump from.
+    pub fn active_contagions(&self) -> Vec<Decorator> {
+        self.gen.iter().filter(|d| d.is_active() && d.contagion.is_some()).cloned().collect()
+    }
+
+    /// Does an **active** decorator with this `label` already ride the gen? The
+    /// re-infection guard — a contagion doesn't re-land where it already sits.
+    pub fn carries(&self, label: &'static str) -> bool {
+        self.gen.iter().any(|d| d.is_active() && d.label == Some(label))
     }
 
     /// Strip every **status** (labelled decorator) — the between-combats cleanse. Gear,

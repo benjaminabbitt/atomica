@@ -40,9 +40,9 @@ mod status;
 pub use armor::ArmorClass;
 pub use board::{Board, SeamOffset};
 pub use chargen::{
-    Amount, BaseLine, Capability, Character, Condition, Decorator, DamageEvent, Event, Expiration,
-    Factor, FactorKind, Flag, Gate, GenId, Hook, HookEffect, Modifier, ModifierKind, Override,
-    Priority, Reaction, Realized, Remove, Stat, Tag, Wear,
+    Amount, BaseLine, Capability, Character, Condition, Contagion, Decorator, DamageEvent, Event,
+    Expiration, Factor, FactorKind, Flag, Gate, GenId, Hook, HookEffect, Modifier, ModifierKind,
+    Override, Priority, Reaction, Realized, Remove, Stat, Tag, Vector, Wear,
 };
 pub use corruption::Corruption;
 pub use hack::{hack_rating, Hack, HackResult};
@@ -751,6 +751,7 @@ impl<R: RandomSource> Battle<R> {
         self.status_phase();
         self.reap(); // DoTs can kill — fire their death triggers
         self.woven_phase();
+        self.contagion_phase(); // corruption jumps to fresh victims (contested)
         self.decay_phase();
 
         self.outcome()
@@ -1045,6 +1046,63 @@ impl<R: RandomSource> Battle<R> {
         // Blunt: every active implant, degrade liabilities only (no knockout finesse).
         let slots = self.units[target].active_implant_indices();
         self.breach_slots(target, slots, EMP_MAGNITUDE, false);
+    }
+
+    /// The **contagion phase** (`docs/corruption.md`) — every contagious corruption tries
+    /// to **jump** to fresh victims along its [`Vector`]: a *contested* roll of the
+    /// carrier's `virulence` vs the victim's resist stat (Immunity / Firewall). A win
+    /// **copies the whole decorator** onto the victim; a unit already carrying that
+    /// corruption is skipped (no re-infection / stacking), and jumps land *after* the
+    /// scan, so a contagion spreads at most one hop per round (controlled exponential).
+    /// Friend or foe: a plague doesn't read uniforms — keep your infected clear of allies.
+    fn contagion_phase(&mut self) {
+        use std::collections::HashSet;
+        let n = self.units.len();
+        let mut infected: HashSet<(usize, &'static str)> = HashSet::new();
+        let mut jumps: Vec<(usize, Decorator)> = Vec::new();
+        for i in 0..n {
+            if !self.units[i].is_alive() {
+                continue;
+            }
+            for dec in self.units[i].character.active_contagions() {
+                let c = dec.contagion.expect("active_contagions filters Some");
+                let label = dec.label;
+                for j in 0..n {
+                    if j == i || !self.units[j].is_alive() || !self.in_vector(i, j, c.vector) {
+                        continue;
+                    }
+                    // Re-infection guard: already carries it, or already caught it this phase.
+                    if let Some(l) = label {
+                        if self.units[j].character.carries(l) || !infected.insert((j, l)) {
+                            continue;
+                        }
+                    }
+                    let tn = self.resist_of(j, c.resist);
+                    if resolve_contest(&mut self.rng, Contest::new(c.virulence, 0, tn)).success {
+                        jumps.push((j, dec.clone()));
+                    }
+                }
+            }
+        }
+        for (j, dec) in jumps {
+            self.units[j].character.install(dec); // install re-stamps the GenId
+        }
+    }
+
+    /// Can a contagion on carrier `i` reach unit `j` along `vector`?
+    fn in_vector(&self, i: usize, j: usize, vector: Vector) -> bool {
+        match vector {
+            Vector::Proximity(r) => self.units[i].pos.distance(self.units[j].pos) <= r,
+            Vector::Net => self.units[j].link() > 0, // the net is everywhere
+        }
+    }
+
+    /// Unit `j`'s value of a contagion-resist stat (only Immunity / Firewall defend a jump).
+    fn resist_of(&self, j: usize, resist: Stat) -> i32 {
+        match resist {
+            Stat::Firewall => self.units[j].firewall(),
+            _ => self.units[j].immunity(),
+        }
     }
 
     /// The standalone **digital** pass (Link order) — superseded in `step` by
@@ -1793,6 +1851,48 @@ mod tests {
             .all(|i| b.units[1].implant_condition(i) == Condition::Offline));
         // A worm doesn't crit — the reflex booster's Seizure (stun) stays gated.
         assert!(!b.units[1].is_stunned());
+    }
+
+    #[test]
+    fn a_plague_jumps_to_an_adjacent_victim() {
+        // Contagion phase: a virulent plague on a low-Immunity neighbour wins the jump
+        // and copies itself over — the victim is now both sick *and* contagious.
+        let mut carrier = unit(0, Team::B, 0);
+        carrier.apply_modifier(Corruption::plague(4.0, 10, 5)); // virulence 10 vs Immunity 0
+        let victim = unit(1, Team::B, 1); // adjacent, default Immunity 0
+        let bystander = unit(2, Team::B, 5); // far away — out of proximity
+        let mut b = Battle::new(vec![carrier, victim, bystander], 7);
+        b.contagion_phase();
+        assert!(b.units[1].character.carries("Virus")); // caught it
+        assert_eq!(b.units[1].character.active_contagions().len(), 1); // now spreads too
+        assert!(!b.units[2].character.carries("Virus")); // too far to reach
+    }
+
+    #[test]
+    fn immunity_resists_the_jump() {
+        // Same proximity, but a hardened immune system (high Immunity TN) beats the
+        // contest — a weak plague can't take hold.
+        let mut carrier = unit(0, Team::B, 0);
+        carrier.apply_modifier(Corruption::plague(4.0, 2, 5)); // virulence 2 (3d6+2 ≤ 20)
+        let mut victim = unit(1, Team::B, 1);
+        victim.character.base_mut().immunity = 30.0; // TN 30 — unbeatable here
+        let mut b = Battle::new(vec![carrier, victim], 7);
+        b.contagion_phase();
+        assert!(!b.units[1].character.carries("Virus")); // resisted
+    }
+
+    #[test]
+    fn a_worm_swarm_rides_the_net_not_the_flesh() {
+        // The digital vector ignores distance but needs a surface: a wired unit catches
+        // it across the map; a fleshy one (Link 0) is untouchable however close.
+        let mut carrier = unit(0, Team::A, 0);
+        carrier.apply_modifier(Corruption::worm_swarm(3.0, 10, 5)); // vs Firewall 0
+        let wired = runner(1, Team::B, 6, 4); // Link 3, far away
+        let fleshy = unit(2, Team::B, 1); // adjacent but Link 0
+        let mut b = Battle::new(vec![carrier, wired, fleshy], 7);
+        b.contagion_phase();
+        assert!(b.units[1].character.carries("Worm")); // rode the net across the board
+        assert!(!b.units[2].character.carries("Worm")); // no surface — immune to the worm
     }
 
     #[test]

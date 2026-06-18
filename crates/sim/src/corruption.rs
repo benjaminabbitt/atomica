@@ -12,7 +12,7 @@
 //! propagating via Data-spill — the contagion families) is a separate later layer;
 //! here a corruption lands on exactly the unit it's applied to.
 
-use crate::chargen::{Decorator, Factor, Remove, Stat, Tag};
+use crate::chargen::{Contagion, Decorator, Factor, Remove, Stat, Tag, Vector};
 
 /// A library of named **corruption** decorators and their **cleanse** wards (content;
 /// magnitudes are illustrative — TBD per the design).
@@ -31,6 +31,22 @@ impl Corruption {
     pub fn virus(immunity: f32, turns: u32) -> Decorator {
         Decorator::timed(Tag::Virus, turns, vec![Factor::add(Stat::Immunity, -immunity)])
             .with_label("Virus")
+    }
+
+    /// **Plague** — a *contagious* virus (`docs/corruption.md`): the [`Self::virus`]
+    /// debuff that also **spreads by proximity** (within 1 hex), each jump a contest of
+    /// `virulence` vs the victim's Immunity. Friend or foe — keep the infected isolated.
+    pub fn plague(immunity: f32, virulence: i32, turns: u32) -> Decorator {
+        Self::virus(immunity, turns)
+            .with_contagion(Contagion { virulence, resist: Stat::Immunity, vector: Vector::Proximity(1) })
+    }
+
+    /// **Worm swarm** — a *contagious* worm: the [`Self::worm`] Firewall-rot that also
+    /// **rides the net** to any unit with a live digital surface (`Link > 0`), each jump
+    /// a contest of `virulence` vs the victim's Firewall. The digital pandemic.
+    pub fn worm_swarm(firewall: f32, virulence: i32, turns: u32) -> Decorator {
+        Self::worm(firewall, turns)
+            .with_contagion(Contagion { virulence, resist: Stat::Firewall, vector: Vector::Net })
     }
 
     /// **Antivirus** — a standing ward (gear) that suppresses every `Tag::Virus`
@@ -66,6 +82,19 @@ mod tests {
         assert_eq!(c.realize().firewall(), 12); // worm suppressed
         c.remove(patch);
         assert_eq!(c.realize().firewall(), 7); // worm bites again once the patch is gone
+    }
+
+    #[test]
+    fn a_plague_is_a_contagious_virus() {
+        // The contagious variant is the virus debuff plus a Contagion the phase reads.
+        let mut c = Character::new(base());
+        c.install(Corruption::plague(4.0, 6, 5));
+        assert_eq!(c.realize().immunity(), 6); // still rots Immunity like a plain virus
+        assert_eq!(c.active_contagions().len(), 1); // and it's a spread source
+        // The plain virus is *not* contagious — single-target corruption.
+        let mut d = Character::new(base());
+        d.install(Corruption::virus(4.0, 5));
+        assert!(d.active_contagions().is_empty());
     }
 
     #[test]
