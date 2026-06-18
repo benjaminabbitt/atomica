@@ -7,8 +7,8 @@
 
 use crate::{Encounter, GamePlan, RunPlan};
 use atomica_sim::{
-    ArmorClass, Attack, Chassis, Corruption, DamageType, Footprint, Implant, PenTier, Skill, Team,
-    Unit, EquipmentTags,
+    ArmorClass, Attack, Chassis, DamageType, Footprint, Implant, PenTier, Skill, Team, Unit,
+    EquipmentTags,
 };
 
 fn weapon(damage: f32, dtype: DamageType, pen: PenTier, range: i32) -> Attack {
@@ -111,15 +111,14 @@ fn enforcer(name: &str) -> Unit {
     u
 }
 
-/// A **carrier** — a tougher mook seeded with a virulent plague that spreads on contact.
-fn carrier(name: &str) -> Unit {
-    let mut u = body(name, 94.0, 5.0)
-        .with_armor(ArmorClass::Mail)
+/// A **brute** — a tougher, up-armored mook (Plate). No chrome to breach and no plague;
+/// just a meatier body than the rank-and-file, the muscle of a hardened position.
+fn brute(name: &str) -> Unit {
+    body(name, 94.0, 5.0)
+        .with_armor(ArmorClass::Plate)
         .with_skill(Skill::Gunnery, 3)
-        .with_evasion(14.0)
-        .with_attack(weapon(4.0, DamageType::Piercing, PenTier::External, 2));
-    u.apply_modifier(Corruption::plague(4.0, 3.0, 10, 8));
-    u
+        .with_evasion(13.0)
+        .with_attack(weapon(5.0, DamageType::Piercing, PenTier::Contact, 2))
 }
 
 // -- Plans ------------------------------------------------------------------------
@@ -138,8 +137,8 @@ pub fn gauntlet() -> RunPlan {
                 vec![enforcer("Enforcer"), mook("Guard-1"), mook("Guard-2"), mook("Guard-3")],
             ),
             Encounter::new(
-                "Quarantine Zone",
-                vec![carrier("Carrier"), enforcer("Warden"), mook("Orderly")],
+                "Lockdown Zone",
+                vec![brute("Heavy"), enforcer("Warden"), mook("Orderly")],
             ),
         ],
     )
@@ -155,7 +154,7 @@ pub fn campaign() -> GamePlan {
                 "Deep Run",
                 vec![
                     Encounter::new("Server Farm", vec![enforcer("Sentinel"), enforcer("Sentry")]),
-                    Encounter::new("The Boss", vec![bulwark("Goliath"), carrier("Vector")]),
+                    Encounter::new("The Boss", vec![bulwark("Goliath"), brute("Vanguard")]),
                 ],
             ),
         ],
