@@ -113,12 +113,16 @@ pub enum Override {
 
 /// A **capability** a decorator grants — not a number on the stat line but a whole
 /// action the character can now take (§1 "capability"). A cyberdeck grants a
-/// [`Hack`]; breach the deck (or take it Offline) and the capability drops with it.
-/// The **highest-priority** active grant wins.
+/// [`Hack`]; a weapon decorator grants an [`Attack`](crate::Attack); breach / unequip
+/// (or take it Offline) and the capability drops with it. For **single-slot**
+/// capabilities (the deck) the **highest-priority** active grant wins; **weapons** are
+/// a *set* — every active grant is in the loadout.
 #[derive(Clone, Copy, Debug)]
 pub enum Capability {
     /// The netrunning loadout (`docs/netrunning.md`) — granted by a deck.
     Hack(crate::Hack),
+    /// A weapon profile (`docs/combat.md`) — granted by a weapon / a chrome arm.
+    Weapon(crate::Attack),
 }
 
 /// A non-numeric passive **flag** a status imposes — read by other phases, not a
@@ -136,6 +140,7 @@ pub enum Flag {
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Tag {
     Gear,
+    Weapon,
     Implant,
     Buff,
     Debuff,
@@ -512,7 +517,9 @@ impl BaseLine {
 pub struct Realized {
     base: BaseLine,
     mods: Vec<Modifier>,
-    capability: Option<Capability>,
+    /// Every active grant, in **priority-ascending** order (so the last grant of a
+    /// single-slot kind is the highest-priority one).
+    capabilities: Vec<Capability>,
 }
 
 impl Realized {
@@ -587,9 +594,26 @@ impl Realized {
     }
 
     /// The netrunning loadout this character can run, if any active decorator grants
-    /// one (the highest-priority deck wins). `None` ⇒ no deck ⇒ can't hack.
+    /// one (the **highest-priority** deck wins — the last `Hack` grant in ascending
+    /// order). `None` ⇒ no deck ⇒ can't hack.
     pub fn hack(&self) -> Option<crate::Hack> {
-        self.capability.map(|Capability::Hack(h)| h)
+        self.capabilities.iter().rev().find_map(|c| match c {
+            Capability::Hack(h) => Some(*h),
+            _ => None,
+        })
+    }
+
+    /// The unit's **weapon loadout** — every active [`Capability::Weapon`] grant, in
+    /// priority order. A *set* (unlike the deck): chrome arms and held weapons all
+    /// contribute; `weapon_at` picks the best one whose band covers a distance.
+    pub fn weapons(&self) -> Vec<crate::Attack> {
+        self.capabilities
+            .iter()
+            .filter_map(|c| match c {
+                Capability::Weapon(w) => Some(*w),
+                _ => None,
+            })
+            .collect()
     }
 
     /// Is the character **stunned** (a Crash / Seizure present)? Read by the action
@@ -890,7 +914,7 @@ impl Character {
         // benefit fraction (Degraded = half); an inactive decorator (scale 0) is gated
         // off entirely.
         let mut mods: Vec<Modifier> = Vec::new();
-        let mut capability: Option<Capability> = None;
+        let mut capabilities: Vec<Capability> = Vec::new();
         for dec in &self.gen {
             if !dec.is_active() {
                 continue;
@@ -918,7 +942,7 @@ impl Character {
                 });
             }
             if let Some(cap) = dec.grants {
-                capability = Some(cap);
+                capabilities.push(cap);
             }
         }
         // Active face: standing wards. Each active decorator's `removes` strips
@@ -932,7 +956,7 @@ impl Character {
                 mods.retain(|m| m.source == dec.id || !r.matches(m));
             }
         }
-        Realized { base, mods, capability }
+        Realized { base, mods, capabilities }
     }
 
     // -- the pools (live state, §3c) --

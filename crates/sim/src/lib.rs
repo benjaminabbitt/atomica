@@ -154,6 +154,26 @@ impl Attack {
     pub fn usable_at(&self, dist: i32) -> bool {
         dist >= self.min_range && dist <= self.range
     }
+
+    /// A plain **melee** profile (`damage`, Piercing/Internal, reach 1, single-target) —
+    /// the default weapon and the base most isolated tests start from.
+    pub fn melee(damage: f32) -> Self {
+        Self {
+            damage,
+            dtype: DamageType::Piercing,
+            pen: PenTier::Internal,
+            range: 1,
+            min_range: 1,
+            emp: false,
+            footprint: Footprint::Single,
+        }
+    }
+}
+
+/// A weapon decorator: a `Tag::Weapon` gear grant of `attack` on the gen (`docs/layers.md`
+/// L6). The loadout is the set of these; breach / unequip drops one.
+fn weapon_grant(attack: Attack) -> Decorator {
+    Decorator::gear(Tag::Weapon, vec![]).with_grant(Capability::Weapon(attack))
 }
 
 /// An installed implant: the authored [`Implant`] (its `Contribution`, granted hack,
@@ -185,12 +205,9 @@ pub struct Unit {
     /// (move-then-act). `0` ⇒ stationary. (A board concern, not a composed stat.)
     pub speed: i32,
 
-    /// The **primary** weapon — the default profile and the one isolated tests use.
-    pub attack: Attack,
-    /// **Extra** weapons (§10.5): the unit selects the best of `attack` + these whose
-    /// **range band** covers the target distance each activation (a rifle + sidearm,
-    /// a polearm + dagger).
-    pub weapons: Vec<Attack>,
+    // Weapons are **`Capability::Weapon` grants** on the `character` (`docs/layers.md`
+    // L6): `weapons()` / `weapon_at` read the composed loadout, `with_weapon` / `arm`
+    // install grants. No flat weapon field — a chrome arm grants one like any gear.
     /// Installed cyberware (`docs/cyberware.md`) — each an [`InstalledImplant`]: a
     /// decorator on the `character` (its `Contribution` composes; its condition rides
     /// the decorator) plus the authored spec the breach ladder fires from.
@@ -215,6 +232,9 @@ impl Unit {
     /// Tune via the `with_*` builders or by field — the convenience constructor
     /// the run layer and content build rosters from.
     pub fn new(id: u32, name: impl Into<String>, team: Team, chassis: Chassis) -> Self {
+        let mut character =
+            Character::new(BaseLine { max_integrity: 30.0, initiative: 5.0, ..BaseLine::default() });
+        character.install(weapon_grant(Attack::melee(10.0))); // default melee
         Self {
             id: UnitId(id),
             name: name.into(),
@@ -224,19 +244,9 @@ impl Unit {
             chassis,
             skills: chassis.baseline_skills(),
             speed: 1,
-            attack: Attack {
-                damage: 10.0,
-                dtype: DamageType::Piercing,
-                pen: PenTier::Internal,
-                range: 1,
-                min_range: 1,
-                emp: false,
-                footprint: Footprint::Single,
-            },
-            weapons: Vec::new(),
             implants: Vec::new(),
             pan: Pan::Meshed,
-            character: Character::new(BaseLine { max_integrity: 30.0, initiative: 5.0, ..BaseLine::default() }),
+            character,
             on_death: DeathTrigger::None,
             death_resolved: false,
         }
@@ -267,10 +277,38 @@ impl Unit {
         self
     }
 
-    /// Builder: add an extra weapon to the loadout (selected by range band, §10.5).
+    /// Builder: **add** a weapon to the loadout (selected by range band, §10.5) — an
+    /// extra grant alongside any existing ones.
     pub fn with_weapon(mut self, weapon: Attack) -> Self {
-        self.weapons.push(weapon);
+        self.add_weapon(weapon);
         self
+    }
+
+    /// Builder: set the **sole** weapon — clears the loadout (incl. the default melee)
+    /// and grants `attack`. Call before `with_weapon` to add extras.
+    pub fn with_attack(mut self, attack: Attack) -> Self {
+        self.set_weapon(attack);
+        self
+    }
+
+    /// Add a weapon grant to the loadout.
+    pub fn add_weapon(&mut self, weapon: Attack) {
+        self.character.install(weapon_grant(weapon));
+    }
+
+    /// Replace the whole loadout with a single weapon.
+    pub fn set_weapon(&mut self, weapon: Attack) {
+        self.character.remove_where(Tag::Weapon);
+        self.character.install(weapon_grant(weapon));
+    }
+
+    /// Modify the **primary** weapon in place (read it, tweak it, set it back as the
+    /// sole weapon) — the ergonomic "make my weapon an EMP / a blast" path for content
+    /// and tests.
+    pub fn rearm(&mut self, f: impl FnOnce(&mut Attack)) {
+        let mut w = self.weapon_at_any().unwrap_or(Attack::melee(10.0));
+        f(&mut w);
+        self.set_weapon(w);
     }
 
     /// Builder: set the on-death trigger (§10.9).
@@ -279,20 +317,25 @@ impl Unit {
         self
     }
 
-    /// The best weapon usable at hex-distance `dist` — the highest-damage one of the
-    /// primary `attack` + `weapons` whose **range band** covers `dist`, or `None` if
-    /// the target is out of every band (§10.5).
-    pub fn weapon_at(&self, dist: i32) -> Option<Attack> {
-        std::iter::once(self.attack)
-            .chain(self.weapons.iter().copied())
-            .filter(|w| w.usable_at(dist))
+    /// The unit's composed **weapon loadout** (every active `Capability::Weapon` grant).
+    pub fn weapons(&self) -> Vec<Attack> {
+        self.realized().weapons()
+    }
+
+    /// The highest-damage weapon ignoring range (a threat proxy) — `None` if unarmed.
+    fn weapon_at_any(&self) -> Option<Attack> {
+        self.weapons()
+            .into_iter()
             .max_by(|a, b| a.damage.partial_cmp(&b.damage).unwrap_or(std::cmp::Ordering::Equal))
     }
 
-    /// Builder: set the attack profile.
-    pub fn with_attack(mut self, attack: Attack) -> Self {
-        self.attack = attack;
-        self
+    /// The best weapon usable at hex-distance `dist` — the highest-damage grant whose
+    /// **range band** covers `dist`, or `None` if the target is out of every band (§10.5).
+    pub fn weapon_at(&self, dist: i32) -> Option<Attack> {
+        self.weapons()
+            .into_iter()
+            .filter(|w| w.usable_at(dist))
+            .max_by(|a, b| a.damage.partial_cmp(&b.damage).unwrap_or(std::cmp::Ordering::Equal))
     }
 
     /// Builder: program the **targeting** profile (§7J) — a `GEAR`-priority override
@@ -791,7 +834,9 @@ impl<R: RandomSource> Battle<R> {
                 .max_by_key(|(_, u)| (me.pos.distance(u.pos), std::cmp::Reverse(u.id)))
                 .map(|(j, _)| j),
             TargetingProfile::LowestIntegrity => by_f32(|u| u.integrity(), false),
-            TargetingProfile::HighestThreat => by_f32(|u| u.attack.damage, true),
+            TargetingProfile::HighestThreat => {
+                by_f32(|u| u.weapon_at_any().map_or(0.0, |w| w.damage), true)
+            }
             TargetingProfile::WeakestArmor => {
                 by_f32(|u| u.character.barrier + u.character.plating, false)
             }
@@ -885,7 +930,9 @@ impl<R: RandomSource> Battle<R> {
     /// isolated tests).
     #[cfg(test)]
     fn resolve_attack(&mut self, attacker: usize, target: usize) {
-        self.resolve_attack_with(attacker, target, self.units[attacker].attack);
+        if let Some(w) = self.units[attacker].weapon_at_any() {
+            self.resolve_attack_with(attacker, target, w);
+        }
     }
 
     /// Resolve a chosen weapon `atk` from `attacker` onto `target`. Resolves the
@@ -1164,35 +1211,9 @@ mod tests {
     use super::*;
 
     fn unit(id: u32, team: Team, q: i32) -> Unit {
-        Unit {
-            id: UnitId(id),
-            name: format!("U{id}"),
-            team,
-            pos: Hex::new(q, 0),
-            armor_class: ArmorClass::Mail,
-            chassis: Chassis::Augmented,
-            skills: Chassis::Augmented.baseline_skills(),
-            speed: 1,
-            attack: Attack {
-                damage: 10.0,
-                dtype: DamageType::Piercing,
-                pen: PenTier::Internal,
-                range: 1,
-                min_range: 1,
-                emp: false,
-                footprint: Footprint::Single,
-            },
-            weapons: Vec::new(),
-            implants: Vec::new(),
-            pan: Pan::Meshed,
-            character: Character::new(BaseLine {
-                max_integrity: 30.0,
-                initiative: 5.0,
-                ..BaseLine::default()
-            }),
-            on_death: DeathTrigger::None,
-            death_resolved: false,
-        }
+        // Unit::new's defaults already match (Mail armor, Augmented chassis, 10 melee,
+        // Integrity 30 / Initiative 5); just place it.
+        Unit::new(id, format!("U{id}"), team, Chassis::Augmented).at(Hex::new(q, 0))
     }
 
     /// A unit wired to hack: net presence + a Lockware deck (antenna `range`).
@@ -1688,7 +1709,7 @@ mod tests {
         tgt.install(Implant::cyberdeck()); // Link 5, grants hack, Lockout liability
         assert!(tgt.hack().is_some());
         let mut atk = unit(0, Team::A, 0);
-        atk.attack.emp = true;
+        atk.rearm(|w| w.emp = true);
         // Empty RNG: an EMP rolls nothing (a physical pulse, not a contest).
         let mut b = Battle::with_rng(vec![atk, tgt], ScriptedRng::default());
         b.resolve_attack(0, 1);
@@ -1704,7 +1725,7 @@ mod tests {
         let mut tgt = unit(1, Team::B, 0);
         tgt.install(Implant::reflex_booster()); // Seizure (stun) liability
         let mut atk = unit(0, Team::A, 0);
-        atk.attack.emp = true;
+        atk.rearm(|w| w.emp = true);
         let mut b = Battle::with_rng(vec![atk, tgt], ScriptedRng::default());
         b.resolve_attack(0, 1);
         assert_eq!(b.units[1].implant_condition(0), Condition::Offline); // disabled
@@ -1715,7 +1736,7 @@ mod tests {
     fn emp_is_harmless_to_unchromed_targets() {
         let tgt = unit(1, Team::B, 0); // flesh — no implants
         let mut atk = unit(0, Team::A, 0);
-        atk.attack.emp = true;
+        atk.rearm(|w| w.emp = true);
         let mut b = Battle::with_rng(vec![atk, tgt], ScriptedRng::default());
         b.resolve_attack(0, 1);
         assert!(b.units[1].implants.is_empty());
@@ -1786,7 +1807,7 @@ mod tests {
         let base_hp = u.max_integrity();
         u.install(Implant::combat_stim());
         assert_eq!(u.damage_bonus(), 4.0); // +4 composed damage bonus (weapon base unchanged)
-        assert_eq!(u.attack.damage, 10.0);
+        assert_eq!(u.weapon_at(1).unwrap().damage, 10.0);
         u.install(Implant::metabolic_pump());
         assert_eq!(u.max_integrity(), base_hp + 8.0);
         assert_eq!(u.character.integrity, base_hp + 8.0); // gained the HP too
@@ -2067,7 +2088,7 @@ mod tests {
     #[test]
     fn blast_friendly_fires_everyone_in_the_radius() {
         let mut atk = unit(0, Team::A, 0);
-        atk.attack.footprint = Footprint::Blast(1); // disc around the target hex
+        atk.rearm(|w| w.footprint = Footprint::Blast(1)); // disc around the target hex
         let enemy = unit(1, Team::B, 3); // target at (3,0)
         let enemy_mate = unit(2, Team::B, 4); // (4,0), adjacent to target
         let our_own = unit(3, Team::A, 2); // (2,0), adjacent to target — our ally
@@ -2083,7 +2104,7 @@ mod tests {
     #[test]
     fn beam_strikes_every_unit_along_the_line() {
         let mut atk = unit(0, Team::A, 0);
-        atk.attack.footprint = Footprint::Beam(4); // line of 4 from the attacker
+        atk.rearm(|w| w.footprint = Footprint::Beam(4)); // line of 4 from the attacker
         let on1 = unit(1, Team::B, 1); // (1,0) — the target, on the beam
         let on2 = unit(2, Team::A, 2); // (2,0) — ally on the beam (friendly fire)
         let on3 = unit(3, Team::B, 3); // (3,0) — on the beam
@@ -2155,11 +2176,26 @@ mod tests {
     fn weapon_selection_picks_the_band_that_covers_the_distance() {
         // Rifle 2..=6 (dmg 12) + knife 1..=1 (dmg 8).
         let mut u = unit(0, Team::A, 0);
-        u.attack = gun(12.0, 2, 6); // primary rifle
-        u.weapons.push(gun(8.0, 1, 1)); // knife sidearm
+        u.set_weapon(gun(12.0, 2, 6)); // primary rifle
+        u.add_weapon(gun(8.0, 1, 1)); // knife sidearm
         assert_eq!(u.weapon_at(1).map(|w| w.damage), Some(8.0)); // melee → knife
         assert_eq!(u.weapon_at(4).map(|w| w.damage), Some(12.0)); // mid → rifle
         assert!(u.weapon_at(7).is_none()); // out of every band
+    }
+
+    #[test]
+    fn a_weapon_granted_by_a_decorator_joins_the_loadout() {
+        // Weapons are Capability::Weapon grants (L6): a chrome arm granting one adds to
+        // the loadout, and removing it (unequip / breach) drops it — like a deck/hack.
+        let mut u = unit(0, Team::A, 0); // starts with the default melee (dmg 10)
+        assert_eq!(u.weapons().len(), 1);
+        let arm = u.apply_modifier(weapon_grant(gun(20.0, 2, 5))); // a granted rifle
+        assert_eq!(u.weapons().len(), 2);
+        assert_eq!(u.weapon_at(4).map(|w| w.damage), Some(20.0)); // the rifle reaches mid
+        assert_eq!(u.weapon_at(1).map(|w| w.damage), Some(10.0)); // melee in close
+        u.character.remove(arm); // unequip
+        assert_eq!(u.weapons().len(), 1);
+        assert!(u.weapon_at(4).is_none()); // only melee left
     }
 
     #[test]
@@ -2175,7 +2211,7 @@ mod tests {
         // Rifle 2..=6, speed 5, target 6 away. Advance closes only until in band
         // (distance 6), then fires from there instead of walking into melee.
         let mut atk = unit(0, Team::A, 0).with_speed(5).with_initiative(10.0);
-        atk.attack = gun(12.0, 2, 6);
+        atk.set_weapon(gun(12.0, 2, 6));
         let mut dummy = unit(1, Team::B, 6).with_movement(MovementProfile::Hold);
         dummy.character.integrity = 100.0;
         let mut b = Battle::new(vec![atk, dummy], 1);

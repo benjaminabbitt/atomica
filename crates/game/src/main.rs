@@ -5,8 +5,8 @@
 //! timer. All game rules live in the sim crate.
 
 use atomica_sim::{
-    ArmorClass, Attack, BaseLine, Battle, Character, Chassis, DamageType, DeathTrigger, Footprint,
-    Hex, Implant, Outcome, Pan, Skill, StatusSpec, Team, Unit, UnitId,
+    ArmorClass, Attack, Battle, Chassis, DamageType, Footprint, Hex, Implant, Outcome, Skill,
+    StatusSpec, Team, Unit,
 };
 use egui_macroquad::egui;
 use macroquad::prelude::*;
@@ -25,38 +25,26 @@ fn hex_to_pixel(h: Hex, origin: Vec2) -> Vec2 {
 
 /// A tiny demo encounter so the window shows something real on first run.
 fn demo_battle() -> Battle {
-    let mk = |id: u32, name: &str, team, q, r, dmg, init, range, dtype, pen, armor_class| Unit {
-        id: UnitId(id),
-        name: name.to_string(),
-        team,
-        pos: Hex::new(q, r),
-        armor_class,
-        chassis: Chassis::Augmented,
-        skills: Chassis::Augmented.baseline_skills(),
-        speed: 1,
-        attack: Attack {
-            damage: dmg,
-            dtype,
-            pen,
-            range,
-            min_range: 1,
-            emp: false,
-            footprint: Footprint::Single,
-        },
-        weapons: Vec::new(),
-        implants: Vec::new(),
-        pan: Pan::Meshed,
-        // The composed home: base stat line + filled pools (Integrity / Plating /
-        // Barrier 40 / 6 / 6); link / firewall come from installs / the lines below.
-        character: Character::new(BaseLine {
-            max_integrity: 40.0,
-            initiative: init,
-            plating: 6.0,
-            barrier: 6.0,
-            ..BaseLine::default()
-        }),
-        on_death: DeathTrigger::None,
-        death_resolved: false,
+    let mk = |id: u32, name: &str, team, q, r, dmg, init, range, dtype, pen, armor_class| {
+        let mut u = Unit::new(id, name, team, Chassis::Augmented)
+            .at(Hex::new(q, r))
+            .with_initiative(init)
+            .with_attack(Attack {
+                damage: dmg,
+                dtype,
+                pen,
+                range,
+                min_range: 1,
+                emp: false,
+                footprint: Footprint::Single,
+            });
+        u.armor_class = armor_class;
+        // Beefier base than the default: Integrity 40, Plating / Barrier 6 — then fill.
+        u.character.base_mut().max_integrity = 40.0;
+        u.character.base_mut().plating = 6.0;
+        u.character.base_mut().barrier = 6.0;
+        u.character.fill();
+        u
     };
     use atomica_sim::PenTier::*;
     use ArmorClass::*;
@@ -77,7 +65,7 @@ fn demo_battle() -> Battle {
     // "mook" (easy to land but the thin channel keeps it shallow).
     units[2].character.base_mut().link = 5.0;
     units[2].character.base_mut().firewall = 15.0; // hardened + connected
-    units[2].attack.emp = true; // an EMP maul — frying the Runner's deck on contact
+    units[2].rearm(|w| w.emp = true); // an EMP maul — frying the Runner's deck on contact
     units[3].character.base_mut().link = 2.0;
     units[3].character.base_mut().firewall = 9.0; // soft + dark
     // Seed a couple of statuses so the pipeline is visible on first run.
