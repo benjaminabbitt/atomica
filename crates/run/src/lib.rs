@@ -394,7 +394,7 @@ fn deploy(template: &Unit, next_id: &mut u32, team: Team, pos: Hex) -> Unit {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use atomica_sim::{Attack, Chassis, DamageType, Footprint, PenTier};
+    use atomica_sim::{Attack, Chassis, DamageType, Footprint, PenTier, Skill};
 
     /// A melee combatant with an armor-bypassing hit (deterministic damage).
     fn fighter(name: &str, damage: f32, hp: f32, initiative: f32) -> Unit {
@@ -405,6 +405,8 @@ mod tests {
                 damage,
                 dtype: DamageType::Piercing,
                 pen: PenTier::Internal,
+                skill: Skill::Melee,
+                accuracy: 0,
                 range: 1,
                 min_range: 1,
                 emp: false,

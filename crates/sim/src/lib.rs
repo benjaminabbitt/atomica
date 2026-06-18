@@ -141,6 +141,13 @@ pub struct Attack {
     pub damage: f32,
     pub dtype: DamageType,
     pub pen: PenTier,
+    /// The **skill** that governs the to-hit roll (`design-delta §394`) — a weapon's
+    /// *role*: [`Skill::Melee`] for blades/fists, [`Skill::Gunnery`] for ranged. The
+    /// attacker rolls `3d6 + this skill + accuracy` vs the target's Evasion.
+    pub skill: Skill,
+    /// The weapon's inherent **accuracy** mod (the "equipment" term of the roll) — a
+    /// smartlink / scope lifts it. `0` for a plain weapon.
+    pub accuracy: i32,
     /// Maximum reach in hexes — the top of the **range band** (§10.5).
     pub range: i32,
     /// Minimum reach — the bottom of the band (`1` = usable in melee). A gun band is
@@ -170,11 +177,24 @@ impl Attack {
             damage,
             dtype: DamageType::Piercing,
             pen: PenTier::Internal,
+            skill: Skill::Melee,
+            accuracy: 0,
             range: 1,
             min_range: 1,
             emp: false,
             footprint: Footprint::Single,
             smart: false,
+        }
+    }
+
+    /// The **range difficulty** this weapon's to-hit roll suffers at hex-distance `dist`
+    /// (§7G): a gun gets harder the farther the shot — `RANGE_PENALTY_PER_HEX` per hex
+    /// past point-blank. **Melee weapons have none**, and **hacking is unaffected**
+    /// (it never routes through here).
+    pub fn range_penalty(&self, dist: i32) -> i32 {
+        match self.skill {
+            Skill::Gunnery => (dist - 1).max(0) * RANGE_PENALTY_PER_HEX,
+            _ => 0,
         }
     }
 
@@ -292,6 +312,18 @@ impl Unit {
         self
     }
 
+    /// Builder: set base **Evasion** (the physical to-hit TN, §7G).
+    pub fn with_evasion(mut self, evasion: f32) -> Self {
+        self.character.base_mut().evasion = evasion;
+        self
+    }
+
+    /// Builder: set a combat **skill** rating (Melee / Gunnery / Hacking).
+    pub fn with_skill(mut self, skill: Skill, rating: i32) -> Self {
+        self.skills.set(skill, rating);
+        self
+    }
+
     /// The unit's effective **armor class** for the mitigation matrix — base, or the
     /// highest-priority `Override::Armor` from gear.
     pub fn armor_class(&self) -> ArmorClass {
@@ -399,6 +431,10 @@ impl Unit {
     /// Effective **Immunity** (the bio TN).
     pub fn immunity(&self) -> i32 {
         self.realized().immunity()
+    }
+    /// Effective **Evasion** (the physical to-hit TN, §7G) — base + composed modifiers.
+    pub fn evasion(&self) -> i32 {
+        self.realized().evasion()
     }
     /// Effective **Initiative** before status slows (see [`Unit::effective_initiative`]).
     pub fn initiative(&self) -> f32 {
@@ -634,6 +670,10 @@ const EMP_MAGNITUDE: u32 = 2;
 /// EMP it carries no roll/margin (a worm trips regardless); the finisher's bite is its
 /// reach (Cascade), not its per-slot force. Placeholder (TBD).
 const WORM_DEGRADE: u32 = 2;
+
+/// How much a gun's to-hit TN rises per hex past point-blank (§7G range difficulty).
+/// Melee is exempt; hacking never routes through here. Placeholder (TBD).
+const RANGE_PENALTY_PER_HEX: i32 = 2;
 
 /// Cap on the meshed-PAN synergy bonus to a hack rating (§5). Placeholder (TBD).
 const MESH_SYNERGY_CAP: i32 = 3;
@@ -1023,9 +1063,23 @@ impl<R: RandomSource> Battle<R> {
     /// damage pipeline per target — the armor matrix (type vs class) × that unit's
     /// Breach vulnerability.
     fn resolve_attack_with(&mut self, attacker: usize, target: usize, atk: Attack) {
+        let atk_id = self.units[attacker].id;
+        // To-hit (§7G, design-delta §394): roll `3d6 + weapon skill + accuracy` vs the
+        // target's Evasion plus the gun's range penalty. A **non-positive TN auto-hits**
+        // with no roll — so an undefended (Evasion 0) melee blow always lands and burns
+        // no RNG (the deterministic auto-hit pipeline; dice only matter once a defender
+        // can actually evade or a shot reaches).
+        let dist = self.reach(attacker, target);
+        let tn = self.units[target].evasion() + atk.range_penalty(dist);
+        if tn > 0 {
+            let rating = self.units[attacker].skill(atk.skill) + atk.accuracy;
+            if !resolve_contest(&mut self.rng, Contest::new(rating, 0, tn)).success {
+                self.emit(CombatEvent::Missed { attacker: atk_id, target: self.units[target].id });
+                return; // whiff — the whole attack (incl. its AoE) misses
+            }
+        }
         // Weapon base + the attacker's composed damage bonus (an implant combat-stim).
         let base = atk.damage + self.units[attacker].damage_bonus();
-        let atk_id = self.units[attacker].id;
         let src = atk_id.0;
         for t in self.footprint_targets(attacker, target, atk) {
             let mult =
@@ -2506,12 +2560,55 @@ mod tests {
             damage,
             dtype: DamageType::Piercing,
             pen: PenTier::Internal,
+            skill: Skill::Gunnery,
+            accuracy: 0,
             range,
             min_range,
             emp: false,
             footprint: Footprint::Single,
             smart: false,
         }
+    }
+
+    #[test]
+    fn an_undefended_melee_blow_auto_hits_without_a_roll() {
+        // Evasion 0 + melee (no range penalty) ⇒ TN ≤ 0 ⇒ auto-hit, no RNG burned.
+        let atk = unit(0, Team::A, 0); // default melee
+        let tgt = unit(1, Team::B, 1); // Evasion 0
+        let mut b = Battle::new(vec![atk, tgt], 1).with_log();
+        b.resolve_attack(0, 1);
+        assert!(b.events().iter().any(|r| r.event.kind() == "attacked"));
+        assert!(!b.events().iter().any(|r| r.event.kind() == "missed"));
+    }
+
+    #[test]
+    fn evasion_lets_a_target_dodge() {
+        // A nimble target (high Evasion) vs a low-skill attacker: the to-hit roll can
+        // miss. Over many seeds, some land and some whiff — the dice now matter.
+        let mut hits = 0;
+        let mut misses = 0;
+        for seed in 0..40 {
+            let atk = unit(0, Team::A, 0).with_skill(Skill::Melee, 2);
+            let tgt = unit(1, Team::B, 1).with_evasion(12.0);
+            let mut b = Battle::new(vec![atk, tgt], seed).with_log();
+            b.resolve_attack(0, 1);
+            match b.events()[0].event.kind() {
+                "attacked" => hits += 1,
+                "missed" => misses += 1,
+                k => panic!("unexpected {k}"),
+            }
+        }
+        assert!(hits > 0 && misses > 0, "both outcomes occur: {hits} hits / {misses} misses");
+    }
+
+    #[test]
+    fn range_difficulty_hurts_guns_not_melee() {
+        // A gun's to-hit TN climbs with distance; a melee weapon's never does.
+        let g = gun(10.0, 1, 8); // Gunnery
+        assert_eq!(g.range_penalty(1), 0); // point-blank: none
+        assert_eq!(g.range_penalty(5), (5 - 1) * RANGE_PENALTY_PER_HEX);
+        assert!(g.range_penalty(8) > g.range_penalty(3)); // farther = harder
+        assert_eq!(Attack::melee(10.0).range_penalty(8), 0); // melee is exempt at any reach
     }
 
     #[test]
@@ -2566,7 +2663,10 @@ mod tests {
     fn a_ranged_closer_halts_at_standoff_then_fires() {
         // Rifle 2..=6, speed 5, target 6 away. Advance closes only until in band
         // (distance 6), then fires from there instead of walking into melee.
-        let mut atk = unit(0, Team::A, 0).with_speed(5).with_initiative(10.0);
+        let mut atk = unit(0, Team::A, 0)
+            .with_speed(5)
+            .with_initiative(10.0)
+            .with_skill(Skill::Gunnery, 12); // a marksman — clears the long-range penalty
         atk.set_weapon(gun(12.0, 2, 6));
         let mut dummy = unit(1, Team::B, 6).with_movement(MovementProfile::Hold);
         dummy.character.integrity = 100.0;

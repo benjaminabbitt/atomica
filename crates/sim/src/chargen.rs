@@ -68,6 +68,7 @@ pub enum Stat {
     Plating,
     Barrier,
     Damage,
+    Evasion,
 }
 
 /// How a [`Factor`] combines with its peers — the **bucket** model (§2). `Add` and
@@ -531,6 +532,9 @@ pub struct BaseLine {
     pub plating: f32,
     pub barrier: f32,
     pub damage: f32,
+    /// **Evasion** — the physical to-hit TN (`design-delta §394` "stats defend"): an
+    /// attacker rolls `3d6 + weapon skill` against this (plus a gun's range penalty).
+    pub evasion: f32,
     pub targeting: TargetingProfile,
     pub movement: MovementProfile,
     /// Innate armor class for the mitigation matrix — gear overrides it (last-wins).
@@ -548,6 +552,7 @@ impl BaseLine {
             Stat::Plating => self.plating,
             Stat::Barrier => self.barrier,
             Stat::Damage => self.damage,
+            Stat::Evasion => self.evasion,
         }
     }
 }
@@ -602,6 +607,9 @@ impl Realized {
     }
     pub fn immunity(&self) -> i32 {
         self.stat(Stat::Immunity).round() as i32
+    }
+    pub fn evasion(&self) -> i32 {
+        self.stat(Stat::Evasion).round() as i32
     }
     pub fn initiative(&self) -> f32 {
         self.stat(Stat::Initiative)

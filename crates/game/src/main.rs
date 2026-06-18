@@ -33,6 +33,8 @@ fn demo_battle() -> Battle {
                 damage: dmg,
                 dtype,
                 pen,
+                skill: if range > 1 { Skill::Gunnery } else { Skill::Melee },
+                accuracy: 0,
                 range,
                 min_range: 1,
                 emp: false,

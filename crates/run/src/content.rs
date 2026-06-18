@@ -12,7 +12,21 @@ use atomica_sim::{
 };
 
 fn weapon(damage: f32, dtype: DamageType, pen: PenTier, range: i32) -> Attack {
-    Attack { damage, dtype, pen, range, min_range: 1, emp: false, footprint: Footprint::Single, smart: false }
+    // Role from reach: a reach-1 weapon is Melee, anything longer is Gunnery (and so
+    // takes the range-difficulty penalty on its to-hit roll).
+    let skill = if range > 1 { Skill::Gunnery } else { Skill::Melee };
+    Attack {
+        damage,
+        dtype,
+        pen,
+        skill,
+        accuracy: 0,
+        range,
+        min_range: 1,
+        emp: false,
+        footprint: Footprint::Single,
+        smart: false,
+    }
 }
 
 fn body(name: &str, hp: f32, init: f32) -> Unit {
