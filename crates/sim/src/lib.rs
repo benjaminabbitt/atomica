@@ -1261,7 +1261,13 @@ impl<R: RandomSource> Battle<R> {
                 let c = dec.contagion.expect("active_contagions filters Some");
                 let label = dec.label;
                 for j in 0..n {
-                    if j == i || !self.units[j].is_alive() || !self.in_vector(i, j, c.vector) {
+                    // Target only units that can **host** it — i.e. carry *and re-spread*
+                    // it (a valid surface) — and that the vector reaches.
+                    if j == i
+                        || !self.units[j].is_alive()
+                        || !self.can_host(j, c)
+                        || !self.in_vector(i, j, c.vector)
+                    {
                         continue;
                     }
                     // Re-infection guard: already carries it, or already caught it this phase.
@@ -1282,6 +1288,19 @@ impl<R: RandomSource> Battle<R> {
                 (self.units[i].id, self.units[j].id, dec.label.unwrap_or("corruption"));
             self.units[j].character.install(dec); // install re-stamps the GenId
             self.emit(CombatEvent::Spread { from, to, family });
+        }
+    }
+
+    /// Can unit `j` **host** this contagion — carry it *and re-spread* it? "Target those
+    /// who can spread it": a contagion only takes in a unit with the matching surface — a
+    /// **bio** strain (Immunity-resisted) needs a biological body; a **digital** one
+    /// (Firewall-resisted) needs a live net surface (`Link > 0`). A unit that can't host
+    /// it is a dead end, so it's never infected.
+    fn can_host(&self, j: usize, c: Contagion) -> bool {
+        match c.resist {
+            Stat::Firewall => self.units[j].link() > 0,
+            Stat::Immunity => self.units[j].chassis.is_biological(),
+            _ => true,
         }
     }
 
@@ -2080,6 +2099,33 @@ mod tests {
         assert!(b.units[1].character.carries("Virus")); // caught it
         assert_eq!(b.units[1].character.active_contagions().len(), 1); // now spreads too
         assert!(!b.units[2].character.carries("Virus")); // too far to reach
+    }
+
+    #[test]
+    fn a_bio_plague_only_takes_those_who_can_host_it() {
+        // "Target those who can spread it": a Virus needs a biological body. An adjacent
+        // augmented neighbour catches it; an adjacent Machine (no body to carry / re-spread
+        // it) is a dead end and never infected — even at Immunity 0.
+        let mut carrier = unit(0, Team::B, 0);
+        carrier.apply_modifier(Corruption::plague(4.0, 10, 5));
+        let bio = unit(1, Team::B, 1); // augmented — a valid host
+        let drone = Unit::new(2, "Drone", Team::B, Chassis::Machine).at(Hex::new(0, 1)); // adjacent
+        let mut b = Battle::new(vec![carrier, bio, drone], 7);
+        b.contagion_phase();
+        assert!(b.units[1].character.carries("Virus")); // bio host: infected
+        assert!(!b.units[2].character.carries("Virus")); // machine: can't host a bio plague
+    }
+
+    #[test]
+    fn deploy_keeps_a_plague_but_clears_combat_statuses() {
+        // A carrier's plague is authored loadout — it survives the between-combats cleanse
+        // (`clear_statuses`); an acquired combat status (Burn) does not.
+        let mut u = unit(0, Team::B, 0);
+        u.apply_modifier(Corruption::plague(4.0, 10, 5)); // loadout corruption
+        u.add_status(StatusSpec::burn(), 4, 2); // acquired in combat
+        u.character.clear_statuses();
+        assert_eq!(u.character.active_contagions().len(), 1); // plague kept
+        assert!(u.statuses().iter().all(|(n, _)| *n != "Burn")); // burn cleared
     }
 
     #[test]

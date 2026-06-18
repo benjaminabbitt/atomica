@@ -60,6 +60,13 @@ pub enum Chassis {
 }
 
 impl Chassis {
+    /// Is this a **biological** body (flesh or augmented flesh) — a valid host for a
+    /// **bio** contagion (a Virus)? `false` for pure `Machine` / `Vehicle` (no body to
+    /// catch / spread it). Digital contagions key off Link, not this.
+    pub fn is_biological(self) -> bool {
+        matches!(self, Chassis::Flesh | Chassis::Augmented)
+    }
+
     /// The **low** innate skill floor the chassis ships with (§10): a fresh
     /// recruit is competent-but-unremarkable; the gap to a veteran is earned.
     pub fn baseline_skills(self) -> Skills {

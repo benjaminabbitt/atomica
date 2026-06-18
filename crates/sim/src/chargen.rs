@@ -819,9 +819,11 @@ impl Character {
     }
 
     /// Strip every **status** (labelled decorator) — the between-combats cleanse. Gear,
-    /// implants and behavior overrides (unlabelled) stay.
+    /// implants and behavior overrides (unlabelled) stay, **and so does loadout
+    /// corruption** (a contagious decorator — a plague carrier's plague is an authored
+    /// trait, not a transient combat status).
     pub fn clear_statuses(&mut self) {
-        self.gen.retain(|d| d.label.is_none());
+        self.gen.retain(|d| d.label.is_none() || d.contagion.is_some());
     }
 
     /// Is any active decorator carrying a [`Flag::Stun`]? (read by the action phase.)
