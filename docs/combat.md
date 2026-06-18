@@ -177,7 +177,9 @@ Sequenced so each phase is shippable and test-first, hardest-leverage first:
      [`progression.md`](progression.md) §2). The **nearest N** (N = the objective's
      `seeker_pct` of the *live* squad) peel off, the rest fight; with several targets at
      once (a Search's unswept spots, `Objective::foci`) the seekers **fan out** in parallel,
-     pushing the point *through* combat (they fire after moving).
+     pushing the point *through* combat (they fire after moving). *(The seeker→focus
+     assignment is **greedy-nearest** — deterministic and spreads well at these squad/spot
+     sizes; a true min-cost matching is a 🔭 later refinement, not built.)*
 
 **Cross-cutting layers** (their own systems, slot in later): **Morale/Resolve**
 (delta §4) and **Vehicles** (delta §5, the multi-hex one — the biggest engine change).
