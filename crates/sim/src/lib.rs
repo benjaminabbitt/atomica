@@ -597,15 +597,22 @@ impl Unit {
         self.transition(idx, Condition::Online);
     }
 
-    /// The first active (breachable) implant — the hack's target slot (a
-    /// targeting rule is a later refinement).
-    fn first_active_implant(&self) -> Option<usize> {
-        (0..self.implants.len()).find(|&i| self.implant_condition(i).is_active())
-    }
-
-    /// Indices of all active (breachable) implants — Cascade and EMP hit them all.
+    /// Indices of all active implants (physical and digital alike).
     fn active_implant_indices(&self) -> Vec<usize> {
         (0..self.implants.len()).filter(|&i| self.implant_condition(i).is_active()).collect()
+    }
+
+    /// Active implants a **breach** can trip — only **digital** ones (`Implant::is_digital`).
+    /// Inert physical cyberware (subdermal plating) is invisible to every breach vector
+    /// (hack / worm / EMP); it only wears or is destroyed physically.
+    fn digital_implant_indices(&self) -> Vec<usize> {
+        self.active_implant_indices()
+            .into_iter()
+            .filter(|&i| self.implants[i].spec.is_digital())
+            .collect()
+    }
+    fn first_digital_implant(&self) -> Option<usize> {
+        self.digital_implant_indices().into_iter().next()
     }
 
     /// Throughput bonus from a **meshed** PAN (§5): networked implants boost each
@@ -1134,8 +1141,9 @@ impl<R: RandomSource> Battle<R> {
     /// knockout is the hacker's finesse — EMP is blunt. Flesh / bioware (no chrome)
     /// are immune, and the more implants a target runs, the more an EMP ruins.
     fn apply_emp(&mut self, target: usize) {
-        // Blunt: every active implant, degrade liabilities only (no knockout finesse).
-        let slots = self.units[target].active_implant_indices();
+        // Blunt: every active *digital* implant (inert physical armor is EMP-proof —
+        // no circuitry to fry), degrade liabilities only (no knockout finesse).
+        let slots = self.units[target].digital_implant_indices();
         self.breach_slots(target, slots, EMP_MAGNITUDE, false, BreachVector::Emp);
     }
 
@@ -1369,8 +1377,8 @@ impl<R: RandomSource> Battle<R> {
     /// per effect. If the target carries no chrome to trip, land the deck's own
     /// payload instead (a generic intrusion). Returns the magnitude landed.
     fn apply_breach(&mut self, target: usize, outcome: &RollOutcome, hack: Hack) -> u32 {
-        let Some(first) = self.units[target].first_active_implant() else {
-            // No chrome to trip — run the deck's own payload.
+        let Some(first) = self.units[target].first_digital_implant() else {
+            // No *digital* chrome to trip — run the deck's own payload.
             let stacks = hack.stacks_for(outcome);
             if stacks > 0 {
                 self.units[target].add_status(hack.payload, hack.duration, stacks);
@@ -1380,7 +1388,7 @@ impl<R: RandomSource> Battle<R> {
         // Cascade (§5): a crit on a **meshed** PAN rides the net to *every*
         // implant; a segmented PAN contains it to the one slot.
         let slots = if outcome.crit && self.units[target].pan == Pan::Meshed {
-            self.units[target].active_implant_indices()
+            self.units[target].digital_implant_indices()
         } else {
             vec![first]
         };
@@ -1425,11 +1433,11 @@ impl<R: RandomSource> Battle<R> {
     /// liabilities at a fixed base — but the **stun class stays gated** (a worm doesn't
     /// crit). Returns how many slots it tripped. Flesh / no chrome ⇒ nothing to trip.
     pub fn worm_breach(&mut self, target: usize) -> usize {
-        let Some(first) = self.units[target].first_active_implant() else {
+        let Some(first) = self.units[target].first_digital_implant() else {
             return 0;
         };
         let slots = if self.units[target].pan == Pan::Meshed {
-            self.units[target].active_implant_indices()
+            self.units[target].digital_implant_indices()
         } else {
             vec![first]
         };
@@ -1910,7 +1918,7 @@ mod tests {
         let mut tgt = unit(1, Team::B, 1);
         tgt.character.base_mut().link = 3.0;
         tgt.character.base_mut().firewall = 4.0;
-        tgt.install(Implant::subdermal_plating());
+        tgt.install(Implant::combat_stim());
         tgt.install(Implant::reflex_booster());
         assert_eq!(tgt.pan, Pan::Meshed); // the default
         let mut b = Battle::with_rng(vec![atk, tgt], ScriptedRng::from_d6([6, 6, 6])); // crit
@@ -1927,7 +1935,7 @@ mod tests {
         tgt.character.base_mut().link = 3.0;
         tgt.character.base_mut().firewall = 4.0;
         tgt.pan = Pan::Segmented;
-        tgt.install(Implant::subdermal_plating()); // idx 0 — the targeted slot
+        tgt.install(Implant::combat_stim()); // idx 0 — the targeted (digital) slot
         tgt.install(Implant::reflex_booster()); // idx 1 — contained
         let mut b = Battle::with_rng(vec![atk, tgt], ScriptedRng::from_d6([6, 6, 6])); // crit
         b.resolve_hack(0, 1);
@@ -1941,13 +1949,13 @@ mod tests {
         // its degrade liability outright. On a segmented PAN it hits just the one.
         let mut tgt = unit(1, Team::B, 1);
         tgt.pan = Pan::Segmented;
-        tgt.install(Implant::subdermal_plating()); // idx 0 — Shed/Corrode (degrade)
+        tgt.install(Implant::combat_stim()); // idx 0 — digital, Bleed (degrade) liability
         tgt.install(Implant::reflex_booster()); // idx 1 — contained
         let mut b = Battle::new(vec![unit(0, Team::A, 0), tgt], 1);
         assert_eq!(b.worm_breach(1), 1); // one slot tripped
         assert_eq!(b.units[1].implant_condition(0), Condition::Offline); // disabled, no roll
         assert_eq!(b.units[1].implant_condition(1), Condition::Online); // segmented: contained
-        assert_eq!(b.units[1].statuses()[0].0, "Corrode"); // liability fired
+        assert_eq!(b.units[1].statuses()[0].0, "Bleed"); // degrade liability fired
     }
 
     #[test]
@@ -1955,7 +1963,7 @@ mod tests {
         // On a meshed PAN the worm rides the net to every implant — the finisher.
         let mut tgt = unit(1, Team::B, 1);
         assert_eq!(tgt.pan, Pan::Meshed); // default
-        tgt.install(Implant::subdermal_plating());
+        tgt.install(Implant::combat_stim());
         tgt.install(Implant::reflex_booster());
         let mut b = Battle::new(vec![unit(0, Team::A, 0), tgt], 1);
         assert_eq!(b.worm_breach(1), 2); // both slots
@@ -2050,21 +2058,39 @@ mod tests {
     }
 
     #[test]
-    fn emp_fries_all_chrome_bypassing_firewall() {
+    fn emp_fries_digital_chrome_but_not_inert_plating() {
+        // EMP bypasses Firewall to brick **digital** chrome — but inert physical armor
+        // (subdermal plating, no circuitry) is EMP-proof and keeps its benefit.
         let mut tgt = unit(1, Team::B, 0);
         tgt.character.base_mut().firewall = 99.0; // EMP ignores the wall entirely
-        tgt.install(Implant::subdermal_plating()); // +6 Plating, Shed liability
-        tgt.install(Implant::cyberdeck()); // Link 5, grants hack, Lockout liability
+        tgt.install(Implant::subdermal_plating()); // idx 0 — inert physical: EMP-proof
+        tgt.install(Implant::cyberdeck()); // idx 1 — digital: fried
         assert!(tgt.hack().is_some());
         let mut atk = unit(0, Team::A, 0);
         atk.rearm(|w| w.emp = true);
         // Empty RNG: an EMP rolls nothing (a physical pulse, not a contest).
         let mut b = Battle::with_rng(vec![atk, tgt], ScriptedRng::default());
         b.resolve_attack(0, 1);
-        assert_eq!(b.units[1].implant_condition(0), Condition::Offline);
-        assert_eq!(b.units[1].implant_condition(1), Condition::Offline);
-        assert!(b.units[1].hack().is_none()); // deck bricked
-        assert_eq!(b.units[1].character.plating, 0.0); // plating benefit fried
+        assert_eq!(b.units[1].implant_condition(0), Condition::Online); // plating survives
+        assert_eq!(b.units[1].implant_condition(1), Condition::Offline); // deck bricked
+        assert!(b.units[1].hack().is_none()); // deck gone
+        assert_eq!(b.units[1].character.plating, 6.0); // plating benefit intact
+    }
+
+    #[test]
+    fn physical_cyberware_is_immune_to_breach() {
+        // Subdermal plating presents no digital surface — neither a hack nor a worm can
+        // trip it (only physical wear degrades it). EMP-immunity is covered above.
+        assert!(!Implant::subdermal_plating().is_digital());
+        assert!(Implant::cyberdeck().is_digital());
+        assert!(Implant::reflex_booster().is_digital()); // smartware: networked, hackable
+
+        let mut tgt = unit(1, Team::B, 1);
+        tgt.character.base_mut().link = 4.0; // the unit *has* a surface to hack at...
+        tgt.install(Implant::subdermal_plating()); // ...but the plating itself is inert
+        let mut b = Battle::new(vec![unit(0, Team::A, 0), tgt], 1);
+        assert_eq!(b.worm_breach(1), 0); // no digital chrome to trip
+        assert_eq!(b.units[1].implant_condition(0), Condition::Online); // untouched
     }
 
     #[test]
@@ -2249,12 +2275,12 @@ mod tests {
         atk.skills.set(Skill::Hacking, 6);
         let mut tgt = unit(1, Team::B, 1);
         tgt.character.base_mut().link = 4.0;
-        tgt.install(Implant::subdermal_plating()); // Shed = Corrode (not stun)
+        tgt.install(Implant::combat_stim()); // digital; Bleed (degrade, non-stun) fires
         tgt.character.base_mut().firewall = 4.0; // channel min(3,4)=3 → rating avg(6,3)=4; dice 9 → 13 vs 4, margin 9
         let mut b = Battle::with_rng(vec![atk, tgt], ScriptedRng::from_d6([3, 3, 3]));
         b.resolve_hack(0, 1);
         assert_eq!(b.units[1].implant_condition(0), Condition::Offline);
-        assert_eq!(b.units[1].statuses()[0].0, "Corrode"); // Shed fired
+        assert_eq!(b.units[1].statuses()[0].0, "Bleed"); // degrade liability fired
         assert_eq!(b.units[1].statuses()[0].1, 3); // margin 9 / 3
     }
 

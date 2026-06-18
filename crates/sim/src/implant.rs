@@ -66,6 +66,14 @@ pub struct Implant {
 }
 
 impl Implant {
+    /// Is this implant **digital** — i.e. does it present a surface a breach can trip?
+    /// True if it grants a hack, raises Link, or carries breach liabilities; false for
+    /// **inert physical** cyberware (subdermal plating), which no hack / worm / EMP can
+    /// touch (only physical wear / destruction). Gates every breach vector.
+    pub fn is_digital(&self) -> bool {
+        self.grant_hack.is_some() || self.contribution.link > 0 || !self.hack_effects.is_empty()
+    }
+
     /// A **cyberdeck** — grants the hack loadout and raises Link (the surface) +
     /// Firewall. Breached ⇒ **Lockout** (the deck bricks; the hack drops on the
     /// disable). The roster's keystone link to `netrunning.md`.
@@ -86,7 +94,9 @@ impl Implant {
             name: "Subdermal Plating",
             contribution: Contribution { plating: 6.0, ..Default::default() },
             grant_hack: None,
-            hack_effects: vec![StatusSpec::corrode()], // Shed
+            // **Inert physical armor** — no digital surface, so no breach liability: a
+            // hacker / worm / EMP has nothing to trip here (§ "physical cyberware").
+            hack_effects: vec![],
             condition: Condition::Online,
             removable: true,
         }
