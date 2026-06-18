@@ -44,6 +44,9 @@ pub enum CombatEvent {
     Attacked { attacker: UnitId, target: UnitId, dtype: DamageType, amount: f32, killed: bool },
     /// A weapon's to-hit roll **missed** — the target evaded (or the shot fell short).
     Missed { attacker: UnitId, target: UnitId },
+    /// A **non-attack** source damaged a unit — a DoT / status tick (`cause` = its name,
+    /// e.g. `"Virus"`, `"Bleed"`). `amount` is the Integrity lost, `killed` if lethal.
+    Damaged { unit: UnitId, cause: &'static str, amount: f32, killed: bool },
     /// A hack resolved — the contest `success` / `crit` / `margin`.
     Hacked { attacker: UnitId, target: UnitId, success: bool, crit: bool, margin: i32 },
     /// An implant was breached (disabled), tagged with the vector that did it.
@@ -63,6 +66,7 @@ impl CombatEvent {
             CombatEvent::Moved { .. } => "moved",
             CombatEvent::Attacked { .. } => "attacked",
             CombatEvent::Missed { .. } => "missed",
+            CombatEvent::Damaged { .. } => "damaged",
             CombatEvent::Hacked { .. } => "hacked",
             CombatEvent::Breached { .. } => "breached",
             CombatEvent::Spread { .. } => "spread",
@@ -140,6 +144,12 @@ impl CombatEvent {
             CombatEvent::Missed { attacker, target } => {
                 vec![("attacker", id(attacker)), ("target", id(target))]
             }
+            CombatEvent::Damaged { unit, cause, amount, killed } => vec![
+                ("unit", id(unit)),
+                ("cause", Text(cause.to_string())),
+                ("amount", Float(*amount as f64)),
+                ("killed", Bool(*killed)),
+            ],
             CombatEvent::Died { unit } => vec![("unit", id(unit))],
             CombatEvent::Ended { outcome } => vec![("outcome", Text(format!("{outcome:?}")))],
         }
@@ -177,6 +187,13 @@ impl fmt::Display for CombatEvent {
             }
             CombatEvent::Missed { attacker, target } => {
                 write!(f, "#{} missed #{}", attacker.0, target.0)
+            }
+            CombatEvent::Damaged { unit, cause, amount, killed } => {
+                write!(f, "#{} took {amount:.1} from {cause}", unit.0)?;
+                if *killed {
+                    write!(f, " (killed)")?;
+                }
+                Ok(())
             }
             CombatEvent::Died { unit } => write!(f, "#{} died", unit.0),
             CombatEvent::Ended { outcome } => write!(f, "battle ended: {outcome:?}"),

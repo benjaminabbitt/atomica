@@ -818,6 +818,12 @@ impl Character {
         self.gen.iter().any(|d| d.is_active() && d.label == Some(label))
     }
 
+    /// The display **label** of the decorator with this [`GenId`], if any — used to name
+    /// the *cause* when a DoT / status reaction (`source = id`) fires.
+    pub fn label_of(&self, id: GenId) -> Option<&'static str> {
+        self.gen.iter().find(|d| d.id == id).and_then(|d| d.label)
+    }
+
     /// Strip every **status** (labelled decorator) — the between-combats cleanse. Gear,
     /// implants and behavior overrides (unlabelled) stay, **and so does loadout
     /// corruption** (a contagious decorator — a plague carrier's plague is an authored

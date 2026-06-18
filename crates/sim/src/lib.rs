@@ -953,11 +953,31 @@ impl<R: RandomSource> Battle<R> {
     /// the decorator lifetimes decay. Passive statuses (Stun / Slow / Vuln) carry no
     /// hook — they compose into the accessors and are read in other phases.
     fn status_phase(&mut self) {
-        for unit in self.units.iter_mut() {
-            if !unit.is_alive() {
+        for i in 0..self.units.len() {
+            if !self.units[i].is_alive() {
                 continue;
             }
-            unit.character.dispatch(Event::TickStart, self.tick, &mut self.rng);
+            let before = self.units[i].integrity();
+            let reactions =
+                self.units[i].character.dispatch(Event::TickStart, self.tick, &mut self.rng);
+            // Surface DoT / status-tick damage as a structured event (`cause` = the
+            // decorator's label, e.g. the plague's "Virus") so kills are attributable.
+            let dealt = before - self.units[i].integrity();
+            if dealt > 0.0 {
+                let cause = reactions
+                    .iter()
+                    .find_map(|r| match r {
+                        Reaction::Damage { source, .. } => self.units[i].character.label_of(*source),
+                        _ => None,
+                    })
+                    .unwrap_or("status");
+                self.emit(CombatEvent::Damaged {
+                    unit: self.units[i].id,
+                    cause,
+                    amount: dealt,
+                    killed: !self.units[i].is_alive(),
+                });
+            }
         }
     }
 
@@ -2126,6 +2146,18 @@ mod tests {
         let mut b = Battle::new(vec![unit(0, Team::A, 0), tgt], 1);
         b.status_phase(); // the tick that fires DoTs
         assert_eq!(b.units[1].integrity(), before - 5.0);
+    }
+
+    #[test]
+    fn a_dot_tick_logs_a_structured_damaged_event() {
+        // DoT damage is now attributable in the trace: the fever logs a Damaged event
+        // naming its cause ("Virus"), so plague kills aren't anonymous any more.
+        let mut tgt = unit(1, Team::B, 6).with_integrity(4.0); // fragile — the fever finishes it
+        tgt.apply_modifier(Corruption::virus(0.0, 5.0, 5));
+        let mut b = Battle::new(vec![unit(0, Team::A, 0), tgt], 1).with_log();
+        b.status_phase();
+        let ev = b.events().iter().find(|r| r.event.kind() == "damaged").expect("a damaged event");
+        assert!(matches!(ev.event, CombatEvent::Damaged { cause: "Virus", killed: true, .. }));
     }
 
     #[test]
