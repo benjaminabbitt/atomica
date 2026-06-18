@@ -50,8 +50,8 @@ The designed round:
    - **move** — up to the unit's **move** stat toward its **movement profile**'s
      goal, pathing only through **free** hexes (boxed-in ⇒ no move);
    - **act** — pick a target via the **targeting profile**, **roll to-hit**
-     (`3d6 + weapon skill + accuracy` vs the target's **Evasion** + a gun's **range
-     penalty**; an undefended melee blow auto-hits, §7G), and on a hit resolve the
+     (`3d6 + weapon skill + accuracy` vs the target's **Evasion** + an **awkward**
+     weapon's close-quarters penalty; an undefended melee blow auto-hits, §7G), and on a hit resolve the
      attack over its **footprint** (single / blast / beam, **friendly fire on** for
      physical), then `penetration → defense → magnitude → apply → on-hit statuses → death`.
 3. **Cleanup** — decay / duration ticks; elimination check; **death triggers**.
@@ -70,7 +70,7 @@ The designed round:
 | **AoE footprints + friendly fire** (§7G) | blast (radius) · beam (line/width); physical hits allies | **`Blast`/`Beam` wired, friendly fire on** | ✅ (width = 1) |
 | **To-hit roll** (§7G, design-delta §394) | `3d6 + weapon skill` vs **Evasion**; undefended melee auto-hits | **`Stat::Evasion` TN; `resolve_attack_with` rolls (TN ≤ 0 ⇒ auto-hit, no RNG)** | ✅ |
 | **Weapon skills / roles** (§10.5) | a weapon's role picks its skill (blade → Melee, gun → Gunnery) | **`Attack.skill` (Melee/Gunnery) + `accuracy` mod** | ✅ |
-| **Range difficulty** (§7G) | guns get harder with distance; melee / hacking exempt | **`Attack.range_penalty` (per-hex, Gunnery only); hacking never routes through it** | ✅ |
+| **Awkward weapons** (§7G) | rifles / polearms / heavy weapons are clumsy **up close**; handy weapons & hacking exempt | **`Attack.awkward` tag → `awkward_penalty`: +2 TN adjacent, +4 same-hex (≈never), 0 at range ≥ 2; hacking never routes through it** | ✅ |
 | **Range bands / reach** (§10.5) | gun bands · polearm reach | **`min_range..=range` band** (`usable_at`) | ✅ |
 | **Multiple weapons / selection** | per-target weapon choice | **`Capability::Weapon` grants + `weapon_at` (best in band)** | ✅ |
 | **Smartgun / IFF targeting** (§7F) | smart-linked weapon spares allies in its line of fire | **`Attack.smart` — IFF filters the attacker's team out of the footprint** (`smartlinked()`) | ✅ |
@@ -114,9 +114,11 @@ Sequenced so each phase is shippable and test-first, hardest-leverage first:
 5. **Weapons, reach & to-hit ✅** — each weapon has a **role** (`Attack.skill`:
    Melee / Gunnery) and rolls **to-hit** (`3d6 + skill + accuracy` vs the target's
    `Stat::Evasion`); an **undefended** melee blow (TN ≤ 0) auto-hits with no roll, so
-   trivial exchanges stay deterministic. **Guns take a range penalty**
-   (`Attack.range_penalty`, per-hex past point-blank) — melee is exempt, and **hacking
-   never routes through it**, so range can't touch the digital realm. **Range bands**
+   trivial exchanges stay deterministic. An **awkward** weapon (`Attack.awkward` — a
+   rifle / polearm / heavy weapon) is **clumsy up close**: `+2` TN jammed adjacent,
+   fading to none at range ≥ 2 (`+4` same-hex is ≈unreachable). Handy weapons & melee
+   are exempt, and **hacking never routes through it**, so range can't touch the digital
+   realm. **Range bands**
    (`Attack.min_range..=range`, `usable_at`) and **multi-weapon selection**
    (`Capability::Weapon` grants + `weapon_at` picks the highest-damage weapon whose band
    covers the distance) are built; a closing profile **stands off** once any weapon
