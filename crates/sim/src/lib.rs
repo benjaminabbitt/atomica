@@ -146,8 +146,8 @@ impl EquipmentTags {
     /// No tags.
     pub const NONE: EquipmentTags = EquipmentTags(0);
 
-    /// **IFF / smartgun** (§7F) — *rule:* a smart weapon's line of fire / blast spares
-    /// the attacker's team (filtered in `footprint_targets`).
+    /// **IFF / smartgun** (§7F) — *rule:* [`spares_team`](EquipmentTags::spares_team):
+    /// the line of fire / blast spares the attacker's team (filtered in `footprint_targets`).
     pub const SMART: EquipmentTags = EquipmentTags(1 << 0);
     /// **Awkward** (§7G) — *rule:* a long / unwieldy weapon is clumsy **up close**: a
     /// to-hit penalty that fades to none at proper range (see [`to_hit_penalty`](EquipmentTags::to_hit_penalty)).
@@ -156,8 +156,9 @@ impl EquipmentTags {
     /// distance** (discrete from `AWKWARD`; a rifle is `RANGED | AWKWARD`, hard far *and*
     /// near with a sweet spot between).
     pub const RANGED: EquipmentTags = EquipmentTags(1 << 2);
-    /// **Digital** (§6) — *rule:* networked chrome a breach can trip (deck, smartware);
-    /// absent ⇒ **inert physical** cyberware, immune to hack / worm / EMP.
+    /// **Digital** (§6) — *rule:* [`breachable`](EquipmentTags::breachable): networked
+    /// chrome a breach can trip (deck, smartware); absent ⇒ **inert physical** cyberware,
+    /// immune to hack / worm / EMP.
     pub const DIGITAL: EquipmentTags = EquipmentTags(1 << 3);
 
     /// Does this set contain every flag in `tag`?
@@ -189,6 +190,18 @@ impl EquipmentTags {
             };
         }
         tn
+    }
+
+    /// `SMART`'s rule (§7F): does this equipment **spare the attacker's team** in its
+    /// line of fire / blast? (`footprint_targets` filters teammates out when true.)
+    pub const fn spares_team(self) -> bool {
+        self.has(Self::SMART)
+    }
+
+    /// `DIGITAL`'s rule (§6): can a **breach** (hack / worm / EMP) trip this equipment?
+    /// `false` ⇒ inert physical chrome, immune to every vector.
+    pub const fn breachable(self) -> bool {
+        self.has(Self::DIGITAL)
     }
 }
 
@@ -1211,7 +1224,7 @@ impl<R: RandomSource> Battle<R> {
                     && self.units[j].is_alive()
                     && hexes.contains(&self.units[j].pos)
                     // IFF: a smart weapon holds fire on the attacker's own team.
-                    && !(atk.tags.has(EquipmentTags::SMART) && self.units[j].team == team)
+                    && !(atk.tags.spares_team() && self.units[j].team == team)
             })
             .collect()
     }
@@ -2709,16 +2722,28 @@ mod tests {
     }
 
     #[test]
-    fn weapon_tags_are_a_set_of_const_flags() {
+    fn equipment_tags_are_a_set_of_const_flags() {
         let plain = EquipmentTags::NONE;
         assert!(!plain.has(EquipmentTags::SMART) && !plain.has(EquipmentTags::AWKWARD));
-        // A weapon can carry several tags at once.
+        // Equipment can carry several tags at once.
         let both = EquipmentTags::SMART | EquipmentTags::AWKWARD;
         assert!(both.has(EquipmentTags::SMART) && both.has(EquipmentTags::AWKWARD));
         // `with` adds one without disturbing the rest.
         let added = EquipmentTags::SMART.with(EquipmentTags::AWKWARD);
         assert_eq!(added, both);
         assert!(!EquipmentTags::SMART.has(EquipmentTags::AWKWARD)); // distinct flags
+    }
+
+    #[test]
+    fn the_smart_and_digital_tags_carry_their_rules() {
+        // Each tag's behaviour lives on the tag set, next to the flag.
+        assert!(EquipmentTags::SMART.spares_team()); // IFF: spares the team
+        assert!(!EquipmentTags::NONE.spares_team());
+        assert!(EquipmentTags::DIGITAL.breachable()); // a breach can trip it
+        assert!(!EquipmentTags::NONE.breachable()); // inert physical: immune
+        // The implant accessor defers to the tag rule.
+        assert!(Implant::cyberdeck().is_digital());
+        assert!(!Implant::subdermal_plating().is_digital());
     }
 
     #[test]

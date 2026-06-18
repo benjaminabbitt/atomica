@@ -70,11 +70,11 @@ pub struct Implant {
 }
 
 impl Implant {
-    /// Is this implant **digital** — does it present a surface a breach can trip? Reads
-    /// the [`EquipmentTags::DIGITAL`] tag. `false` ⇒ inert physical cyberware, immune to
-    /// every breach vector (hack / worm / EMP); only physical wear / destruction.
+    /// Is this implant **digital** — does it present a surface a breach can trip? Defers
+    /// to the [`DIGITAL`](EquipmentTags::DIGITAL) tag's rule ([`EquipmentTags::breachable`]).
+    /// `false` ⇒ inert physical cyberware, immune to every breach vector; only physical wear.
     pub fn is_digital(&self) -> bool {
-        self.tags.has(EquipmentTags::DIGITAL)
+        self.tags.breachable()
     }
 
     /// A **cyberdeck** — grants the hack loadout and raises Link (the surface) +
