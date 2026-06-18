@@ -146,19 +146,18 @@ impl EquipmentTags {
     /// No tags.
     pub const NONE: EquipmentTags = EquipmentTags(0);
 
-    // -- Weapon tags (`docs/combat.md`) --
-    /// **IFF / smartgun** (§7F): the line of fire / blast spares the attacker's team.
+    /// **IFF / smartgun** (§7F) — *rule:* a smart weapon's line of fire / blast spares
+    /// the attacker's team (filtered in `footprint_targets`).
     pub const SMART: EquipmentTags = EquipmentTags(1 << 0);
-    /// **Awkward** (§7G): a long / unwieldy weapon (rifle, polearm, heavy) — clumsy up close.
+    /// **Awkward** (§7G) — *rule:* a long / unwieldy weapon is clumsy **up close**: a
+    /// to-hit penalty that fades to none at proper range (see [`to_hit_penalty`](EquipmentTags::to_hit_penalty)).
     pub const AWKWARD: EquipmentTags = EquipmentTags(1 << 1);
-    /// **Ranged** (§7G): a projectile weapon — an inherent to-hit penalty that **grows
-    /// with distance** (discrete from `AWKWARD`, which bites up close). A gun is `RANGED`;
-    /// a rifle is `RANGED | AWKWARD` (penalised far *and* near, sweet spot between).
+    /// **Ranged** (§7G) — *rule:* a projectile weapon's to-hit penalty **grows with
+    /// distance** (discrete from `AWKWARD`; a rifle is `RANGED | AWKWARD`, hard far *and*
+    /// near with a sweet spot between).
     pub const RANGED: EquipmentTags = EquipmentTags(1 << 2);
-
-    // -- Implant tags (`docs/cyberware.md`) --
-    /// **Digital** (§6): networked chrome a breach can trip (deck, smartware). Absent ⇒
-    /// **inert physical** cyberware (subdermal plating), immune to hack / worm / EMP.
+    /// **Digital** (§6) — *rule:* networked chrome a breach can trip (deck, smartware);
+    /// absent ⇒ **inert physical** cyberware, immune to hack / worm / EMP.
     pub const DIGITAL: EquipmentTags = EquipmentTags(1 << 3);
 
     /// Does this set contain every flag in `tag`?
@@ -168,6 +167,28 @@ impl EquipmentTags {
     /// This set with `tag` added.
     pub const fn with(self, tag: EquipmentTags) -> EquipmentTags {
         EquipmentTags(self.0 | tag.0)
+    }
+
+    /// The **to-hit TN** these tags add at hex-distance `dist` (§7G) — the sum of each
+    /// range rule the set carries: `AWKWARD` bites up close, `RANGED` grows with distance.
+    /// One place for the rules, universal to any equipment (an item with neither pays 0).
+    pub fn to_hit_penalty(self, dist: i32) -> i32 {
+        let mut tn = 0;
+        if self.has(Self::AWKWARD) {
+            tn += match dist {
+                d if d <= 0 => AWKWARD_POINT_BLANK, // same hex — practically unreachable
+                1 => AWKWARD_ADJACENT,              // jammed in close
+                _ => 0,                             // at proper range
+            };
+        }
+        if self.has(Self::RANGED) {
+            tn += match dist {
+                d if d >= RANGED_LONG => RANGED_LONG_PENALTY,
+                d if d >= RANGED_MEDIUM => RANGED_MEDIUM_PENALTY,
+                _ => 0, // short range — clean
+            };
+        }
+        tn
     }
 }
 
@@ -245,40 +266,6 @@ impl Attack {
             emp: false,
             footprint: Footprint::Single,
             tags: EquipmentTags::NONE,
-        }
-    }
-
-    /// The **awkward** to-hit penalty this weapon suffers at hex-distance `dist` (§7G) —
-    /// a TN bump (harder to hit) when a long / unwieldy weapon is **too close**, fading
-    /// to none at proper range. Only weapons tagged [`EquipmentTags::AWKWARD`] pay it; a
-    /// handy weapon (pistol, blade) never does. Bands: same-hex `-4` (≈never — occupancy
-    /// keeps units apart), adjacent `-2`, range ≥ 2 `0`. **Discrete from
-    /// [`ranged_penalty`](Attack::ranged_penalty)** (which bites at *long* range instead).
-    pub fn awkward_penalty(&self, dist: i32) -> i32 {
-        if !self.tags.has(EquipmentTags::AWKWARD) {
-            return 0;
-        }
-        match dist {
-            d if d <= 0 => AWKWARD_POINT_BLANK, // same hex — practically unreachable
-            1 => AWKWARD_ADJACENT,              // jammed in close
-            _ => 0,                             // at proper range
-        }
-    }
-
-    /// The **ranged** to-hit penalty this weapon suffers at hex-distance `dist` (§7G) —
-    /// the *inherent* difficulty of a projectile weapon, **growing with distance**. Only
-    /// weapons tagged [`EquipmentTags::RANGED`] pay it (a melee weapon never does), and
-    /// **hacking never routes through here**, so range can't touch the digital realm.
-    /// Bands: short (`≤ 2`) `0`, medium (`3–4`) `-2`, long (`≥ 5`) `-4` (small boards
-    /// rarely reach the far band). **Discrete from [`awkward_penalty`](Attack::awkward_penalty)**.
-    pub fn ranged_penalty(&self, dist: i32) -> i32 {
-        if !self.tags.has(EquipmentTags::RANGED) {
-            return 0;
-        }
-        match dist {
-            d if d >= RANGED_LONG => RANGED_LONG_PENALTY,
-            d if d >= RANGED_MEDIUM => RANGED_MEDIUM_PENALTY,
-            _ => 0, // short range — clean
         }
     }
 
@@ -1171,7 +1158,7 @@ impl<R: RandomSource> Battle<R> {
         // blow always lands and burns no RNG (the deterministic auto-hit pipeline; dice
         // only matter once a defender can evade or the shot is hard).
         let dist = self.reach(attacker, target);
-        let tn = self.units[target].evasion() + atk.awkward_penalty(dist) + atk.ranged_penalty(dist);
+        let tn = self.units[target].evasion() + atk.tags.to_hit_penalty(dist);
         if tn > 0 {
             let rating = self.units[attacker].skill(atk.skill) + atk.accuracy;
             if !resolve_contest(&mut self.rng, Contest::new(rating, 0, tn)).success {
@@ -2735,44 +2722,39 @@ mod tests {
     }
 
     #[test]
-    fn an_awkward_weapon_is_clumsy_up_close_not_at_range() {
-        // A long / unwieldy weapon (awkward tag) pays a to-hit penalty jammed in close,
-        // fading to none at proper range; a handy weapon (and any melee) never pays it.
-        let mut rifle = gun(10.0, 1, 8);
-        rifle.tags = rifle.tags.with(EquipmentTags::AWKWARD);
-        assert_eq!(rifle.awkward_penalty(1), AWKWARD_ADJACENT); // adjacent: clumsy (-2)
-        assert_eq!(rifle.awkward_penalty(2), 0); // at proper range: clean
-        assert_eq!(rifle.awkward_penalty(8), 0); // and stays clean however far
-        assert_eq!(rifle.awkward_penalty(0), AWKWARD_POINT_BLANK); // same hex (≈never): -4
-        assert_eq!(gun(10.0, 1, 8).awkward_penalty(1), 0); // a handy gun: no penalty
-        assert_eq!(Attack::melee(10.0).awkward_penalty(1), 0); // melee: never awkward
+    fn the_awkward_tag_adds_a_close_range_to_hit_rule() {
+        // The AWKWARD tag carries the rule: clumsy jammed in close, fading to none at
+        // proper range. The untagged set pays nothing.
+        let t = EquipmentTags::AWKWARD;
+        assert_eq!(t.to_hit_penalty(0), AWKWARD_POINT_BLANK); // same hex (≈never): -4
+        assert_eq!(t.to_hit_penalty(1), AWKWARD_ADJACENT); // adjacent: clumsy (-2)
+        assert_eq!(t.to_hit_penalty(2), 0); // at proper range: clean
+        assert_eq!(t.to_hit_penalty(8), 0);
+        assert_eq!(EquipmentTags::NONE.to_hit_penalty(1), 0); // no tag, no penalty
+        assert_eq!(Attack::melee(10.0).tags.to_hit_penalty(1), 0); // melee: never awkward
     }
 
     #[test]
-    fn a_ranged_weapon_gets_harder_with_distance() {
-        // The RANGED tag adds an inherent penalty that grows with distance — discrete
-        // from awkward, and only paid by tagged (projectile) weapons.
-        let mut g = gun(10.0, 1, 8);
-        g.tags = g.tags.with(EquipmentTags::RANGED);
-        assert_eq!(g.ranged_penalty(1), 0); // short range: clean
-        assert_eq!(g.ranged_penalty(2), 0);
-        assert_eq!(g.ranged_penalty(3), RANGED_MEDIUM_PENALTY); // medium: -2
-        assert_eq!(g.ranged_penalty(6), RANGED_LONG_PENALTY); // long: -4
-        assert_eq!(gun(10.0, 1, 8).ranged_penalty(6), 0); // untagged: no penalty
-        assert_eq!(Attack::melee(10.0).ranged_penalty(6), 0); // melee: never ranged
+    fn the_ranged_tag_adds_a_distance_to_hit_rule() {
+        // The RANGED tag carries the rule: an inherent penalty growing with distance,
+        // discrete from awkward.
+        let t = EquipmentTags::RANGED;
+        assert_eq!(t.to_hit_penalty(1), 0); // short range: clean
+        assert_eq!(t.to_hit_penalty(2), 0);
+        assert_eq!(t.to_hit_penalty(3), RANGED_MEDIUM_PENALTY); // medium: -2
+        assert_eq!(t.to_hit_penalty(6), RANGED_LONG_PENALTY); // long: -4
+        assert_eq!(EquipmentTags::NONE.to_hit_penalty(6), 0); // untagged: no penalty
     }
 
     #[test]
     fn a_rifle_is_penalised_close_and_far_with_a_sweet_spot() {
-        // RANGED | AWKWARD compose: clumsy adjacent (awkward), harder far (ranged),
-        // a clean band between — the two discrete tags build the U-curve.
-        let mut rifle = gun(10.0, 2, 8);
-        rifle.tags = EquipmentTags::AWKWARD | EquipmentTags::RANGED;
-        let tn = |d: i32| rifle.awkward_penalty(d) + rifle.ranged_penalty(d);
-        assert_eq!(tn(1), AWKWARD_ADJACENT); // jammed in close: +2 (awkward)
-        assert_eq!(tn(2), 0); // the sweet spot: clean
-        assert_eq!(tn(4), RANGED_MEDIUM_PENALTY); // reaching out: +2 (ranged)
-        assert_eq!(tn(6), RANGED_LONG_PENALTY); // long shot: +4 (ranged)
+        // RANGED | AWKWARD compose: the two rules sum to clumsy adjacent (awkward),
+        // harder far (ranged), a clean band between — the U-curve, from one summed rule.
+        let rifle = EquipmentTags::AWKWARD | EquipmentTags::RANGED;
+        assert_eq!(rifle.to_hit_penalty(1), AWKWARD_ADJACENT); // jammed in close: +2 (awkward)
+        assert_eq!(rifle.to_hit_penalty(2), 0); // the sweet spot: clean
+        assert_eq!(rifle.to_hit_penalty(4), RANGED_MEDIUM_PENALTY); // reaching out: +2 (ranged)
+        assert_eq!(rifle.to_hit_penalty(6), RANGED_LONG_PENALTY); // long shot: +4 (ranged)
     }
 
     #[test]
