@@ -433,11 +433,69 @@ pub fn capture() -> RunPlan {
     )
 }
 
+/// **Smash & Grab** — an **Extract** objective: punch in to the data core, grab it, and run
+/// it back to the extraction point. Nearest-N means one courier peels off for the item
+/// while the squad screens — and *hunts the overwatch sniper*, which a totalizing pull
+/// would have left plinking forever.
+pub fn extract_run() -> RunPlan {
+    RunPlan::new(
+        "Smash & Grab",
+        vec![Encounter::new(
+            "Data Core",
+            vec![enforcer("Ward"), sniper("Eye"), mook("Net-1"), mook("Net-2")],
+        )
+        .on(yard())
+        .with_objective(ObjectiveKind::Extract { item: Hex::new(6, 2), exit: Hex::new(0, 2) })],
+    )
+}
+
+/// **Hold the Line** — a **CaptureHold**: take the junction and hold it four cumulative
+/// rounds against a closing assault (clearing the field early also seals it).
+pub fn hold_the_line() -> RunPlan {
+    RunPlan::new(
+        "Hold the Line",
+        vec![Encounter::new(
+            "Junction",
+            vec![
+                brute("Ram-1"),
+                brute("Ram-2"),
+                swarmer("Dog-1"),
+                swarmer("Dog-2"),
+                mook("Gun"),
+            ],
+        )
+        .on(alley())
+        .with_objective(ObjectiveKind::CaptureHold(Hex::new(4, 2), 4))],
+    )
+}
+
+/// **Seize the Relay** — a sticky **Flag**: grab the forward relay (once touched it's yours,
+/// even if you're driven off) then hold the ground three rounds to lock it in.
+pub fn seize() -> RunPlan {
+    RunPlan::new(
+        "Seize the Relay",
+        vec![Encounter::new(
+            "Relay",
+            vec![enforcer("Keeper"), brute("Slab"), mook("Tech-1"), mook("Tech-2")],
+        )
+        .on(firing_lanes())
+        .with_objective(ObjectiveKind::Flag(Hex::new(5, 2), 3))],
+    )
+}
+
 /// The **campaign** — the full [`crate::Game`] tier: the tuned gauntlet, the harder street
-/// war, a node capture, then a last stand, with R&R between each. Field it with
-/// [`full_squad`].
+/// war, then a tour of objective types (capture, extract, hold-the-line, seize) and a last
+/// stand, with R&R between each. Field it with [`full_squad`].
 pub fn campaign() -> GamePlan {
-    GamePlan::new("Night City", vec![gauntlet(), street_war(), capture(), last_stand()])
+    GamePlan::new("Night City", vec![
+        gauntlet(),
+        street_war(),
+        capture(),
+        extract_run(),
+        hold_the_line(),
+        seize(),
+        last_stand(),
+    ])
 }
 
 #[cfg(test)]

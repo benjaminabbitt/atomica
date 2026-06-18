@@ -37,6 +37,9 @@ fn scenario(name: &str) -> (Vec<Unit>, RunPlan) {
         "street" | "streetwar" => (content::full_squad(), content::street_war()),
         "laststand" | "last" => (content::full_squad(), content::last_stand()),
         "capture" | "hold" => (content::full_squad(), content::capture()),
+        "extract" | "grab" => (content::full_squad(), content::extract_run()),
+        "holdline" | "defend" => (content::full_squad(), content::hold_the_line()),
+        "seize" | "flag" => (content::full_squad(), content::seize()),
         _ => (content::starter_roster(), content::gauntlet()),
     }
 }

@@ -203,8 +203,28 @@ impl Run {
             return None;
         }
         let mut battle = self.build_battle(&self.encounters[self.index]);
-        let outcome = battle.resolve(MAX_TICKS);
-        let objective = battle.objectives_report().first().copied().unwrap_or(ObjectiveStatus::Achieved);
+        // Resolve to a *decision*: stop as soon as the standard fight ends **or** the
+        // encounter objective is settled (Achieved / Failed). An objective mission needn't
+        // grind on to a full wipe once the point is taken — which also avoids tick-cap
+        // stalls when a held objective leaves a stray enemy alive.
+        let mut outcome = Outcome::Ongoing;
+        for _ in 0..MAX_TICKS {
+            outcome = battle.step();
+            if outcome != Outcome::Ongoing {
+                break;
+            }
+            if battle.objectives_report().first().is_some_and(|s| *s != ObjectiveStatus::Pending) {
+                break; // objective decided — mission over
+            }
+        }
+        let objective =
+            battle.objectives_report().first().copied().unwrap_or(ObjectiveStatus::Achieved);
+        // A fight we stopped on a met objective is a win; an undecided run to the cap is a draw.
+        let outcome = match outcome {
+            Outcome::Ongoing if objective == ObjectiveStatus::Achieved => Outcome::Winner(Team::A),
+            Outcome::Ongoing => Outcome::Draw,
+            other => other,
+        };
         let events = battle.events().to_vec();
 
         let before: Vec<String> = self.roster.iter().map(|u| u.name.clone()).collect();
@@ -410,7 +430,9 @@ fn deploy(template: &Unit, next_id: &mut u32, team: Team, pos: Hex) -> Unit {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use atomica_sim::{Attack, Chassis, DamageType, Footprint, PenTier, Skill, EquipmentTags};
+    use atomica_sim::{
+        Attack, Chassis, DamageType, Footprint, PenTier, Skill, Terrain, Tile, EquipmentTags,
+    };
 
     /// A melee combatant with an armor-bypassing hit (deterministic damage).
     fn fighter(name: &str, damage: f32, hp: f32, initiative: f32) -> Unit {
@@ -495,15 +517,18 @@ mod tests {
 
     #[test]
     fn winning_the_fight_but_missing_the_objective_loses_the_run() {
-        // Capture a node the unit never stands on: it wipes the enemy yet fails
-        // the mission — army alive, run lost.
+        // The node sits on a solid blocker — no unit can ever stand on it, so even a clean
+        // sweep leaves the Hold unmet: win the fight, lose the run. (The AI *tries* to take
+        // it now, so the objective has to be genuinely impossible to demonstrate the miss.)
+        let node = Hex::new(4, 2);
         let roster = vec![fighter("Ace", 30.0, 80.0, 9.0)];
         let enc = Encounter::new("Capture", vec![fighter("Mook", 2.0, 8.0, 1.0)])
-            .with_objective(ObjectiveKind::Hold(Hex::new(-5, -5), 1));
+            .on(Terrain::arena(8, 4).set(node, Tile::Blocked))
+            .with_objective(ObjectiveKind::Hold(node, 1));
         let mut run = Run::new(roster, vec![enc], 1);
         let report = run.fight_next().unwrap();
         assert!(matches!(report.outcome, Outcome::Winner(Team::A))); // enemy wiped
-        assert_eq!(report.objective, ObjectiveStatus::Failed); // ...but the node wasn't held
+        assert_eq!(report.objective, ObjectiveStatus::Failed); // ...but the node can't be held
         assert_eq!(run.outcome(), RunOutcome::Lost); // mission failure
         assert!(!run.roster().is_empty()); // the unit lived
     }

@@ -934,6 +934,7 @@ impl<R: RandomSource> Battle<R> {
         self.woven_phase();
         self.contagion_phase(); // corruption jumps to fresh victims (contested)
         self.decay_phase();
+        self.objectives.tick(&self.units, self.tick); // advance objective state (capture/hold/extract)
 
         let outcome = self.outcome();
         if !matches!(outcome, Outcome::Ongoing) {
@@ -1062,10 +1063,10 @@ impl<R: RandomSource> Battle<R> {
     /// push far past it (the friction that corners a kiter without a wall).
     fn physical_activation(&mut self, i: usize) {
         let enemy = self.select_target(i);
-        let in_range = enemy.is_some_and(|t| self.units[i].weapon_at(self.reach(i, t)).is_some());
-        // Objective pull: only a player unit with no enemy already in range chases the point.
-        let objective =
-            if self.units[i].team == Team::A && !in_range { self.objective_focus() } else { None };
+        // Objective pull: the nearest-N designated seekers push the point *through* combat —
+        // they flow to it and still fire after moving — while everyone else fights normally.
+        // (A seeker doesn't hang back for a melee; taking the objective is its job.)
+        let objective = self.seeks_objective(i);
         let closes = matches!(
             self.units[i].movement(),
             MovementProfile::Advance | MovementProfile::Flank | MovementProfile::Swarm
@@ -1108,10 +1109,23 @@ impl<R: RandomSource> Battle<R> {
         }
     }
 
-    /// The hex a **player** unit should flow toward — the first unmet Reach / Hold
-    /// objective's focus, or `None` (no positional objective, or already achieved).
-    fn objective_focus(&self) -> Option<Hex> {
-        self.objectives.focus(&self.units, self.tick, self.fight_over())
+    /// Should player unit `i` chase the objective this activation, and toward which hex?
+    /// `Some(hex)` when `i` is a player unit **ranked among the nearest N** living player
+    /// units to an unmet positional objective (Reach / Hold / Extract / …) — so only a
+    /// handful peel off to the point and the rest keep fighting. `None` otherwise.
+    fn seeks_objective(&self, i: usize) -> Option<Hex> {
+        if self.units[i].team != Team::A {
+            return None;
+        }
+        let (focus, pct) = self.objectives.focus(&self.units, self.tick, self.fight_over())?;
+        let mut players: Vec<usize> = (0..self.units.len())
+            .filter(|&j| self.units[j].is_alive() && self.units[j].team == Team::A)
+            .collect();
+        // N = that percent of the *live* squad (at least one), so the seeker count scales
+        // down as units fall — the nearest N peel off, the rest fight.
+        let n = ((pct as f32 / 100.0 * players.len() as f32).round() as usize).max(1);
+        players.sort_by_key(|&j| (self.units[j].pos.distance(focus), self.units[j].id.0));
+        players.iter().take(n).any(|&j| j == i).then_some(focus)
     }
 
     /// The **engagement distance** between two units — the grid distance, except a
@@ -1951,14 +1965,39 @@ mod tests {
         let hex = Hex::new(2, 0);
         let mut held = vec![unit(0, Team::A, 2), unit(1, Team::B, 5)]; // player on the hex
         held[0].pos = hex;
-        let obj = Hold { hex, by_round: 3 };
-        assert_eq!(obj.status(&held, 1, false), ObjectiveStatus::Pending); // holds, but too early
-        assert_eq!(obj.status(&held, 3, false), ObjectiveStatus::Achieved); // held to the round
+        // Controlled but ticked too early — doesn't latch yet.
+        let mut early = Hold::new(hex, 3);
+        early.tick(&held, 1);
+        assert_eq!(early.status(&held, 1, false), ObjectiveStatus::Pending);
+        // Ticked at the round while held → latches Achieved.
+        let mut obj = Hold::new(hex, 3);
+        obj.tick(&held, 3);
+        assert_eq!(obj.status(&held, 3, false), ObjectiveStatus::Achieved);
+        // Clearing the enemy while on the hex seals it immediately.
         let mut cleared = held.clone();
-        cleared[1].character.alive = false; // enemy gone → captured immediately
-        assert_eq!(obj.status(&cleared, 1, false), ObjectiveStatus::Achieved);
-        let away = vec![unit(0, Team::A, 0), unit(1, Team::B, 5)]; // player not on the hex
-        assert_eq!(obj.status(&away, 9, true), ObjectiveStatus::Failed); // fight over, never held
+        cleared[1].character.alive = false;
+        let mut cobj = Hold::new(hex, 9);
+        cobj.tick(&cleared, 1);
+        assert_eq!(cobj.status(&cleared, 1, false), ObjectiveStatus::Achieved);
+        // Never held when the fight ends → Failed.
+        let away = vec![unit(0, Team::A, 0), unit(1, Team::B, 5)];
+        let mut aobj = Hold::new(hex, 3);
+        aobj.tick(&away, 9);
+        assert_eq!(aobj.status(&away, 9, true), ObjectiveStatus::Failed);
+    }
+
+    #[test]
+    fn hold_latches_so_the_holder_can_wander_off() {
+        // The fix for the capture scenario's buzzer-beaters: once held, achievement sticks
+        // even after the unit leaves to mop up.
+        let hex = Hex::new(2, 0);
+        let mut held = vec![unit(0, Team::A, 2), unit(1, Team::B, 5)];
+        held[0].pos = hex;
+        let mut obj = Hold::new(hex, 1);
+        obj.tick(&held, 1); // latched while on the hex
+        let mut away = held.clone();
+        away[0].pos = Hex::new(5, 0); // ...then walked off
+        assert_eq!(obj.status(&away, 9, true), ObjectiveStatus::Achieved); // still ours
     }
 
     #[test]
@@ -1967,7 +2006,53 @@ mod tests {
         let mut both = vec![unit(0, Team::A, 2), unit(1, Team::B, 2)];
         both[0].pos = hex;
         both[1].pos = hex; // an enemy contests the hex
-        assert_eq!(Hold { hex, by_round: 1 }.status(&both, 5, false), ObjectiveStatus::Pending);
+        let mut obj = Hold::new(hex, 1);
+        obj.tick(&both, 5);
+        assert_eq!(obj.status(&both, 5, false), ObjectiveStatus::Pending);
+    }
+
+    #[test]
+    fn capture_hold_needs_cumulative_turns_of_control() {
+        let hex = Hex::new(2, 0);
+        let mut on = vec![unit(0, Team::A, 2), unit(1, Team::B, 5)];
+        on[0].pos = hex;
+        let mut obj = ObjectiveKind::CaptureHold(hex, 3).build();
+        obj.tick(&on, 1);
+        obj.tick(&on, 2);
+        assert_eq!(obj.status(&on, 2, false), ObjectiveStatus::Pending); // 2 of 3 turns
+        obj.tick(&on, 3);
+        assert_eq!(obj.status(&on, 3, false), ObjectiveStatus::Achieved); // quota met, latched
+    }
+
+    #[test]
+    fn the_flag_capture_is_sticky() {
+        let hex = Hex::new(2, 0);
+        let mut on = vec![unit(0, Team::A, 2), unit(1, Team::B, 5)];
+        on[0].pos = hex;
+        let mut obj = ObjectiveKind::Flag(hex, 2).build();
+        obj.tick(&on, 1); // touched — captured for good
+        // Driven off the flag: the grab still counts, and clearing the field seals it.
+        let mut off = on.clone();
+        off[0].pos = Hex::new(0, 0);
+        off[1].character.alive = false; // enemy cleared
+        obj.tick(&off, 2);
+        assert_eq!(obj.status(&off, 2, false), ObjectiveStatus::Achieved);
+    }
+
+    #[test]
+    fn extract_is_a_two_phase_grab_and_run() {
+        let item = Hex::new(6, 0);
+        let exit = Hex::new(0, 0);
+        let mut obj = ObjectiveKind::Extract { item, exit }.build();
+        assert_eq!(obj.focus(), Some(item)); // phase 1: go to the item
+        let mut at_item = vec![unit(0, Team::A, 6), unit(1, Team::B, 5)];
+        at_item[0].pos = item;
+        obj.tick(&at_item, 1);
+        assert_eq!(obj.focus(), Some(exit)); // picked up → phase 2: run to the exit
+        let mut at_exit = at_item.clone();
+        at_exit[0].pos = exit;
+        obj.tick(&at_exit, 2);
+        assert_eq!(obj.status(&at_exit, 2, false), ObjectiveStatus::Achieved);
     }
 
     #[test]
