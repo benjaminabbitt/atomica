@@ -11,6 +11,8 @@
 //! The event log streams to **stdout**; headers / losses / verdict go to **stderr**.
 
 use atomica_run::{content, Run, RunOutcome};
+use atomica_sim::CombatEvent;
+use std::collections::BTreeMap;
 
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
@@ -61,13 +63,28 @@ fn probe(seeds: u64) {
     let (mut clears, mut losses, mut survivors) = (0u64, 0u64, 0u64);
     let (mut hits, mut misses, mut hacks, mut breaches, mut spreads) = (0u64, 0u64, 0u64, 0u64, 0u64);
     let (mut tick_sum, mut encounters) = (0u64, 0u64);
+    // What's actually killing the squad: every roster death bucketed by cause
+    // ("weapon" for a lethal attack, the DoT's name — Virus / Bleed — for a status tick).
+    let mut deaths_by_cause: BTreeMap<&'static str, u64> = BTreeMap::new();
 
     for seed in 0..seeds {
         let mut run = Run::new(content::starter_roster(), content::gauntlet().encounters, seed).with_log();
         while let Some(r) = run.fight_next() {
             encounters += 1;
             tick_sum += r.events.last().map_or(0, |e| e.tick as u64);
+            // Player units deploy first, so ids `0..roster_size` are ours; a lethal event
+            // on one of those ids is a roster loss we can attribute.
+            let roster_size = (r.survivors + r.losses.len()) as u32;
             for e in &r.events {
+                match &e.event {
+                    CombatEvent::Attacked { target, killed: true, .. } if target.0 < roster_size => {
+                        *deaths_by_cause.entry("weapon").or_default() += 1;
+                    }
+                    CombatEvent::Damaged { unit, cause, killed: true, .. } if unit.0 < roster_size => {
+                        *deaths_by_cause.entry(cause).or_default() += 1;
+                    }
+                    _ => {}
+                }
                 match e.event.kind() {
                     "attacked" => hits += 1,
                     "missed" => misses += 1,
@@ -94,4 +111,16 @@ fn probe(seeds: u64) {
     println!("  to-hit miss     : {:>5.0}%   ({misses} miss / {attacks} attacks)", pct(misses, attacks));
     println!("  netrunning      : {hacks} hacks, {breaches} breaches");
     println!("  contagion       : {spreads} spreads");
+    let killed: u64 = deaths_by_cause.values().sum();
+    if killed == 0 {
+        println!("  losses by cause : (none)");
+    } else {
+        // Loudest cause first, so the balance lever is obvious at a glance.
+        let mut by_cause: Vec<_> = deaths_by_cause.into_iter().collect();
+        by_cause.sort_by(|a, b| b.1.cmp(&a.1).then(a.0.cmp(b.0)));
+        println!("  losses by cause :");
+        for (cause, n) in by_cause {
+            println!("      {cause:<10} {n:>4}   ({:>3.0}%)", pct(n, killed));
+        }
+    }
 }
