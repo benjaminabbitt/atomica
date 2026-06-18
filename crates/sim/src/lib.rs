@@ -26,6 +26,7 @@
 pub mod armor;
 mod board;
 mod chargen;
+mod corruption;
 mod hack;
 mod hex;
 mod implant;
@@ -43,6 +44,7 @@ pub use chargen::{
     Factor, FactorKind, Flag, Gate, GenId, Hook, HookEffect, Modifier, ModifierKind, Override,
     Priority, Reaction, Realized, Remove, Stat, Tag, Wear,
 };
+pub use corruption::Corruption;
 pub use hack::{hack_rating, Hack, HackResult};
 pub use hex::Hex;
 pub use implant::{Contribution, Implant, Pan};
