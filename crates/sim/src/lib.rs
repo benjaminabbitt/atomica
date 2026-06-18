@@ -605,6 +605,11 @@ fn knockout_gated(outcome: &RollOutcome, tier: i32) -> bool {
 /// margin/crit, being a blunt physical pulse. Placeholder (TBD).
 const EMP_MAGNITUDE: u32 = 2;
 
+/// Fixed magnitude of the degrade-class liabilities a **Worm** breach fires — like an
+/// EMP it carries no roll/margin (a worm trips regardless); the finisher's bite is its
+/// reach (Cascade), not its per-slot force. Placeholder (TBD).
+const WORM_DEGRADE: u32 = 2;
+
 /// Cap on the meshed-PAN synergy bonus to a hack rating (§5). Placeholder (TBD).
 const MESH_SYNERGY_CAP: i32 = 3;
 
@@ -1008,13 +1013,9 @@ impl<R: RandomSource> Battle<R> {
     /// knockout is the hacker's finesse — EMP is blunt. Flesh / bioware (no chrome)
     /// are immune, and the more implants a target runs, the more an EMP ruins.
     fn apply_emp(&mut self, target: usize) {
-        for idx in self.units[target].active_implant_indices() {
-            for spec in self.units[target].disable_implant(idx) {
-                if !matches!(spec.effect, Effect::Stun) {
-                    self.units[target].add_status(spec, EMP_MAGNITUDE, EMP_MAGNITUDE);
-                }
-            }
-        }
+        // Blunt: every active implant, degrade liabilities only (no knockout finesse).
+        let slots = self.units[target].active_implant_indices();
+        self.breach_slots(target, slots, EMP_MAGNITUDE, false);
     }
 
     /// The standalone **digital** pass (Link order) — superseded in `step` by
@@ -1195,21 +1196,47 @@ impl<R: RandomSource> Battle<R> {
             vec![first]
         };
         let degrade = hack::margin_stacks(outcome.margin);
+        self.breach_slots(target, slots, degrade, knockout_gated(outcome, KNOCKOUT_MARGIN));
+        degrade
+    }
+
+    /// Fire the §6 breach ladder across `slots` of `target`: **disable** each (the
+    /// floor), then per returned liability fire the **degrade** class at magnitude
+    /// `degrade` and — iff `decisive` — the gated **stun** class. The shared core of
+    /// every breach vector (hack, EMP, Worm); only the slot set, `degrade`, and
+    /// `decisive` differ.
+    fn breach_slots(&mut self, target: usize, slots: Vec<usize>, degrade: u32, decisive: bool) {
         for idx in slots {
-            // Floor: disable the implant; then the ladder per liability.
             for spec in self.units[target].disable_implant(idx) {
                 if matches!(spec.effect, Effect::Stun) {
-                    // Knockout class — gated to a decisive hack (§6 knob).
-                    if knockout_gated(outcome, KNOCKOUT_MARGIN) {
+                    if decisive {
                         self.units[target].add_status(spec, KNOCKOUT_STUN, 1);
                     }
                 } else if degrade > 0 {
-                    // Degrade class — magnified by the margin.
                     self.units[target].add_status(spec, degrade, degrade);
                 }
             }
         }
-        degrade
+    }
+
+    /// A **Worm breach** (`cyberware.md` §6) — the logic-bomb / Cascade vector, no roll.
+    /// Trips `target`'s first active implant; on a **meshed** PAN it **Cascades** to
+    /// *every* implant, a **segmented** PAN contains it to the one. A worm trips
+    /// *regardless of margin* (the finisher), so it disables + fires the degrade
+    /// liabilities at a fixed base — but the **stun class stays gated** (a worm doesn't
+    /// crit). Returns how many slots it tripped. Flesh / no chrome ⇒ nothing to trip.
+    pub fn worm_breach(&mut self, target: usize) -> usize {
+        let Some(first) = self.units[target].first_active_implant() else {
+            return 0;
+        };
+        let slots = if self.units[target].pan == Pan::Meshed {
+            self.units[target].active_implant_indices()
+        } else {
+            vec![first]
+        };
+        let n = slots.len();
+        self.breach_slots(target, slots, WORM_DEGRADE, false);
+        n
     }
 
     /// Nearest enemy with a digital surface (Link > 0) within the unit's antenna
@@ -1707,6 +1734,36 @@ mod tests {
         b.resolve_hack(0, 1);
         assert_eq!(b.units[1].implant_condition(0), Condition::Offline);
         assert_eq!(b.units[1].implant_condition(1), Condition::Online); // contained
+    }
+
+    #[test]
+    fn a_worm_logic_bomb_trips_an_implant_without_a_roll() {
+        // The Worm breach vector (§6): no hack roll — it disables the slot and fires
+        // its degrade liability outright. On a segmented PAN it hits just the one.
+        let mut tgt = unit(1, Team::B, 1);
+        tgt.pan = Pan::Segmented;
+        tgt.install(Implant::subdermal_plating()); // idx 0 — Shed/Corrode (degrade)
+        tgt.install(Implant::reflex_booster()); // idx 1 — contained
+        let mut b = Battle::new(vec![unit(0, Team::A, 0), tgt], 1);
+        assert_eq!(b.worm_breach(1), 1); // one slot tripped
+        assert_eq!(b.units[1].implant_condition(0), Condition::Offline); // disabled, no roll
+        assert_eq!(b.units[1].implant_condition(1), Condition::Online); // segmented: contained
+        assert_eq!(b.units[1].statuses()[0].0, "Corrode"); // liability fired
+    }
+
+    #[test]
+    fn a_worm_cascades_across_a_meshed_pan() {
+        // On a meshed PAN the worm rides the net to every implant — the finisher.
+        let mut tgt = unit(1, Team::B, 1);
+        assert_eq!(tgt.pan, Pan::Meshed); // default
+        tgt.install(Implant::subdermal_plating());
+        tgt.install(Implant::reflex_booster());
+        let mut b = Battle::new(vec![unit(0, Team::A, 0), tgt], 1);
+        assert_eq!(b.worm_breach(1), 2); // both slots
+        assert!((0..b.units[1].implants.len())
+            .all(|i| b.units[1].implant_condition(i) == Condition::Offline));
+        // A worm doesn't crit — the reflex booster's Seizure (stun) stays gated.
+        assert!(!b.units[1].is_stunned());
     }
 
     #[test]
