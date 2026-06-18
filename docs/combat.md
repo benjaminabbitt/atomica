@@ -67,8 +67,8 @@ The designed round:
 | **Woven initiative** (§7C/§10.3) | one interleaved physical+digital order | **one woven order** (Initiative + Link on one track) | ✅ |
 | **AoE footprints + friendly fire** (§7G) | blast (radius) · beam (line/width); physical hits allies | **`Blast`/`Beam` wired, friendly fire on** | ✅ (width = 1) |
 | **Range bands / reach** (§10.5) | gun bands · polearm reach | **`min_range..=range` band** (`usable_at`) | ✅ |
-| **Multiple weapons / selection** | per-target weapon choice | **`weapons` + `weapon_at` (best in band)** | ✅ |
-| **Smartgun / IFF targeting** (§7F) | smart profiles, fires on Link | — | 🔭 |
+| **Multiple weapons / selection** | per-target weapon choice | **`Capability::Weapon` grants + `weapon_at` (best in band)** | ✅ |
+| **Smartgun / IFF targeting** (§7F) | smart-linked weapon spares allies in its line of fire | **`Attack.smart` — IFF filters the attacker's team out of the footprint** (`smartlinked()`) | ✅ |
 | **Death triggers** (§10.9) | Detonate · Legacy · Data-spill | **all three**, reaped (chain-kills) | ✅ |
 | **Board seam / two boards** (§7B) | ±½-hex seam, frontage pairings | **single grid + seam rule** (`Board`/`SeamOffset`, `engages`) | ✅ |
 | ~~**Heat** (§7D/§10.10)~~ | ~~thermal layer~~ | **dropped for now** | ✂️ |
@@ -107,10 +107,12 @@ Sequenced so each phase is shippable and test-first, hardest-leverage first:
    / `digital_phase` are now test-only. A high-Link runner hacks before a sluggish
    bruiser swings.
 5. **Weapons & reach ◑** — **range bands** (`Attack.min_range..=range`, `usable_at`)
-   and **multi-weapon selection** (`Unit.weapons` + `weapon_at` picks the
+   and **multi-weapon selection** (`Capability::Weapon` grants + `weapon_at` picks the
    highest-damage weapon whose band covers the distance) are built; a closing profile
-   **stands off** once any weapon reaches. Polearm reach = a `2..=2` band. *Deferred:
-   the **Smartgun/IFF** smart-targeting mod (fires on Link / IFF — ties to AR).*
+   **stands off** once any weapon reaches. Polearm reach = a `2..=2` band. The
+   **Smartgun/IFF** mod ✅ is `Attack.smart` (`smartlinked()`): a smart-linked weapon
+   identifies friend from foe, so its blast / line of fire spares the attacker's team —
+   a dumb beam through occupied hexes mows down allies in the path; this holds fire.
 6. **Death triggers ✅** — `Unit.on_death`: `Detonate` (physical AoE in radius,
    friendly fire) · `DataSpill` (leak a status to nearby **enemies** — the contagion
    seed) · `Legacy` (a status to nearby **allies**). `Battle::reap` fires each once
@@ -145,5 +147,5 @@ Sequenced so each phase is shippable and test-first, hardest-leverage first:
 
 **Phases 1–7 are built** (Phase 1 first, highest-leverage, through the board seam).
 What's left is the **cross-cutting layers** above (Morale, Vehicles — *Heat dropped*)
-and polish on the ◑ items (Smartgun/IFF, beam width, deploy-half validation, ranged
-seam distance).
+and polish on the ◑ items (beam width, deploy-half validation, ranged
+seam distance). *Smartgun/IFF ✅ shipped (`Attack.smart`).*

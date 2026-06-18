@@ -377,6 +377,7 @@ mod tests {
                 min_range: 1,
                 emp: false,
                 footprint: Footprint::Single,
+                smart: false,
             })
     }
 

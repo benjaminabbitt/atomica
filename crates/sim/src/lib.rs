@@ -149,6 +149,10 @@ pub struct Attack {
     pub emp: bool,
     /// The area struck (§7G) — `Single` by default; `Blast`/`Beam` hit allies too.
     pub footprint: Footprint,
+    /// **IFF / smartgun** (`docs/combat.md`): a smart-linked weapon **identifies friend
+    /// from foe**, so its line of fire / blast **spares the attacker's team** — a dumb
+    /// weapon firing through occupied hexes can mow down allies in the path; this can't.
+    pub smart: bool,
 }
 
 impl Attack {
@@ -168,7 +172,15 @@ impl Attack {
             min_range: 1,
             emp: false,
             footprint: Footprint::Single,
+            smart: false,
         }
+    }
+
+    /// Builder: mark this weapon **smart** (IFF) — its blast / line of fire spares the
+    /// attacker's team (`docs/combat.md`). The "smartgun" mod over any base profile.
+    pub fn smartlinked(mut self) -> Self {
+        self.smart = true;
+        self
     }
 }
 
@@ -999,7 +1011,8 @@ impl<R: RandomSource> Battle<R> {
     /// The living units an attack strikes (§7G). `Single` is just the target;
     /// `Blast` is the disc around the target hex; `Beam` is the line from the attacker
     /// along the bearing to the target. AoE includes **allies** (friendly fire) — only
-    /// the attacker is spared. Returned in ascending index order (deterministic).
+    /// the attacker is spared — **unless the weapon is `smart`** (IFF), which also spares
+    /// the attacker's whole team. Returned in ascending index order (deterministic).
     fn footprint_targets(&self, attacker: usize, target: usize, atk: Attack) -> Vec<usize> {
         use std::collections::HashSet;
         let hexes: HashSet<Hex> = match atk.footprint {
@@ -1011,9 +1024,14 @@ impl<R: RandomSource> Battle<R> {
                 from.line(dir, length + 1).into_iter().skip(1).collect() // skip the attacker's own hex
             }
         };
+        let team = self.units[attacker].team;
         (0..self.units.len())
             .filter(|&j| {
-                j != attacker && self.units[j].is_alive() && hexes.contains(&self.units[j].pos)
+                j != attacker
+                    && self.units[j].is_alive()
+                    && hexes.contains(&self.units[j].pos)
+                    // IFF: a smart weapon holds fire on the attacker's own team.
+                    && !(atk.smart && self.units[j].team == team)
             })
             .collect()
     }
@@ -2241,6 +2259,26 @@ mod tests {
     }
 
     #[test]
+    fn a_smart_beam_holds_fire_on_allies_in_the_line() {
+        // Same beam through an ally — but smart-linked (IFF). The enemies on the line
+        // are hit; the friendly in the path is identified and spared.
+        let mut atk = unit(0, Team::A, 0);
+        atk.rearm(|w| {
+            w.footprint = Footprint::Beam(4);
+            w.smart = true; // smartgun
+        });
+        let on1 = unit(1, Team::B, 1); // (1,0) — enemy on the beam
+        let ally = unit(2, Team::A, 2); // (2,0) — ally in the path
+        let on3 = unit(3, Team::B, 3); // (3,0) — enemy on the beam
+        let mut b = Battle::new(vec![atk, on1, ally, on3], 1);
+        let hp: Vec<f32> = b.units.iter().map(|u| u.character.integrity).collect();
+        b.resolve_attack(0, 1);
+        assert!(b.units[1].character.integrity < hp[1]); // enemy struck
+        assert_eq!(b.units[2].character.integrity, hp[2]); // ally spared by IFF
+        assert!(b.units[3].character.integrity < hp[3]); // enemy past the ally still struck
+    }
+
+    #[test]
     fn single_footprint_spares_bystanders() {
         let atk = unit(0, Team::A, 0); // default Single
         let target = unit(1, Team::B, 1);
@@ -2290,6 +2328,7 @@ mod tests {
             min_range,
             emp: false,
             footprint: Footprint::Single,
+            smart: false,
         }
     }
 
