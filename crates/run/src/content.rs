@@ -21,25 +21,28 @@ fn body(name: &str, hp: f32, init: f32) -> Unit {
 
 // -- Player archetypes ------------------------------------------------------------
 
-/// A **blade** — a fast melee bruiser.
+/// A **blade** — a fast melee bruiser. Slashing shreds the unarmored but glances off
+/// Plate (×0.5), so the blade wants soft targets.
 pub fn blade(name: &str) -> Unit {
-    body(name, 34.0, 7.0).with_attack(weapon(14.0, DamageType::Slashing, PenTier::Internal, 1))
+    body(name, 68.0, 7.0).with_attack(weapon(14.0, DamageType::Slashing, PenTier::Internal, 1))
 }
 
-/// A **netrunner** — a ranged sidearm plus a cyberdeck (hacks enemy chrome).
+/// A **netrunner** — a ranged sidearm plus a cyberdeck (hacks enemy chrome). Piercing
+/// is also halved by Plate, so the runner leans on the breach, not the gun, vs armor.
 pub fn runner(name: &str) -> Unit {
     let mut u =
-        body(name, 26.0, 5.0).with_attack(weapon(8.0, DamageType::Piercing, PenTier::Contact, 4));
+        body(name, 60.0, 6.0).with_attack(weapon(8.0, DamageType::Piercing, PenTier::Contact, 4));
     u.skills.set(Skill::Hacking, 5);
     u.install(Implant::cyberdeck());
     u
 }
 
-/// A **bulwark** — an armored tank with a heavy maul.
+/// A **bulwark** — an armored tank with a heavy maul. Bludgeoning is *amplified* vs
+/// Plate (×1.5), so the slow bulwark is the answer to the hardened enemies.
 pub fn bulwark(name: &str) -> Unit {
-    body(name, 48.0, 4.0)
+    body(name, 94.0, 5.0)
         .with_armor(ArmorClass::Plate)
-        .with_attack(weapon(10.0, DamageType::Bludgeoning, PenTier::Contact, 1))
+        .with_attack(weapon(12.0, DamageType::Bludgeoning, PenTier::Contact, 1))
 }
 
 /// The **starter roster** — one of each archetype.
@@ -49,23 +52,32 @@ pub fn starter_roster() -> Vec<Unit> {
 
 // -- Enemy archetypes -------------------------------------------------------------
 
+/// A soft, lightly-armored **mook** (Mail) — cannon fodder the blade carves up. Hits
+/// lightly; the threat is in numbers.
 fn mook(name: &str) -> Unit {
-    body(name, 22.0, 5.0).with_attack(weapon(7.0, DamageType::Piercing, PenTier::External, 2))
+    body(name, 74.0, 5.0)
+        .with_armor(ArmorClass::Mail)
+        .with_attack(weapon(3.0, DamageType::Piercing, PenTier::External, 2))
 }
 
-/// A hardened, **chromed** enemy — a netrunner can breach its plating.
+/// A hardened, **chromed** enemy in **Plate** — shrugs off the blade / gun (×0.5), so
+/// it's a slog until the netrunner breaches its plating or the bulwark caves it in. A
+/// punishing but slow-killing wall.
 fn enforcer(name: &str) -> Unit {
-    let mut u =
-        body(name, 30.0, 5.0).with_attack(weapon(9.0, DamageType::Bludgeoning, PenTier::Contact, 1));
+    let mut u = body(name, 104.0, 5.0)
+        .with_armor(ArmorClass::Plate)
+        .with_attack(weapon(3.0, DamageType::Bludgeoning, PenTier::Contact, 1));
     u.character.base_mut().link = 4.0;
     u.character.base_mut().firewall = 6.0;
     u.install(Implant::subdermal_plating());
     u
 }
 
-/// A **carrier** — a mook seeded with a virulent plague that spreads on contact.
+/// A **carrier** — a tougher mook seeded with a virulent plague that spreads on contact.
 fn carrier(name: &str) -> Unit {
-    let mut u = mook(name);
+    let mut u = body(name, 94.0, 5.0)
+        .with_armor(ArmorClass::Mail)
+        .with_attack(weapon(3.0, DamageType::Piercing, PenTier::External, 2));
     u.apply_modifier(Corruption::plague(4.0, 10, 8));
     u
 }
@@ -77,9 +89,18 @@ pub fn gauntlet() -> RunPlan {
     RunPlan::new(
         "Sprawl Gauntlet",
         vec![
-            Encounter::new("Alley Ambush", vec![mook("Thug-1"), mook("Thug-2")]),
-            Encounter::new("Corp Checkpoint", vec![enforcer("Enforcer"), mook("Guard")]),
-            Encounter::new("Quarantine Zone", vec![carrier("Carrier"), enforcer("Warden")]),
+            Encounter::new(
+                "Alley Ambush",
+                vec![mook("Thug-1"), mook("Thug-2"), mook("Thug-3"), mook("Thug-4")],
+            ),
+            Encounter::new(
+                "Corp Checkpoint",
+                vec![enforcer("Enforcer"), mook("Guard-1"), mook("Guard-2"), mook("Guard-3")],
+            ),
+            Encounter::new(
+                "Quarantine Zone",
+                vec![carrier("Carrier"), enforcer("Warden"), mook("Orderly")],
+            ),
         ],
     )
 }

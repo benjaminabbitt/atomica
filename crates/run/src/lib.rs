@@ -33,7 +33,7 @@ pub mod content;
 /// Hard cap on ticks per battle (matches the sim's draw fallback).
 const MAX_TICKS: u32 = 1000;
 /// Depth column the enemy force deploys on (player on column 0).
-const ENEMY_COLUMN: i32 = 8;
+const ENEMY_COLUMN: i32 = 6;
 
 /// One planned battle: the enemy force the roster faces, and the **objective**
 /// that defines winning it. (Team is assigned at deploy time, so build the enemies
