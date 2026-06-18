@@ -1,14 +1,21 @@
-//! Authored **content** — a starter roster and a gauntlet — so the CLI (and tests) can
-//! play a *real* run instead of an ad-hoc fixture. Magnitudes are illustrative (TBD;
+//! Authored **content** — rosters, archetypes, and scenarios — so the CLI (and tests)
+//! can play a *real* run instead of an ad-hoc fixture. Magnitudes are illustrative (TBD;
 //! see [`docs/rosters.md`](../../../docs/rosters.md)).
+//!
+//! **Player archetypes** ([`blade`] / [`runner`] / [`bulwark`] core, [`marksman`] /
+//! [`sapper`] specialists) and **enemy archetypes** ([`mook`] up to [`sniper`],
+//! [`grenadier`], [`swarmer`], [`breaker`], [`bomber`]) each lean on a different system —
+//! armor matrix, range bands, AoE friendly fire, netrunning, behavior profiles, on-death
+//! triggers — so a run exercises the engine broadly. The **scenarios** ([`gauntlet`] /
+//! [`street_war`] / [`last_stand`]) vary the **objective** too (Eliminate vs Survive).
 //!
 //! Roster/enemy templates carry a placeholder id `0` and `Team::A`; [`deploy`](crate)
 //! reassigns both at battle start, so only the stat line / loadout here matters.
 
 use crate::{Encounter, GamePlan, RunPlan};
 use atomica_sim::{
-    ArmorClass, Attack, Chassis, DamageType, Footprint, Implant, PenTier, Skill, Team, Unit,
-    EquipmentTags,
+    ArmorClass, Attack, Chassis, DamageType, DeathTrigger, Footprint, Implant, MovementProfile,
+    ObjectiveKind, PenTier, Skill, Team, TargetingProfile, Unit, EquipmentTags,
 };
 
 fn weapon(damage: f32, dtype: DamageType, pen: PenTier, range: i32) -> Attack {
@@ -38,6 +45,27 @@ fn weapon(damage: f32, dtype: DamageType, pen: PenTier, range: i32) -> Attack {
 fn awkward(mut a: Attack) -> Attack {
     a.tags = a.tags.with(EquipmentTags::AWKWARD);
     a
+}
+
+/// Builder: a **blast** weapon (grenade / rocket) — an AoE disc of `radius`. No `SMART`
+/// tag means **no IFF**: the blast catches allies caught in the footprint too (§7G).
+fn blast(mut a: Attack, radius: i32) -> Attack {
+    a.footprint = Footprint::Blast(radius);
+    a
+}
+
+/// Builder: an **EMP** weapon — a physical pulse that fries the target's digital chrome
+/// *through* Firewall (§7I), the counter to chromed builds.
+fn emp(mut a: Attack) -> Attack {
+    a.emp = true;
+    a
+}
+
+/// Builder: a **smartlinked** weapon — the `SMART` tag (IFF: its line / blast spares the
+/// firer's team) plus a little inherent **accuracy** from the smartgun's targeting assist.
+fn smart(mut a: Attack) -> Attack {
+    a.accuracy += 1;
+    a.smartlinked()
 }
 
 fn body(name: &str, hp: f32, init: f32) -> Unit {
@@ -78,9 +106,48 @@ pub fn bulwark(name: &str) -> Unit {
         .with_attack(weapon(12.0, DamageType::Bludgeoning, PenTier::Contact, 1))
 }
 
-/// The **starter roster** — one of each archetype.
+/// A **marksman** — a glass-cannon sharpshooter. A smartlinked long rifle (IFF, so it
+/// won't tag a teammate in its lane) that picks the **back line** and **holds at standoff
+/// range** (it stops closing the instant range-5 reaches); deadly at distance, clumsy and
+/// fragile if something closes (low HP, AWKWARD). It *advances* rather than kites — two
+/// mutual kiters would just flee each other to the tick cap.
+pub fn marksman(name: &str) -> Unit {
+    let rifle = smart(awkward(weapon(9.0, DamageType::Piercing, PenTier::Contact, 5)));
+    body(name, 56.0, 6.0)
+        .with_skill(Skill::Gunnery, 7)
+        .with_evasion(15.0)
+        .with_attack(rifle)
+        .with_targeting(TargetingProfile::Backline)
+}
+
+/// A **sapper** — an EMP shock-trooper, the anti-chrome answer. A short-range pulse that
+/// fries digital cyberware *through* Firewall (§7I); it hunts the **biggest threat**, so
+/// it bee-lines the chromed heavies the rest of the squad struggles to crack.
+pub fn sapper(name: &str) -> Unit {
+    let shock = emp(weapon(6.0, DamageType::Bludgeoning, PenTier::Contact, 2));
+    body(name, 66.0, 5.0)
+        .with_skill(Skill::Gunnery, 5)
+        .with_evasion(13.0)
+        .with_attack(shock)
+        .with_targeting(TargetingProfile::HighestThreat)
+}
+
+/// The **starter roster** — the core trio (one melee, one runner, one tank). The probe
+/// tunes against this loadout, so it stays fixed.
 pub fn starter_roster() -> Vec<Unit> {
     vec![blade("Katana"), runner("Glitch"), bulwark("Anvil")]
+}
+
+/// A **full strike team** — the core trio plus the two specialists (marksman, sapper), a
+/// five-unit squad for the larger [`campaign`] scenarios.
+pub fn full_squad() -> Vec<Unit> {
+    vec![
+        blade("Katana"),
+        runner("Glitch"),
+        bulwark("Anvil"),
+        marksman("Hawkeye"),
+        sapper("Surge"),
+    ]
 }
 
 // -- Enemy archetypes -------------------------------------------------------------
@@ -121,6 +188,73 @@ fn brute(name: &str) -> Unit {
         .with_attack(weapon(5.0, DamageType::Piercing, PenTier::Contact, 2))
 }
 
+/// A **sniper** — a long-range nest that **holds position** and picks off the squad's
+/// **biggest threat** from range 6, so the squad eats fire on the approach. Fragile up
+/// close (AWKWARD, low HP): rush it down. (It Holds rather than kites — the board is
+/// unbounded, so a fleeing shooter would never be cornered.)
+fn sniper(name: &str) -> Unit {
+    body(name, 58.0, 6.0)
+        .with_skill(Skill::Gunnery, 5)
+        .with_evasion(13.0)
+        .with_attack(awkward(weapon(7.0, DamageType::Piercing, PenTier::Contact, 6)))
+        .with_targeting(TargetingProfile::HighestThreat)
+        .with_movement(MovementProfile::Hold)
+}
+
+/// A **grenadier** — lobs a **blast** (radius 1, no IFF). The AoE punishes a clustered
+/// squad — and catches its *own* line if they bunch — so it rewards spreading out.
+fn grenadier(name: &str) -> Unit {
+    body(name, 70.0, 4.0)
+        .with_armor(ArmorClass::Mail)
+        .with_skill(Skill::Gunnery, 4)
+        .with_evasion(12.0)
+        .with_attack(blast(weapon(6.0, DamageType::Bludgeoning, PenTier::External, 3), 1))
+}
+
+/// A **swarmer** — a fast, fragile rusher (speed 2, **Swarm**) that hunts the **lowest
+/// Integrity** target to finish the wounded. Trivial one-on-one; a threat in numbers.
+fn swarmer(name: &str) -> Unit {
+    body(name, 40.0, 7.0)
+        .with_skill(Skill::Melee, 4)
+        .with_evasion(15.0)
+        .with_speed(2)
+        .with_attack(weapon(5.0, DamageType::Slashing, PenTier::Internal, 1))
+        .with_targeting(TargetingProfile::LowestIntegrity)
+        .with_movement(MovementProfile::Swarm)
+}
+
+/// A **breaker** — an enemy netrunner with a cyberdeck: jacked in at the back (Holds), it
+/// **hacks the squad's chrome** (the runner's deck — the sapper has none to lose). A
+/// mirror of the player's runner, and its own deck is a breach target right back.
+fn breaker(name: &str) -> Unit {
+    let mut u = body(name, 56.0, 6.0)
+        .with_skill(Skill::Hacking, 6)
+        .with_skill(Skill::Gunnery, 4)
+        .with_evasion(13.0)
+        .with_attack(weapon(4.0, DamageType::Piercing, PenTier::External, 3))
+        .with_targeting(TargetingProfile::HighestThreat)
+        .with_movement(MovementProfile::Hold);
+    u.install(Implant::cyberdeck());
+    u
+}
+
+/// A **bomber** — **Swarms** in to die, then **detonates**: a parting blast (radius 1,
+/// friendly fire) to everyone adjacent. Killing it at range, or not bunched, is the play.
+fn bomber(name: &str) -> Unit {
+    body(name, 50.0, 4.0)
+        .with_armor(ArmorClass::Mail)
+        .with_skill(Skill::Melee, 4)
+        .with_evasion(12.0)
+        .with_attack(weapon(4.0, DamageType::Bludgeoning, PenTier::Contact, 1))
+        .with_movement(MovementProfile::Swarm)
+        .with_on_death(DeathTrigger::Detonate {
+            damage: 10.0,
+            dtype: DamageType::Bludgeoning,
+            pen: PenTier::Contact,
+            radius: 1,
+        })
+}
+
 // -- Plans ------------------------------------------------------------------------
 
 /// The **gauntlet** — a three-encounter run of escalating threats (no R&R within).
@@ -144,19 +278,116 @@ pub fn gauntlet() -> RunPlan {
     )
 }
 
-/// The **campaign** — two gauntlets with R&R between (the full [`crate::Game`] tier).
-pub fn campaign() -> GamePlan {
-    GamePlan::new(
-        "Night City",
+/// A **street war** — a three-encounter run that leans on the *new* threats: a rushing
+/// swarm that detonates, a ranged crossfire (sniper + AoE), and a netrunning duel. Built
+/// for the [`full_squad`] (the specialists earn their keep here).
+pub fn street_war() -> RunPlan {
+    RunPlan::new(
+        "Street War",
         vec![
-            gauntlet(),
-            RunPlan::new(
-                "Deep Run",
+            // A fast melee tide that ends with a bang — spread out or the bomber clusters you.
+            Encounter::new(
+                "Gang Rush",
                 vec![
-                    Encounter::new("Server Farm", vec![enforcer("Sentinel"), enforcer("Sentry")]),
-                    Encounter::new("The Boss", vec![bulwark("Goliath"), brute("Vanguard")]),
+                    swarmer("Razor-1"),
+                    swarmer("Razor-2"),
+                    swarmer("Razor-3"),
+                    swarmer("Razor-4"),
+                    bomber("Boomer"),
+                    bomber("Crash"),
                 ],
+            ),
+            // Ranged pressure: a sniper picking the heavies, a grenadier punishing clusters.
+            Encounter::new(
+                "Crossfire",
+                vec![sniper("Longshot"), grenadier("Lobber"), mook("Gun-1"), mook("Gun-2")],
+            ),
+            // The netrunning mirror — the breaker hacks your deck while the wall holds.
+            Encounter::new(
+                "Net Duel",
+                vec![breaker("Daemon"), enforcer("Warden"), brute("Slab"), mook("Goon")],
             ),
         ],
     )
+}
+
+/// A **last stand** — a single **Survive** scenario: hold out against a relentless mixed
+/// assault until the round count, passing by *lasting* rather than by a wipe (the
+/// defensive objective, a different shape of win from Eliminate).
+pub fn last_stand() -> RunPlan {
+    RunPlan::new(
+        "Last Stand",
+        vec![Encounter::new(
+            "Hold the Roof",
+            vec![
+                swarmer("Rush-1"),
+                swarmer("Rush-2"),
+                grenadier("Mortar"),
+                bomber("Charge"),
+                mook("Trooper"),
+            ],
+        )
+        .with_objective(ObjectiveKind::Survive(8))],
+    )
+}
+
+/// The **campaign** — the full [`crate::Game`] tier: the tuned gauntlet, then the harder
+/// street war, then a last stand, with R&R between each. Field it with [`full_squad`].
+pub fn campaign() -> GamePlan {
+    GamePlan::new("Night City", vec![gauntlet(), street_war(), last_stand()])
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{Game, GameOutcome};
+
+    /// Every authored archetype is armed and sits in the to-hit-relevant Evasion band —
+    /// a smoke test that the loadout builders produce sane combatants.
+    #[test]
+    fn every_archetype_is_armed_and_in_band() {
+        let roster: Vec<Unit> = full_squad()
+            .into_iter()
+            .chain([
+                mook("m"),
+                enforcer("e"),
+                brute("b"),
+                sniper("s"),
+                grenadier("g"),
+                swarmer("w"),
+                breaker("k"),
+                bomber("o"),
+            ])
+            .collect();
+        for u in &roster {
+            assert!(!u.weapons().is_empty(), "{} should be armed", u.name);
+            let ev = u.evasion();
+            assert!((10..=16).contains(&ev), "{} evasion {ev} out of band", u.name);
+        }
+    }
+
+    /// The whole campaign (every new archetype, AoE / on-death / netrunning, the Survive
+    /// objective) plays to a terminal outcome without panicking — and reproducibly.
+    #[test]
+    fn the_campaign_resolves_and_is_deterministic() {
+        let play = |seed| {
+            let mut g = Game::new(full_squad(), campaign(), seed);
+            let report = g.play();
+            assert_ne!(report.outcome, GameOutcome::Ongoing);
+            (g.outcome(), g.roster().len())
+        };
+        assert_eq!(play(7), play(7));
+    }
+
+    /// Soundness: the authored scenarios are *beatable* — the full squad clears the
+    /// campaign on at least one seed (content that's hard, not impossible).
+    #[test]
+    fn the_full_squad_can_win_the_campaign() {
+        let won = (0..20u64).any(|seed| {
+            let mut g = Game::new(full_squad(), campaign(), seed);
+            g.play();
+            g.outcome() == GameOutcome::Won
+        });
+        assert!(won, "no seed in 0..20 cleared the campaign — content too hard?");
+    }
 }

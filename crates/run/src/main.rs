@@ -3,15 +3,17 @@
 //! log**, encounter by encounter.
 //!
 //! Usage:
-//!   - `atomica-cli [text|logfmt|json] [seed]` — play one seed, stream the trace
-//!     (`text` human · `logfmt` structured · `json` one object/line).
-//!   - `atomica-cli probe [N]` — sweep `N` seeds (default 50) and print **balance
-//!     stats** (clear rate, losses, ticks, hit/miss, netrunning, contagion).
+//!   - `atomica-cli [text|logfmt|json] [seed] [scenario]` — play one seed, stream the
+//!     trace (`text` human · `logfmt` structured · `json` one object/line).
+//!   - `atomica-cli probe [N] [scenario]` — sweep `N` seeds (default 50) and print
+//!     **balance stats** (clear rate, losses, ticks, hit/miss, netrunning, by-cause).
 //!
-//! The event log streams to **stdout**; headers / losses / verdict go to **stderr**.
+//! `scenario` is `gauntlet` (default, the tuned core trio), `street` (the strike team's
+//! street war), or `laststand` (a Survive hold-out). The event log streams to **stdout**;
+//! headers / losses / verdict go to **stderr**.
 
-use atomica_run::{content, Run, RunOutcome};
-use atomica_sim::CombatEvent;
+use atomica_run::{content, Run, RunOutcome, RunPlan};
+use atomica_sim::{CombatEvent, Unit};
 use std::collections::BTreeMap;
 
 fn main() {
@@ -19,16 +21,29 @@ fn main() {
     let mode = args.first().map(String::as_str).unwrap_or("text");
     if mode == "probe" {
         let seeds = args.get(1).and_then(|s| s.parse().ok()).unwrap_or(50);
-        probe(seeds);
+        probe(seeds, args.get(2).map(String::as_str).unwrap_or("gauntlet"));
         return;
     }
-    trace(mode, args.get(1).and_then(|s| s.parse().ok()).unwrap_or(0xC0DE));
+    trace(
+        mode,
+        args.get(1).and_then(|s| s.parse().ok()).unwrap_or(0xC0DE),
+        args.get(2).map(String::as_str).unwrap_or("gauntlet"),
+    );
 }
 
-/// Play one gauntlet seed and stream its structured combat log.
-fn trace(format: &str, seed: u64) {
-    let plan = content::gauntlet();
-    let mut run = Run::new(content::starter_roster(), plan.encounters, seed).with_log();
+/// Resolve a scenario name to its roster + run plan (defaults to the tuned gauntlet).
+fn scenario(name: &str) -> (Vec<Unit>, RunPlan) {
+    match name {
+        "street" | "streetwar" => (content::full_squad(), content::street_war()),
+        "laststand" | "last" => (content::full_squad(), content::last_stand()),
+        _ => (content::starter_roster(), content::gauntlet()),
+    }
+}
+
+/// Play one seed of `scenario` and stream its structured combat log.
+fn trace(format: &str, seed: u64, scenario_name: &str) {
+    let (roster, plan) = scenario(scenario_name);
+    let mut run = Run::new(roster, plan.encounters, seed).with_log();
 
     eprintln!("▶ {} — fielding {} units", plan.name, run.roster().len());
     while let Some(report) = run.fight_next() {
@@ -57,9 +72,9 @@ fn trace(format: &str, seed: u64) {
     eprintln!("\n■ {verdict} — {} survivor(s) remain", run.roster().len());
 }
 
-/// Sweep `seeds` runs of the gauntlet and print aggregate **balance** numbers — the
+/// Sweep `seeds` runs of `scenario_name` and print aggregate **balance** numbers — the
 /// loop we tune against (deterministic per seed, so the sweep is reproducible).
-fn probe(seeds: u64) {
+fn probe(seeds: u64, scenario_name: &str) {
     let (mut clears, mut losses, mut survivors) = (0u64, 0u64, 0u64);
     let (mut hits, mut misses, mut hacks, mut breaches, mut spreads) = (0u64, 0u64, 0u64, 0u64, 0u64);
     let (mut tick_sum, mut encounters) = (0u64, 0u64);
@@ -68,7 +83,8 @@ fn probe(seeds: u64) {
     let mut deaths_by_cause: BTreeMap<&'static str, u64> = BTreeMap::new();
 
     for seed in 0..seeds {
-        let mut run = Run::new(content::starter_roster(), content::gauntlet().encounters, seed).with_log();
+        let (roster, plan) = scenario(scenario_name);
+        let mut run = Run::new(roster, plan.encounters, seed).with_log();
         while let Some(r) = run.fight_next() {
             encounters += 1;
             tick_sum += r.events.last().map_or(0, |e| e.tick as u64);
@@ -100,13 +116,14 @@ fn probe(seeds: u64) {
         survivors += run.roster().len() as u64;
     }
 
+    let fielded = scenario(scenario_name).0.len();
     let attacks = hits + misses;
     let pct = |n: u64, d: u64| if d == 0 { 0.0 } else { 100.0 * n as f64 / d as f64 };
     let avg = |n: u64, d: u64| if d == 0 { 0.0 } else { n as f64 / d as f64 };
-    println!("balance probe — {seeds} seeds of the gauntlet");
+    println!("balance probe — {seeds} seeds of {scenario_name}");
     println!("  clear rate      : {:>5.0}%   ({clears}/{seeds})", pct(clears, seeds));
-    println!("  avg losses/run  : {:>5.2}   (of 3 fielded)", avg(losses, seeds));
-    println!("  avg survivors   : {:>5.2} / 3", avg(survivors, seeds));
+    println!("  avg losses/run  : {:>5.2}   (of {fielded} fielded)", avg(losses, seeds));
+    println!("  avg survivors   : {:>5.2} / {fielded}", avg(survivors, seeds));
     println!("  avg ticks/enc   : {:>5.1}", avg(tick_sum, encounters));
     println!("  to-hit miss     : {:>5.0}%   ({misses} miss / {attacks} attacks)", pct(misses, attacks));
     println!("  netrunning      : {hacks} hacks, {breaches} breaches");

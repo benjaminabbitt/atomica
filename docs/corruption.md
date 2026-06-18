@@ -35,6 +35,15 @@ meshed PAN).
 
 ## 2. Contagion — contested spread ✅
 
+> **Status — biological plague shelved from play (2026-06).** ◆ A slow-spreading
+> bio-contagion proved more complexity than the current sim wants, so the
+> **plague is no longer seeded in the authored content** (`crates/run/content.rs`
+> — the carrier archetype is retired). The engine side is **superseded, not
+> removed**: the full machinery — [`Corruption::plague`], the contagion phase, the
+> fever DoT — stays in `crates/sim` and under test, dormant, for when contagion
+> returns. The digital **worm-swarm** path is unaffected; nothing below changed at
+> the engine level.
+
 A corruption marked **contagious** carries a [`Contagion`] `{ virulence, resist,
 vector }`. Each round the **contagion phase** (`Battle::contagion_phase`, after
 the action phase) tries to **jump** every active contagion to fresh victims:
@@ -71,6 +80,7 @@ the action phase) tries to **jump** every active contagion to fresh victims:
 - **Data-spill on death** as a contagion seed (the [`combat.md`](combat.md) §10.9
   death trigger feeding a strain into the survivors).
 
+[`Corruption::plague`]: ../crates/sim/src/corruption.rs
 [`Decorator`]: ../crates/sim/src/chargen.rs
 [`Contagion`]: ../crates/sim/src/chargen.rs
 [`Vector`]: ../crates/sim/src/chargen.rs
