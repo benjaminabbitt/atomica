@@ -24,8 +24,11 @@
 //! later layers on top of this.)
 
 use atomica_sim::{
-    Battle, Goal, Hex, ObjectiveKind, ObjectiveStatus, Objectives, Outcome, Team, Unit, UnitId,
+    Battle, Goal, Hex, ObjectiveKind, ObjectiveStatus, Objectives, Outcome, Record, Team, Unit,
+    UnitId,
 };
+
+pub mod content;
 
 /// Hard cap on ticks per battle (matches the sim's draw fallback).
 const MAX_TICKS: u32 = 1000;
@@ -103,6 +106,9 @@ pub struct BattleReport {
     pub losses: Vec<String>,
     /// How many roster units remain.
     pub survivors: usize,
+    /// The structured combat trace, when logging was enabled (`Run::with_log` /
+    /// `Game::with_log`) — empty otherwise.
+    pub events: Vec<Record>,
 }
 
 /// What one played run did — the named run plus its per-combat [`BattleReport`]s.
@@ -129,6 +135,7 @@ pub struct Run {
     index: usize,
     seed: u64,
     outcome: RunOutcome,
+    log: bool,
 }
 
 impl Run {
@@ -142,7 +149,14 @@ impl Run {
         } else {
             RunOutcome::Ongoing
         };
-        Self { roster, encounters, index: 0, seed, outcome }
+        Self { roster, encounters, index: 0, seed, outcome, log: false }
+    }
+
+    /// Builder: capture each battle's **structured event log** into its
+    /// [`BattleReport::events`] (off by default).
+    pub fn with_log(mut self) -> Self {
+        self.log = true;
+        self
     }
 
     pub fn outcome(&self) -> RunOutcome {
@@ -177,6 +191,7 @@ impl Run {
         let mut battle = self.build_battle(&self.encounters[self.index]);
         let outcome = battle.resolve(MAX_TICKS);
         let objective = battle.objectives_report().first().copied().unwrap_or(ObjectiveStatus::Achieved);
+        let events = battle.events().to_vec();
 
         let before: Vec<String> = self.roster.iter().map(|u| u.name.clone()).collect();
         let survivors: Vec<Unit> =
@@ -193,6 +208,7 @@ impl Run {
             objective,
             losses,
             survivors: self.roster.len(),
+            events,
         };
 
         // Pass the encounter only if the army survived **and** the objective held
@@ -231,7 +247,12 @@ impl Run {
         }
         let seed = self.seed ^ (self.index as u64).wrapping_mul(0x9E37_79B9_7F4A_7C15);
         let objectives = Objectives::new(vec![Goal::new(encounter.objective.build(), 0, 0)]);
-        Battle::new(units, seed).with_objectives(objectives)
+        let battle = Battle::new(units, seed).with_objectives(objectives);
+        if self.log {
+            battle.with_log()
+        } else {
+            battle
+        }
     }
 }
 
@@ -257,6 +278,7 @@ pub struct Game {
     index: usize,
     seed: u64,
     outcome: GameOutcome,
+    log: bool,
 }
 
 impl Game {
@@ -271,7 +293,14 @@ impl Game {
         } else {
             GameOutcome::Ongoing
         };
-        Self { name, roster, runs, index: 0, seed, outcome }
+        Self { name, roster, runs, index: 0, seed, outcome, log: false }
+    }
+
+    /// Builder: capture every battle's **structured event log** into its report (off
+    /// by default) — threads through each run's battles.
+    pub fn with_log(mut self) -> Self {
+        self.log = true;
+        self
     }
 
     pub fn name(&self) -> &str {
@@ -304,6 +333,9 @@ impl Game {
         let roster = std::mem::take(&mut self.roster);
         let run_seed = self.seed ^ (self.index as u64).wrapping_mul(0xD1B5_4A32_D192_ED03);
         let mut run = Run::new(roster, encounters, run_seed);
+        if self.log {
+            run = run.with_log();
+        }
         let battles = run.resolve();
         let run_lost = run.outcome() == RunOutcome::Lost;
 
@@ -385,6 +417,24 @@ mod tests {
     fn an_empty_roster_is_an_instant_loss() {
         let run = Run::new(vec![], vec![Encounter::new("X", vec![fighter("F", 5.0, 10.0, 5.0)])], 1);
         assert_eq!(run.outcome(), RunOutcome::Lost);
+    }
+
+    #[test]
+    fn with_log_captures_the_trace_into_the_reports() {
+        // A fresh single-encounter run (Encounter isn't Clone, so rebuild per arm).
+        let fixture = || {
+            (vec![fighter("Ace", 20.0, 80.0, 8.0)], vec![
+                Encounter::new("Gate", vec![fighter("Thug", 4.0, 18.0, 3.0)]),
+            ])
+        };
+        // Off by default: no events captured.
+        let (r, e) = fixture();
+        assert!(Run::new(r, e, 1).fight_next().unwrap().events.is_empty());
+        // On: the battle's structured trace rides the report, ending with Ended.
+        let (r, e) = fixture();
+        let report = Run::new(r, e, 1).with_log().fight_next().unwrap();
+        assert!(report.events.iter().any(|rec| rec.event.kind() == "attacked"));
+        assert_eq!(report.events.last().unwrap().event.kind(), "ended");
     }
 
     #[test]

@@ -1,0 +1,102 @@
+//! Authored **content** — a starter roster and a gauntlet — so the CLI (and tests) can
+//! play a *real* run instead of an ad-hoc fixture. Magnitudes are illustrative (TBD;
+//! see [`docs/rosters.md`](../../../docs/rosters.md)).
+//!
+//! Roster/enemy templates carry a placeholder id `0` and `Team::A`; [`deploy`](crate)
+//! reassigns both at battle start, so only the stat line / loadout here matters.
+
+use crate::{Encounter, GamePlan, RunPlan};
+use atomica_sim::{
+    ArmorClass, Attack, Chassis, Corruption, DamageType, Footprint, Implant, PenTier, Skill, Team,
+    Unit,
+};
+
+fn weapon(damage: f32, dtype: DamageType, pen: PenTier, range: i32) -> Attack {
+    Attack { damage, dtype, pen, range, min_range: 1, emp: false, footprint: Footprint::Single, smart: false }
+}
+
+fn body(name: &str, hp: f32, init: f32) -> Unit {
+    Unit::new(0, name, Team::A, Chassis::Augmented).with_integrity(hp).with_initiative(init)
+}
+
+// -- Player archetypes ------------------------------------------------------------
+
+/// A **blade** — a fast melee bruiser.
+pub fn blade(name: &str) -> Unit {
+    body(name, 34.0, 7.0).with_attack(weapon(14.0, DamageType::Slashing, PenTier::Internal, 1))
+}
+
+/// A **netrunner** — a ranged sidearm plus a cyberdeck (hacks enemy chrome).
+pub fn runner(name: &str) -> Unit {
+    let mut u =
+        body(name, 26.0, 5.0).with_attack(weapon(8.0, DamageType::Piercing, PenTier::Contact, 4));
+    u.skills.set(Skill::Hacking, 5);
+    u.install(Implant::cyberdeck());
+    u
+}
+
+/// A **bulwark** — an armored tank with a heavy maul.
+pub fn bulwark(name: &str) -> Unit {
+    body(name, 48.0, 4.0)
+        .with_armor(ArmorClass::Plate)
+        .with_attack(weapon(10.0, DamageType::Bludgeoning, PenTier::Contact, 1))
+}
+
+/// The **starter roster** — one of each archetype.
+pub fn starter_roster() -> Vec<Unit> {
+    vec![blade("Katana"), runner("Glitch"), bulwark("Anvil")]
+}
+
+// -- Enemy archetypes -------------------------------------------------------------
+
+fn mook(name: &str) -> Unit {
+    body(name, 22.0, 5.0).with_attack(weapon(7.0, DamageType::Piercing, PenTier::External, 2))
+}
+
+/// A hardened, **chromed** enemy — a netrunner can breach its plating.
+fn enforcer(name: &str) -> Unit {
+    let mut u =
+        body(name, 30.0, 5.0).with_attack(weapon(9.0, DamageType::Bludgeoning, PenTier::Contact, 1));
+    u.character.base_mut().link = 4.0;
+    u.character.base_mut().firewall = 6.0;
+    u.install(Implant::subdermal_plating());
+    u
+}
+
+/// A **carrier** — a mook seeded with a virulent plague that spreads on contact.
+fn carrier(name: &str) -> Unit {
+    let mut u = mook(name);
+    u.apply_modifier(Corruption::plague(4.0, 10, 8));
+    u
+}
+
+// -- Plans ------------------------------------------------------------------------
+
+/// The **gauntlet** — a three-encounter run of escalating threats (no R&R within).
+pub fn gauntlet() -> RunPlan {
+    RunPlan::new(
+        "Sprawl Gauntlet",
+        vec![
+            Encounter::new("Alley Ambush", vec![mook("Thug-1"), mook("Thug-2")]),
+            Encounter::new("Corp Checkpoint", vec![enforcer("Enforcer"), mook("Guard")]),
+            Encounter::new("Quarantine Zone", vec![carrier("Carrier"), enforcer("Warden")]),
+        ],
+    )
+}
+
+/// The **campaign** — two gauntlets with R&R between (the full [`crate::Game`] tier).
+pub fn campaign() -> GamePlan {
+    GamePlan::new(
+        "Night City",
+        vec![
+            gauntlet(),
+            RunPlan::new(
+                "Deep Run",
+                vec![
+                    Encounter::new("Server Farm", vec![enforcer("Sentinel"), enforcer("Sentry")]),
+                    Encounter::new("The Boss", vec![bulwark("Goliath"), carrier("Vector")]),
+                ],
+            ),
+        ],
+    )
+}
