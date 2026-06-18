@@ -135,6 +135,50 @@ pub enum DeathTrigger {
     Legacy { spec: StatusSpec, stacks: u32, duration: u32, radius: i32 },
 }
 
+/// A **set of weapon tags** (`docs/combat.md`) — boolean weapon traits packed as a
+/// bitset of `const` flags, so a weapon carries any combination (`SMART | AWKWARD`, …)
+/// in one field instead of a bool per trait. Test membership with [`WeaponTags::has`].
+#[derive(Clone, Copy, PartialEq, Eq, Default)]
+pub struct WeaponTags(u32);
+
+impl WeaponTags {
+    /// A plain weapon — no tags.
+    pub const NONE: WeaponTags = WeaponTags(0);
+    /// **IFF / smartgun** (§7F): the line of fire / blast spares the attacker's team.
+    pub const SMART: WeaponTags = WeaponTags(1 << 0);
+    /// **Awkward** (§7G): a long / unwieldy weapon (rifle, polearm, heavy) — clumsy up close.
+    pub const AWKWARD: WeaponTags = WeaponTags(1 << 1);
+
+    /// Does this set contain every flag in `tag`?
+    pub const fn has(self, tag: WeaponTags) -> bool {
+        self.0 & tag.0 == tag.0
+    }
+    /// This set with `tag` added.
+    pub const fn with(self, tag: WeaponTags) -> WeaponTags {
+        WeaponTags(self.0 | tag.0)
+    }
+}
+
+impl std::ops::BitOr for WeaponTags {
+    type Output = WeaponTags;
+    fn bitor(self, rhs: WeaponTags) -> WeaponTags {
+        WeaponTags(self.0 | rhs.0)
+    }
+}
+
+impl std::fmt::Debug for WeaponTags {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let mut names = Vec::new();
+        if self.has(Self::SMART) {
+            names.push("SMART");
+        }
+        if self.has(Self::AWKWARD) {
+            names.push("AWKWARD");
+        }
+        write!(f, "WeaponTags({})", names.join(" | "))
+    }
+}
+
 /// A single attack profile. (Weapons/loadouts will compose these later.)
 #[derive(Clone, Copy, Debug)]
 pub struct Attack {
@@ -158,14 +202,9 @@ pub struct Attack {
     pub emp: bool,
     /// The area struck (§7G) — `Single` by default; `Blast`/`Beam` hit allies too.
     pub footprint: Footprint,
-    /// **IFF / smartgun** (`docs/combat.md`): a smart-linked weapon **identifies friend
-    /// from foe**, so its line of fire / blast **spares the attacker's team** — a dumb
-    /// weapon firing through occupied hexes can mow down allies in the path; this can't.
-    pub smart: bool,
-    /// **Awkward tag** (`docs/combat.md` §7G): a long / unwieldy weapon (rifle, polearm,
-    /// many heavy weapons) is **clumsy up close** — a to-hit penalty when the target is
-    /// jammed against it, fading to none at proper range. See [`Attack::awkward_penalty`].
-    pub awkward: bool,
+    /// The weapon's **tags** (`docs/combat.md`) — `SMART` (IFF), `AWKWARD` (clumsy up
+    /// close), … as a set of `const` flags. See [`WeaponTags`].
+    pub tags: WeaponTags,
 }
 
 impl Attack {
@@ -187,8 +226,7 @@ impl Attack {
             min_range: 1,
             emp: false,
             footprint: Footprint::Single,
-            smart: false,
-            awkward: false,
+            tags: WeaponTags::NONE,
         }
     }
 
@@ -199,7 +237,7 @@ impl Attack {
     /// here**, so range can't touch the digital realm. Bands: same-hex `-4` (≈never —
     /// occupancy keeps units apart), adjacent `-2`, range ≥ 2 `0`.
     pub fn awkward_penalty(&self, dist: i32) -> i32 {
-        if !self.awkward {
+        if !self.tags.has(WeaponTags::AWKWARD) {
             return 0;
         }
         match dist {
@@ -209,10 +247,10 @@ impl Attack {
         }
     }
 
-    /// Builder: mark this weapon **smart** (IFF) — its blast / line of fire spares the
+    /// Builder: add the **`SMART`** tag (IFF) — its blast / line of fire spares the
     /// attacker's team (`docs/combat.md`). The "smartgun" mod over any base profile.
     pub fn smartlinked(mut self) -> Self {
-        self.smart = true;
+        self.tags = self.tags.with(WeaponTags::SMART);
         self
     }
 }
@@ -1142,7 +1180,7 @@ impl<R: RandomSource> Battle<R> {
                     && self.units[j].is_alive()
                     && hexes.contains(&self.units[j].pos)
                     // IFF: a smart weapon holds fire on the attacker's own team.
-                    && !(atk.smart && self.units[j].team == team)
+                    && !(atk.tags.has(WeaponTags::SMART) && self.units[j].team == team)
             })
             .collect()
     }
@@ -2539,7 +2577,7 @@ mod tests {
         let mut atk = unit(0, Team::A, 0);
         atk.rearm(|w| {
             w.footprint = Footprint::Beam(4);
-            w.smart = true; // smartgun
+            w.tags = w.tags.with(WeaponTags::SMART); // smartgun
         });
         let on1 = unit(1, Team::B, 1); // (1,0) — enemy on the beam
         let ally = unit(2, Team::A, 2); // (2,0) — ally in the path
@@ -2604,8 +2642,7 @@ mod tests {
             min_range,
             emp: false,
             footprint: Footprint::Single,
-            smart: false,
-            awkward: false,
+            tags: WeaponTags::NONE,
         }
     }
 
@@ -2641,11 +2678,24 @@ mod tests {
     }
 
     #[test]
+    fn weapon_tags_are_a_set_of_const_flags() {
+        let plain = WeaponTags::NONE;
+        assert!(!plain.has(WeaponTags::SMART) && !plain.has(WeaponTags::AWKWARD));
+        // A weapon can carry several tags at once.
+        let both = WeaponTags::SMART | WeaponTags::AWKWARD;
+        assert!(both.has(WeaponTags::SMART) && both.has(WeaponTags::AWKWARD));
+        // `with` adds one without disturbing the rest.
+        let added = WeaponTags::SMART.with(WeaponTags::AWKWARD);
+        assert_eq!(added, both);
+        assert!(!WeaponTags::SMART.has(WeaponTags::AWKWARD)); // distinct flags
+    }
+
+    #[test]
     fn an_awkward_weapon_is_clumsy_up_close_not_at_range() {
         // A long / unwieldy weapon (awkward tag) pays a to-hit penalty jammed in close,
         // fading to none at proper range; a handy weapon (and any melee) never pays it.
         let mut rifle = gun(10.0, 1, 8);
-        rifle.awkward = true;
+        rifle.tags = rifle.tags.with(WeaponTags::AWKWARD);
         assert_eq!(rifle.awkward_penalty(1), AWKWARD_ADJACENT); // adjacent: clumsy (-2)
         assert_eq!(rifle.awkward_penalty(2), 0); // at proper range: clean
         assert_eq!(rifle.awkward_penalty(8), 0); // and stays clean however far

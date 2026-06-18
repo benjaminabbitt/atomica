@@ -8,7 +8,7 @@
 use crate::{Encounter, GamePlan, RunPlan};
 use atomica_sim::{
     ArmorClass, Attack, Chassis, Corruption, DamageType, Footprint, Implant, PenTier, Skill, Team,
-    Unit,
+    Unit, WeaponTags,
 };
 
 fn weapon(damage: f32, dtype: DamageType, pen: PenTier, range: i32) -> Attack {
@@ -24,15 +24,14 @@ fn weapon(damage: f32, dtype: DamageType, pen: PenTier, range: i32) -> Attack {
         min_range: 1,
         emp: false,
         footprint: Footprint::Single,
-        smart: false,
-        awkward: false,
+        tags: WeaponTags::NONE,
     }
 }
 
 /// Builder: mark a weapon **awkward** (a rifle / polearm / heavy weapon) — clumsy
 /// to-hit when an enemy is jammed up close (§7G).
 fn awkward(mut a: Attack) -> Attack {
-    a.awkward = true;
+    a.tags = a.tags.with(WeaponTags::AWKWARD);
     a
 }
 
