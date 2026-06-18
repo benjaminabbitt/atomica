@@ -588,6 +588,19 @@ impl Unit {
 /// Placeholder (TBD).
 const KNOCKOUT_STUN: u32 = 2;
 
+/// **Knockout-gate width** (`cyberware.md` §6 knob): the stun / incapacitate class is
+/// the *decisive*-only tier of the breach ladder. Strict by default — `i32::MAX` means
+/// **a crit (nat-18) and nothing else** clears it. Lower it to widen the gate to a
+/// "decisive margin" tier (then `margin ≥ this` also knocks out). Placeholder (TBD).
+const KNOCKOUT_MARGIN: i32 = i32::MAX;
+
+/// Does `outcome` clear the knockout gate — a crit, or a margin at/above the decisive
+/// `tier`? (§6: "any hack-effect that stuns is crit-gated; everything else scales with
+/// margin" — `tier` is the knob between strict-crit and a decisive-margin gate.)
+fn knockout_gated(outcome: &RollOutcome, tier: i32) -> bool {
+    outcome.crit || outcome.margin >= tier
+}
+
 /// Fixed magnitude of the degrade-class liabilities an EMP fires — it has no
 /// margin/crit, being a blunt physical pulse. Placeholder (TBD).
 const EMP_MAGNITUDE: u32 = 2;
@@ -1186,8 +1199,8 @@ impl<R: RandomSource> Battle<R> {
             // Floor: disable the implant; then the ladder per liability.
             for spec in self.units[target].disable_implant(idx) {
                 if matches!(spec.effect, Effect::Stun) {
-                    // Knockout class — crit-gated (a decisive hack only).
-                    if outcome.crit {
+                    // Knockout class — gated to a decisive hack (§6 knob).
+                    if knockout_gated(outcome, KNOCKOUT_MARGIN) {
                         self.units[target].add_status(spec, KNOCKOUT_STUN, 1);
                     }
                 } else if degrade > 0 {
@@ -1920,6 +1933,17 @@ mod tests {
         b.resolve_hack(0, 1);
         assert_eq!(b.units[1].implant_condition(0), Condition::Offline);
         assert!(b.units[1].is_stunned());
+    }
+
+    #[test]
+    fn the_knockout_gate_is_strict_by_default_but_widenable() {
+        // §6 knob: a crit always clears the gate; a big margin alone does not (strict
+        // default), but lowering the tier widens it to a "decisive margin".
+        let crit = RollOutcome { dice: 18, total: 30, margin: 5, success: true, crit: true, fumble: false };
+        let solid = RollOutcome { dice: 12, total: 24, margin: 12, success: true, crit: false, fumble: false };
+        assert!(knockout_gated(&crit, KNOCKOUT_MARGIN)); // a crit knocks out regardless
+        assert!(!knockout_gated(&solid, KNOCKOUT_MARGIN)); // strict: margin alone doesn't
+        assert!(knockout_gated(&solid, 10)); // widened tier: a decisive margin does
     }
 
     #[test]
