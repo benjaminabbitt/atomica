@@ -20,7 +20,7 @@
 
 use crate::{Encounter, GamePlan, RunPlan};
 use atomica_sim::{
-    ArmorClass, Attack, Chassis, DamageType, DeathTrigger, Footprint, Hex, Implant,
+    ArmorClass, Attack, Chassis, DamageType, DeathTrigger, Footprint, FoundAction, Hex, Implant,
     MovementProfile, ObjectiveKind, PenTier, Skill, Team, TargetingProfile, Terrain, Tile, Unit,
     EquipmentTags,
 };
@@ -483,9 +483,34 @@ pub fn seize() -> RunPlan {
     )
 }
 
+/// **Recon Sweep** — a **Search**: sweep three caches, and the right one reveals a stash to
+/// capture and hold three rounds ("search N, find the correct, then do the above"). The
+/// squad fans through the block while the rest screen the closing guards.
+pub fn recon() -> RunPlan {
+    RunPlan::new(
+        "Recon Sweep",
+        vec![Encounter::new(
+            "Search the Block",
+            vec![
+                brute("Heavy"),
+                enforcer("Guard"),
+                swarmer("Dog-1"),
+                swarmer("Dog-2"),
+                mook("Gun"),
+            ],
+        )
+        .on(yard())
+        .with_objective(ObjectiveKind::search(
+            &[Hex::new(3, 1), Hex::new(3, 4), Hex::new(4, 2)],
+            2,
+            FoundAction::Capture(3),
+        ))],
+    )
+}
+
 /// The **campaign** — the full [`crate::Game`] tier: the tuned gauntlet, the harder street
-/// war, then a tour of objective types (capture, extract, hold-the-line, seize) and a last
-/// stand, with R&R between each. Field it with [`full_squad`].
+/// war, then a tour of objective types (capture, extract, hold-the-line, seize, recon) and
+/// a last stand, with R&R between each. Field it with [`full_squad`].
 pub fn campaign() -> GamePlan {
     GamePlan::new("Night City", vec![
         gauntlet(),
@@ -494,6 +519,7 @@ pub fn campaign() -> GamePlan {
         extract_run(),
         hold_the_line(),
         seize(),
+        recon(),
         last_stand(),
     ])
 }

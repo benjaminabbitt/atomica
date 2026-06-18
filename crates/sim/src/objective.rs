@@ -294,6 +294,79 @@ impl Objective for Extract {
     }
 }
 
+/// What to **do at the correct location** once a [`Search`] turns it up — the "…and do the
+/// above" tail. Each instantiates the matching objective *at the found hex*.
+#[derive(Clone, Copy, Debug)]
+pub enum FoundAction {
+    /// Capture and hold the found hex for `turns` cumulative rounds.
+    Capture(u32),
+    /// Sticky-capture the found hex, then hold `turns` rounds.
+    Flag(u32),
+    /// Grab the intel there and carry it to `exit`.
+    Extract(Hex),
+}
+
+impl FoundAction {
+    fn build_at(self, hex: Hex) -> Box<dyn Objective> {
+        match self {
+            FoundAction::Capture(turns) => Box::new(CaptureHold { hex, turns, held: 0, done: false }),
+            FoundAction::Flag(turns) => {
+                Box::new(CaptureFlag { hex, turns, captured: false, held: 0, done: false })
+            }
+            FoundAction::Extract(exit) => {
+                Box::new(Extract { item: hex, exit, has_item: false, done: false })
+            }
+        }
+    }
+}
+
+/// **Search `N` locations, find the right one, then do the above**: a two-stage objective.
+/// First sweep the candidate `spots` (a player standing on one searches it); only the
+/// `correct` one reveals the prize, which spins up a [`FoundAction`] follow-up *at that
+/// hex*. The focus walks the unsearched spots, then hands off to the follow-up's focus.
+pub struct Search {
+    spots: Vec<Hex>,
+    correct: usize,
+    then: FoundAction,
+    searched: Vec<bool>,
+    inner: Option<Box<dyn Objective>>,
+}
+impl Objective for Search {
+    fn tick(&mut self, units: &[Unit], tick: u32) {
+        if self.inner.is_none() {
+            for (k, &spot) in self.spots.iter().enumerate() {
+                if on_hex(units, PLAYER, spot) {
+                    self.searched[k] = true;
+                    if k == self.correct {
+                        self.inner = Some(self.then.build_at(spot)); // found it — the prize is real
+                    }
+                }
+            }
+        }
+        if let Some(inner) = &mut self.inner {
+            inner.tick(units, tick);
+        }
+    }
+    fn status(&self, units: &[Unit], tick: u32, fight_over: bool) -> ObjectiveStatus {
+        match &self.inner {
+            Some(inner) => inner.status(units, tick, fight_over),
+            None => latched(false, units, fight_over), // still searching
+        }
+    }
+    fn focus(&self) -> Option<Hex> {
+        match &self.inner {
+            Some(inner) => inner.focus(), // phase 2: the follow-up at the found hex
+            None => {
+                // phase 1: the next spot still to check
+                self.spots.iter().zip(self.searched.iter()).find(|(_, &s)| !s).map(|(h, _)| *h)
+            }
+        }
+    }
+    fn seeker_pct(&self) -> u32 {
+        50
+    }
+}
+
 /// A Clone-able **objective descriptor** — built into a boxed [`Objective`] when a
 /// battle starts. The run layer carries one of these on each encounter (the trait
 /// objects themselves aren't `Clone`, so this is the portable spec).
@@ -313,9 +386,21 @@ pub enum ObjectiveKind {
     Flag(Hex, u32),
     /// Grab the item at `item`, then carry it to `exit` ([`Extract`]).
     Extract { item: Hex, exit: Hex },
+    /// Search up to four `spots` (first `count` are live); the `correct` one reveals a
+    /// [`FoundAction`] follow-up done at that hex ([`Search`]). Build via [`ObjectiveKind::search`].
+    Search { spots: [Hex; 4], count: u8, correct: u8, then: FoundAction },
 }
 
 impl ObjectiveKind {
+    /// A **search** objective from a slice of candidate `spots` (1–4): sweep them, and the
+    /// `correct` index reveals `then` at that hex. Extra slots are padded and ignored.
+    pub fn search(spots: &[Hex], correct: usize, then: FoundAction) -> Self {
+        let mut arr = [Hex::new(0, 0); 4];
+        let count = spots.len().min(4);
+        arr[..count].copy_from_slice(&spots[..count]);
+        ObjectiveKind::Search { spots: arr, count: count as u8, correct: correct as u8, then }
+    }
+
     /// Construct the boxed [`Objective`] for a fresh battle (fresh state per battle).
     pub fn build(self) -> Box<dyn Objective> {
         match self {
@@ -331,6 +416,11 @@ impl ObjectiveKind {
             }
             ObjectiveKind::Extract { item, exit } => {
                 Box::new(Extract { item, exit, has_item: false, done: false })
+            }
+            ObjectiveKind::Search { spots, count, correct, then } => {
+                let spots = spots[..count as usize].to_vec();
+                let searched = vec![false; spots.len()];
+                Box::new(Search { spots, correct: correct as usize, then, searched, inner: None })
             }
         }
     }

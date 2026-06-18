@@ -53,8 +53,8 @@ pub use hex::Hex;
 pub use implant::{Contribution, Implant, Pan};
 pub use profile::{MovementProfile, TargetingProfile};
 pub use objective::{
-    Goal, Hold, MarginLoss, Objective, ObjectiveKind, ObjectiveStatus, Objectives, Reach, Survive,
-    TimeAttack, WinFight, PLAYER,
+    FoundAction, Goal, Hold, MarginLoss, Objective, ObjectiveKind, ObjectiveStatus, Objectives,
+    Reach, Survive, TimeAttack, WinFight, PLAYER,
 };
 pub use rng::{RandomSource, ScriptedRng, SplitMix64};
 pub use roll::{resolve_contest, Contest, RollOutcome};
@@ -2037,6 +2037,30 @@ mod tests {
         off[1].character.alive = false; // enemy cleared
         obj.tick(&off, 2);
         assert_eq!(obj.status(&off, 2, false), ObjectiveStatus::Achieved);
+    }
+
+    #[test]
+    fn search_sweeps_then_does_the_follow_up() {
+        let spots = [Hex::new(2, 0), Hex::new(3, 0), Hex::new(4, 0)];
+        // Correct is spot 1; finding it spins up a CaptureHold there.
+        let mut obj = ObjectiveKind::search(&spots, 1, FoundAction::Capture(1)).build();
+        assert_eq!(obj.focus(), Some(spots[0])); // sweep the first unsearched spot
+        // A unit checks the wrong spot 0 → still searching, focus advances.
+        let mut at0 = vec![unit(0, Team::A, 2), unit(1, Team::B, 7)];
+        at0[0].pos = spots[0];
+        obj.tick(&at0, 1);
+        assert_eq!(obj.status(&at0, 1, false), ObjectiveStatus::Pending);
+        assert_eq!(obj.focus(), Some(spots[1])); // wrong one searched → on to the next
+        // Standing on the correct spot 1 reveals the prize; the follow-up now focuses there.
+        let mut at1 = at0.clone();
+        at1[0].pos = spots[1];
+        obj.tick(&at1, 2);
+        assert_eq!(obj.focus(), Some(spots[1]));
+        // Hold it (enemy cleared while on it) → the follow-up latches Achieved.
+        let mut held = at1.clone();
+        held[1].character.alive = false;
+        obj.tick(&held, 3);
+        assert_eq!(obj.status(&held, 3, false), ObjectiveStatus::Achieved);
     }
 
     #[test]
