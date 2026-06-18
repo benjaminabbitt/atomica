@@ -22,7 +22,9 @@
 //! pool refactor *onto* (L2 / L2b); it coexists with the current `Unit` fold until
 //! those land.
 
-use crate::{resolve_contest, Contest, MovementProfile, PenTier, RandomSource, TargetingProfile};
+use crate::{
+    resolve_contest, ArmorClass, Contest, MovementProfile, PenTier, RandomSource, TargetingProfile,
+};
 
 /// A decorator's stable handle. A [`Modifier`]'s `source` links back to the
 /// decorator that spawned it, so removing/expiring the decorator drops exactly its
@@ -109,6 +111,9 @@ impl Factor {
 pub enum Override {
     Targeting(TargetingProfile),
     Movement(MovementProfile),
+    /// The unit's **armor class** for the mitigation matrix — gear that armors up
+    /// (the highest-priority active grant wins, like the behavior overrides).
+    Armor(ArmorClass),
 }
 
 /// A **capability** a decorator grants — not a number on the stat line but a whole
@@ -492,6 +497,8 @@ pub struct BaseLine {
     pub damage: f32,
     pub targeting: TargetingProfile,
     pub movement: MovementProfile,
+    /// Innate armor class for the mitigation matrix — gear overrides it (last-wins).
+    pub armor: ArmorClass,
 }
 
 impl BaseLine {
@@ -591,6 +598,15 @@ impl Realized {
                 _ => None,
             })
             .unwrap_or(self.base.movement)
+    }
+    /// The effective **armor class** — the highest-priority `Armor` override, else base.
+    pub fn armor_class(&self) -> ArmorClass {
+        self.last_override()
+            .find_map(|o| match o {
+                Override::Armor(a) => Some(a),
+                _ => None,
+            })
+            .unwrap_or(self.base.armor)
     }
 
     /// The netrunning loadout this character can run, if any active decorator grants

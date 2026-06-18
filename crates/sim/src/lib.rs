@@ -194,8 +194,8 @@ pub struct Unit {
     pub team: Team,
     pub pos: Hex,
 
-    /// Armor class for the [`armor`] matrix.
-    pub armor_class: ArmorClass,
+    // Armor class is **composed** (`docs/layers.md` L6): the base sits in `BaseLine.armor`
+    // and gear overrides it (`Override::Armor`); read it via `Unit::armor_class()`.
     /// Innate class — sets the skill floor, contagion exposure, etc. (§7J).
     pub chassis: Chassis,
     /// Per-character skill levels (chassis baseline + earned) — roll modifiers (§10).
@@ -240,7 +240,6 @@ impl Unit {
             name: name.into(),
             team,
             pos: Hex::new(0, 0),
-            armor_class: ArmorClass::default(),
             chassis,
             skills: chassis.baseline_skills(),
             speed: 1,
@@ -269,6 +268,18 @@ impl Unit {
     pub fn with_initiative(mut self, initiative: f32) -> Self {
         self.character.base_mut().initiative = initiative;
         self
+    }
+
+    /// Builder: set the innate **armor class** (gear can still override it, §L6).
+    pub fn with_armor(mut self, armor: ArmorClass) -> Self {
+        self.character.base_mut().armor = armor;
+        self
+    }
+
+    /// The unit's effective **armor class** for the mitigation matrix — base, or the
+    /// highest-priority `Override::Armor` from gear.
+    pub fn armor_class(&self) -> ArmorClass {
+        self.realized().armor_class()
     }
 
     /// Builder: set the move stat (hexes per activation).
@@ -945,7 +956,7 @@ impl<R: RandomSource> Battle<R> {
         let src = self.units[attacker].id.0;
         for t in self.footprint_targets(attacker, target, atk) {
             let mult =
-                armor::matrix(atk.dtype, self.units[t].armor_class) * self.units[t].vuln_mult();
+                armor::matrix(atk.dtype, self.units[t].armor_class()) * self.units[t].vuln_mult();
             let dmg = base * mult;
             self.units[t].character.apply_pool_damage(self.tick, src, dmg, atk.pen, true);
             if atk.emp && self.units[t].is_alive() {
@@ -1089,7 +1100,7 @@ impl<R: RandomSource> Battle<R> {
                 let src = self.units[i].id.0;
                 for t in 0..self.units.len() {
                     if t != i && self.units[t].is_alive() && hexes.contains(&self.units[t].pos) {
-                        let mult = armor::matrix(dtype, self.units[t].armor_class)
+                        let mult = armor::matrix(dtype, self.units[t].armor_class())
                             * self.units[t].vuln_mult();
                         self.units[t]
                             .character
@@ -2196,6 +2207,20 @@ mod tests {
         u.character.remove(arm); // unequip
         assert_eq!(u.weapons().len(), 1);
         assert!(u.weapon_at(4).is_none()); // only melee left
+    }
+
+    #[test]
+    fn gear_upgrades_armor_class_compositionally() {
+        // Armor class is an Override (L6): a plate vest wins over the innate class,
+        // and dropping it reverts — the mitigation matrix reads the composed class.
+        let mut u = unit(0, Team::A, 0); // innate Mail
+        assert_eq!(u.armor_class(), ArmorClass::Mail);
+        let vest = u.apply_modifier(
+            Decorator::gear(Tag::Gear, vec![]).with_override(Override::Armor(ArmorClass::Plate)),
+        );
+        assert_eq!(u.armor_class(), ArmorClass::Plate);
+        u.character.remove(vest);
+        assert_eq!(u.armor_class(), ArmorClass::Mail); // back to innate
     }
 
     #[test]

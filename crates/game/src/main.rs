@@ -38,7 +38,7 @@ fn demo_battle() -> Battle {
                 emp: false,
                 footprint: Footprint::Single,
             });
-        u.armor_class = armor_class;
+        u = u.with_armor(armor_class);
         // Beefier base than the default: Integrity 40, Plating / Barrier 6 — then fill.
         u.character.base_mut().max_integrity = 40.0;
         u.character.base_mut().plating = 6.0;
@@ -171,7 +171,7 @@ async fn main() {
                     let deck = if u.hack().is_some() { "⚡" } else { " " };
                     ui.label(format!(
                         "{:?}  {:<7}{} {:>4.0}/{:<3.0}  [{:?}]  L{:<2} {}",
-                        u.team, u.name, deck, u.integrity(), u.max_integrity(), u.armor_class, u.link(),
+                        u.team, u.name, deck, u.integrity(), u.max_integrity(), u.armor_class(), u.link(),
                         statuses
                     ));
                 }
