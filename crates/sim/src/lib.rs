@@ -497,6 +497,17 @@ impl Unit {
         self.character.condition_of(self.implants[idx].gen).unwrap_or(Condition::Destroyed)
     }
 
+    /// The unit's **salvageable chrome** (`cyberware.md` §6) — the specs of every
+    /// installed implant that isn't **Destroyed** (Destroyed is terminal, beyond
+    /// salvage). The bare operation: a loot / run layer collects this off a corpse on
+    /// death; condition is irrelevant to *what* can be stripped, only Destroyed is gone.
+    pub fn salvage(&self) -> Vec<Implant> {
+        (0..self.implants.len())
+            .filter(|&i| self.implant_condition(i) != Condition::Destroyed)
+            .map(|i| self.implants[i].spec.clone())
+            .collect()
+    }
+
     /// Move the implant at `idx` to `cond` on its decorator, then re-clamp the pools to
     /// the new composed maxima. Destroyed is terminal. Returns the implant's
     /// `hack_effects` iff this knocks it from active to inactive (a breach — the caller
@@ -1911,6 +1922,22 @@ mod tests {
         let has_dot = b.units[1].statuses().iter().any(|(n, _)| *n == "Bleed");
         let has_stun = b.units[1].is_stunned();
         assert!(has_dot && !has_stun);
+    }
+
+    #[test]
+    fn salvage_yields_every_implant_but_the_destroyed_ones() {
+        // §6: a corpse's chrome is loot — except Destroyed gear, which is terminal.
+        let mut u = unit(0, Team::A, 0);
+        u.install(Implant::cyberdeck()); // idx 0 — stays Online
+        u.install(Implant::subdermal_plating()); // idx 1 — we'll wreck it
+        // Wear idx 1 all the way down to Destroyed (Online → Degraded → Offline → Destroyed).
+        for _ in 0..3 {
+            u.degrade_implant(1);
+        }
+        assert_eq!(u.implant_condition(1), Condition::Destroyed);
+        let salvage = u.salvage();
+        assert_eq!(salvage.len(), 1); // only the deck survives as loot
+        assert_eq!(salvage[0].name, Implant::cyberdeck().name);
     }
 
     #[test]
