@@ -92,7 +92,7 @@ fn mook(name: &str) -> Unit {
         .with_armor(ArmorClass::Mail)
         .with_skill(Skill::Gunnery, 3)
         .with_evasion(14.0)
-        .with_attack(weapon(3.0, DamageType::Piercing, PenTier::External, 2))
+        .with_attack(weapon(4.0, DamageType::Piercing, PenTier::External, 2))
 }
 
 /// A hardened, **chromed** enemy in **Plate** — shrugs off the blade / gun (×0.5), so
@@ -103,7 +103,7 @@ fn enforcer(name: &str) -> Unit {
         .with_armor(ArmorClass::Plate)
         .with_skill(Skill::Melee, 5)
         .with_evasion(12.0)
-        .with_attack(weapon(3.0, DamageType::Bludgeoning, PenTier::Contact, 1));
+        .with_attack(weapon(5.0, DamageType::Bludgeoning, PenTier::Contact, 1));
     u.character.base_mut().link = 4.0; // a networked surface to hack at
     u.character.base_mut().firewall = 6.0;
     u.install(Implant::subdermal_plating()); // physical — bulwark's problem, not the runner's
@@ -117,7 +117,7 @@ fn carrier(name: &str) -> Unit {
         .with_armor(ArmorClass::Mail)
         .with_skill(Skill::Gunnery, 3)
         .with_evasion(14.0)
-        .with_attack(weapon(3.0, DamageType::Piercing, PenTier::External, 2));
+        .with_attack(weapon(4.0, DamageType::Piercing, PenTier::External, 2));
     u.apply_modifier(Corruption::plague(4.0, 10, 8));
     u
 }

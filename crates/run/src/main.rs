@@ -2,21 +2,29 @@
 //! encounters fought as an attrition run) and streams the sim's **structured combat
 //! log**, encounter by encounter.
 //!
-//! Usage: `atomica-cli [text|logfmt|json] [seed]`
-//!   - `text`   (default) — a human trace, one event per line.
-//!   - `logfmt` — `tick=… event=… k=v …` for structured-log pipelines.
-//!   - `json`   — one JSON object per line (jq-friendly).
+//! Usage:
+//!   - `atomica-cli [text|logfmt|json] [seed]` — play one seed, stream the trace
+//!     (`text` human · `logfmt` structured · `json` one object/line).
+//!   - `atomica-cli probe [N]` — sweep `N` seeds (default 50) and print **balance
+//!     stats** (clear rate, losses, ticks, hit/miss, netrunning, contagion).
 //!
-//! The event log streams to **stdout**; encounter headers, losses, and the run verdict
-//! go to **stderr**, so `atomica-cli json | jq …` stays a clean record stream.
+//! The event log streams to **stdout**; headers / losses / verdict go to **stderr**.
 
 use atomica_run::{content, Run, RunOutcome};
 
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
-    let format = args.first().map(String::as_str).unwrap_or("text");
-    let seed = args.get(1).and_then(|s| s.parse().ok()).unwrap_or(0xC0DE_u64);
+    let mode = args.first().map(String::as_str).unwrap_or("text");
+    if mode == "probe" {
+        let seeds = args.get(1).and_then(|s| s.parse().ok()).unwrap_or(50);
+        probe(seeds);
+        return;
+    }
+    trace(mode, args.get(1).and_then(|s| s.parse().ok()).unwrap_or(0xC0DE));
+}
 
+/// Play one gauntlet seed and stream its structured combat log.
+fn trace(format: &str, seed: u64) {
     let plan = content::gauntlet();
     let mut run = Run::new(content::starter_roster(), plan.encounters, seed).with_log();
 
@@ -45,4 +53,45 @@ fn main() {
         RunOutcome::Ongoing => "unresolved",
     };
     eprintln!("\n■ {verdict} — {} survivor(s) remain", run.roster().len());
+}
+
+/// Sweep `seeds` runs of the gauntlet and print aggregate **balance** numbers — the
+/// loop we tune against (deterministic per seed, so the sweep is reproducible).
+fn probe(seeds: u64) {
+    let (mut clears, mut losses, mut survivors) = (0u64, 0u64, 0u64);
+    let (mut hits, mut misses, mut hacks, mut breaches, mut spreads) = (0u64, 0u64, 0u64, 0u64, 0u64);
+    let (mut tick_sum, mut encounters) = (0u64, 0u64);
+
+    for seed in 0..seeds {
+        let mut run = Run::new(content::starter_roster(), content::gauntlet().encounters, seed).with_log();
+        while let Some(r) = run.fight_next() {
+            encounters += 1;
+            tick_sum += r.events.last().map_or(0, |e| e.tick as u64);
+            for e in &r.events {
+                match e.event.kind() {
+                    "attacked" => hits += 1,
+                    "missed" => misses += 1,
+                    "hacked" => hacks += 1,
+                    "breached" => breaches += 1,
+                    "spread" => spreads += 1,
+                    _ => {}
+                }
+            }
+            losses += r.losses.len() as u64;
+        }
+        clears += (run.outcome() == RunOutcome::Won) as u64;
+        survivors += run.roster().len() as u64;
+    }
+
+    let attacks = hits + misses;
+    let pct = |n: u64, d: u64| if d == 0 { 0.0 } else { 100.0 * n as f64 / d as f64 };
+    let avg = |n: u64, d: u64| if d == 0 { 0.0 } else { n as f64 / d as f64 };
+    println!("balance probe — {seeds} seeds of the gauntlet");
+    println!("  clear rate      : {:>5.0}%   ({clears}/{seeds})", pct(clears, seeds));
+    println!("  avg losses/run  : {:>5.2}   (of 3 fielded)", avg(losses, seeds));
+    println!("  avg survivors   : {:>5.2} / 3", avg(survivors, seeds));
+    println!("  avg ticks/enc   : {:>5.1}", avg(tick_sum, encounters));
+    println!("  to-hit miss     : {:>5.0}%   ({misses} miss / {attacks} attacks)", pct(misses, attacks));
+    println!("  netrunning      : {hacks} hacks, {breaches} breaches");
+    println!("  contagion       : {spreads} spreads");
 }
