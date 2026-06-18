@@ -38,24 +38,32 @@ fn body(name: &str, hp: f32, init: f32) -> Unit {
 /// A **blade** — a fast melee bruiser. Slashing shreds the unarmored but glances off
 /// Plate (×0.5), so the blade wants soft targets.
 pub fn blade(name: &str) -> Unit {
-    body(name, 68.0, 7.0).with_attack(weapon(14.0, DamageType::Slashing, PenTier::Internal, 1))
+    body(name, 68.0, 7.0)
+        .with_skill(Skill::Melee, 8) // a duelist — lands the blade
+        .with_evasion(9.0) // and fast enough to slip incoming fire
+        .with_attack(weapon(14.0, DamageType::Slashing, PenTier::Internal, 1))
 }
 
 /// A **netrunner** — a ranged sidearm plus a cyberdeck (hacks enemy chrome). Piercing
 /// is also halved by Plate, so the runner leans on the breach, not the gun, vs armor.
 pub fn runner(name: &str) -> Unit {
-    let mut u =
-        body(name, 60.0, 6.0).with_attack(weapon(8.0, DamageType::Piercing, PenTier::Contact, 4));
-    u.skills.set(Skill::Hacking, 5);
+    let mut u = body(name, 60.0, 6.0)
+        .with_skill(Skill::Gunnery, 6)
+        .with_skill(Skill::Hacking, 5)
+        .with_evasion(7.0)
+        .with_attack(weapon(8.0, DamageType::Piercing, PenTier::Contact, 4));
     u.install(Implant::cyberdeck());
     u
 }
 
 /// A **bulwark** — an armored tank with a heavy maul. Bludgeoning is *amplified* vs
-/// Plate (×1.5), so the slow bulwark is the answer to the hardened enemies.
+/// Plate (×1.5), so the slow bulwark is the answer to the hardened enemies. Heavy and
+/// slow — it hits hard but is **easy to hit** (low Evasion).
 pub fn bulwark(name: &str) -> Unit {
     body(name, 94.0, 5.0)
         .with_armor(ArmorClass::Plate)
+        .with_skill(Skill::Melee, 6)
+        .with_evasion(3.0)
         .with_attack(weapon(12.0, DamageType::Bludgeoning, PenTier::Contact, 1))
 }
 
@@ -71,19 +79,24 @@ pub fn starter_roster() -> Vec<Unit> {
 fn mook(name: &str) -> Unit {
     body(name, 74.0, 5.0)
         .with_armor(ArmorClass::Mail)
+        .with_skill(Skill::Gunnery, 3)
+        .with_evasion(5.0)
         .with_attack(weapon(3.0, DamageType::Piercing, PenTier::External, 2))
 }
 
 /// A hardened, **chromed** enemy in **Plate** — shrugs off the blade / gun (×0.5), so
-/// it's a slog until the netrunner breaches its plating or the bulwark caves it in. A
-/// punishing but slow-killing wall.
+/// it's a slog until the bulwark caves it in. Its **inert plating** can't be hacked,
+/// but the netrunner can breach its **reflex booster** (digital smartware) for a Seizure.
 fn enforcer(name: &str) -> Unit {
     let mut u = body(name, 104.0, 5.0)
         .with_armor(ArmorClass::Plate)
+        .with_skill(Skill::Melee, 5)
+        .with_evasion(4.0)
         .with_attack(weapon(3.0, DamageType::Bludgeoning, PenTier::Contact, 1));
-    u.character.base_mut().link = 4.0;
+    u.character.base_mut().link = 4.0; // a networked surface to hack at
     u.character.base_mut().firewall = 6.0;
-    u.install(Implant::subdermal_plating());
+    u.install(Implant::subdermal_plating()); // physical — bulwark's problem, not the runner's
+    u.install(Implant::reflex_booster()); // digital smartware — the runner's breach target
     u
 }
 
@@ -91,6 +104,8 @@ fn enforcer(name: &str) -> Unit {
 fn carrier(name: &str) -> Unit {
     let mut u = body(name, 94.0, 5.0)
         .with_armor(ArmorClass::Mail)
+        .with_skill(Skill::Gunnery, 3)
+        .with_evasion(6.0)
         .with_attack(weapon(3.0, DamageType::Piercing, PenTier::External, 2));
     u.apply_modifier(Corruption::plague(4.0, 10, 8));
     u
