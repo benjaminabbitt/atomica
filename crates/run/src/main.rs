@@ -21,7 +21,8 @@ fn main() {
     let mode = args.first().map(String::as_str).unwrap_or("text");
     if mode == "probe" {
         let seeds = args.get(1).and_then(|s| s.parse().ok()).unwrap_or(50);
-        probe(seeds, args.get(2).map(String::as_str).unwrap_or("gauntlet"));
+        let start = args.get(3).and_then(|s| s.parse().ok()).unwrap_or(0);
+        probe(seeds, args.get(2).map(String::as_str).unwrap_or("gauntlet"), start);
         return;
     }
     trace(
@@ -78,8 +79,10 @@ fn trace(format: &str, seed: u64, scenario_name: &str) {
 }
 
 /// Sweep `seeds` runs of `scenario_name` and print aggregate **balance** numbers — the
-/// loop we tune against (deterministic per seed, so the sweep is reproducible).
-fn probe(seeds: u64, scenario_name: &str) {
+/// loop we tune against (deterministic per seed, so the sweep is reproducible). `start`
+/// shifts the seed window (`start..start+seeds`) so we can sample *different* battles, not
+/// just `0..N` — a check that the balance picture isn't a fluke of one seed range.
+fn probe(seeds: u64, scenario_name: &str, start: u64) {
     let (mut clears, mut losses, mut survivors) = (0u64, 0u64, 0u64);
     let (mut hits, mut misses, mut hacks, mut breaches, mut spreads) = (0u64, 0u64, 0u64, 0u64, 0u64);
     let (mut tick_sum, mut encounters) = (0u64, 0u64);
@@ -87,7 +90,7 @@ fn probe(seeds: u64, scenario_name: &str) {
     // ("weapon" for a lethal attack, the DoT's name — Virus / Bleed — for a status tick).
     let mut deaths_by_cause: BTreeMap<&'static str, u64> = BTreeMap::new();
 
-    for seed in 0..seeds {
+    for seed in start..start.saturating_add(seeds) {
         let (roster, plan) = scenario(scenario_name);
         let mut run = Run::new(roster, plan.encounters, seed).with_log();
         while let Some(r) = run.fight_next() {
@@ -125,7 +128,7 @@ fn probe(seeds: u64, scenario_name: &str) {
     let attacks = hits + misses;
     let pct = |n: u64, d: u64| if d == 0 { 0.0 } else { 100.0 * n as f64 / d as f64 };
     let avg = |n: u64, d: u64| if d == 0 { 0.0 } else { n as f64 / d as f64 };
-    println!("balance probe — {seeds} seeds of {scenario_name}");
+    println!("balance probe — {scenario_name}, seeds {start}..{}", start.saturating_add(seeds));
     println!("  clear rate      : {:>5.0}%   ({clears}/{seeds})", pct(clears, seeds));
     println!("  avg losses/run  : {:>5.2}   (of {fielded} fielded)", avg(losses, seeds));
     println!("  avg survivors   : {:>5.2} / {fielded}", avg(survivors, seeds));
