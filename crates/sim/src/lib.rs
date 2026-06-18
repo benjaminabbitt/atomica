@@ -27,6 +27,7 @@ pub mod armor;
 mod board;
 mod chargen;
 mod corruption;
+mod event;
 mod hack;
 mod hex;
 mod implant;
@@ -45,6 +46,7 @@ pub use chargen::{
     Override, Priority, Reaction, Realized, Remove, Stat, Tag, Vector, Wear,
 };
 pub use corruption::Corruption;
+pub use event::{BreachVector, CombatEvent, EventLog, Record};
 pub use hack::{hack_rating, Hack, HackResult};
 pub use hex::Hex;
 pub use implant::{Contribution, Implant, Pan};
@@ -658,6 +660,8 @@ pub struct Battle<R: RandomSource = SplitMix64> {
     /// The two-board **seam** stagger (§7B). Rolled at start; settable by item.
     pub board: Board,
     withdrawn: bool,
+    /// Opt-in structured event trace (`docs/...`) — off by default; `with_log` enables it.
+    log: EventLog,
 }
 
 impl Battle<SplitMix64> {
@@ -673,6 +677,23 @@ impl Battle<SplitMix64> {
 impl<R: RandomSource> Battle<R> {
     /// Build a battle over any [`RandomSource`] — inject a `ScriptedRng` in tests.
     /// Defaults to the [`Eliminate`] objective and the `Down` seam.
+    /// Builder: turn on the **structured event log** — capture a [`CombatEvent`] trace
+    /// of the fight (for a CLI / structured logging / replay). Off by default.
+    pub fn with_log(mut self) -> Self {
+        self.log.enable();
+        self
+    }
+
+    /// The captured event trace (empty unless [`Battle::with_log`] was set).
+    pub fn events(&self) -> &[Record] {
+        self.log.records()
+    }
+
+    /// Record a structured [`CombatEvent`] at the current tick (no-op while the log is off).
+    fn emit(&mut self, event: CombatEvent) {
+        self.log.push(self.tick, event);
+    }
+
     pub fn with_rng(units: Vec<Unit>, rng: R) -> Self {
         let objectives = Objectives::new(vec![Goal::new(Box::new(WinFight), 1, 1)]);
         Self {
@@ -682,6 +703,7 @@ impl<R: RandomSource> Battle<R> {
             objectives,
             board: Board::default(),
             withdrawn: false,
+            log: EventLog::default(),
         }
     }
 
@@ -754,7 +776,11 @@ impl<R: RandomSource> Battle<R> {
         self.contagion_phase(); // corruption jumps to fresh victims (contested)
         self.decay_phase();
 
-        self.outcome()
+        let outcome = self.outcome();
+        if !matches!(outcome, Outcome::Ongoing) {
+            self.emit(CombatEvent::Ended { outcome }); // fires once: a decided battle early-returns
+        }
+        outcome
     }
 
     /// Run to completion (or the tick cap) and return the result.
@@ -840,7 +866,9 @@ impl<R: RandomSource> Battle<R> {
             if next == self.units[i].pos {
                 break; // at the profile's goal, or boxed in
             }
+            let from = self.units[i].pos;
             self.units[i].pos = next;
+            self.emit(CombatEvent::Moved { unit: self.units[i].id, from, to: next });
         }
         let dist = self.reach(i, target);
         if let Some(weapon) = self.units[i].weapon_at(dist) {
@@ -997,12 +1025,21 @@ impl<R: RandomSource> Battle<R> {
     fn resolve_attack_with(&mut self, attacker: usize, target: usize, atk: Attack) {
         // Weapon base + the attacker's composed damage bonus (an implant combat-stim).
         let base = atk.damage + self.units[attacker].damage_bonus();
-        let src = self.units[attacker].id.0;
+        let atk_id = self.units[attacker].id;
+        let src = atk_id.0;
         for t in self.footprint_targets(attacker, target, atk) {
             let mult =
                 armor::matrix(atk.dtype, self.units[t].armor_class()) * self.units[t].vuln_mult();
             let dmg = base * mult;
+            let (before, was_alive) = (self.units[t].integrity(), self.units[t].is_alive());
             self.units[t].character.apply_pool_damage(self.tick, src, dmg, atk.pen, true);
+            self.emit(CombatEvent::Attacked {
+                attacker: atk_id,
+                target: self.units[t].id,
+                dtype: atk.dtype,
+                amount: before - self.units[t].integrity(),
+                killed: was_alive && !self.units[t].is_alive(),
+            });
             if atk.emp && self.units[t].is_alive() {
                 self.apply_emp(t);
             }
@@ -1045,7 +1082,7 @@ impl<R: RandomSource> Battle<R> {
     fn apply_emp(&mut self, target: usize) {
         // Blunt: every active implant, degrade liabilities only (no knockout finesse).
         let slots = self.units[target].active_implant_indices();
-        self.breach_slots(target, slots, EMP_MAGNITUDE, false);
+        self.breach_slots(target, slots, EMP_MAGNITUDE, false, BreachVector::Emp);
     }
 
     /// The **contagion phase** (`docs/corruption.md`) — every contagious corruption tries
@@ -1059,7 +1096,7 @@ impl<R: RandomSource> Battle<R> {
         use std::collections::HashSet;
         let n = self.units.len();
         let mut infected: HashSet<(usize, &'static str)> = HashSet::new();
-        let mut jumps: Vec<(usize, Decorator)> = Vec::new();
+        let mut jumps: Vec<(usize, usize, Decorator)> = Vec::new(); // (carrier, victim, strain)
         for i in 0..n {
             if !self.units[i].is_alive() {
                 continue;
@@ -1079,13 +1116,16 @@ impl<R: RandomSource> Battle<R> {
                     }
                     let tn = self.resist_of(j, c.resist);
                     if resolve_contest(&mut self.rng, Contest::new(c.virulence, 0, tn)).success {
-                        jumps.push((j, dec.clone()));
+                        jumps.push((i, j, dec.clone()));
                     }
                 }
             }
         }
-        for (j, dec) in jumps {
+        for (i, j, dec) in jumps {
+            let (from, to, family) =
+                (self.units[i].id, self.units[j].id, dec.label.unwrap_or("corruption"));
             self.units[j].character.install(dec); // install re-stamps the GenId
+            self.emit(CombatEvent::Spread { from, to, family });
         }
     }
 
@@ -1189,6 +1229,7 @@ impl<R: RandomSource> Battle<R> {
             .find(|&i| !self.units[i].is_alive() && !self.units[i].death_resolved)
         {
             self.units[i].death_resolved = true;
+            self.emit(CombatEvent::Died { unit: self.units[i].id });
             self.fire_death_trigger(i);
         }
     }
@@ -1256,6 +1297,13 @@ impl<R: RandomSource> Battle<R> {
             + self.units[attacker].mesh_synergy(); // meshed PAN throughput (§5)
         let tn = self.units[target].firewall();
         let outcome = resolve_contest(&mut self.rng, Contest::new(rating, 0, tn));
+        self.emit(CombatEvent::Hacked {
+            attacker: self.units[attacker].id,
+            target: self.units[target].id,
+            success: outcome.success,
+            crit: outcome.crit,
+            margin: outcome.margin,
+        });
         let stacks =
             if outcome.success { self.apply_breach(target, &outcome, hack) } else { 0 };
         HackResult::Rolled { outcome, stacks }
@@ -1283,7 +1331,7 @@ impl<R: RandomSource> Battle<R> {
             vec![first]
         };
         let degrade = hack::margin_stacks(outcome.margin);
-        self.breach_slots(target, slots, degrade, knockout_gated(outcome, KNOCKOUT_MARGIN));
+        self.breach_slots(target, slots, degrade, knockout_gated(outcome, KNOCKOUT_MARGIN), BreachVector::Hack);
         degrade
     }
 
@@ -1292,9 +1340,19 @@ impl<R: RandomSource> Battle<R> {
     /// `degrade` and — iff `decisive` — the gated **stun** class. The shared core of
     /// every breach vector (hack, EMP, Worm); only the slot set, `degrade`, and
     /// `decisive` differ.
-    fn breach_slots(&mut self, target: usize, slots: Vec<usize>, degrade: u32, decisive: bool) {
+    fn breach_slots(
+        &mut self,
+        target: usize,
+        slots: Vec<usize>,
+        degrade: u32,
+        decisive: bool,
+        vector: BreachVector,
+    ) {
+        let target_id = self.units[target].id;
         for idx in slots {
-            for spec in self.units[target].disable_implant(idx) {
+            let liabilities = self.units[target].disable_implant(idx);
+            self.emit(CombatEvent::Breached { target: target_id, vector });
+            for spec in liabilities {
                 if matches!(spec.effect, Effect::Stun) {
                     if decisive {
                         self.units[target].add_status(spec, KNOCKOUT_STUN, 1);
@@ -1322,7 +1380,7 @@ impl<R: RandomSource> Battle<R> {
             vec![first]
         };
         let n = slots.len();
-        self.breach_slots(target, slots, WORM_DEGRADE, false);
+        self.breach_slots(target, slots, WORM_DEGRADE, false, BreachVector::Worm);
         n
     }
 
@@ -1893,6 +1951,30 @@ mod tests {
         b.contagion_phase();
         assert!(b.units[1].character.carries("Worm")); // rode the net across the board
         assert!(!b.units[2].character.carries("Worm")); // no surface — immune to the worm
+    }
+
+    #[test]
+    fn the_event_log_records_a_structured_trace() {
+        // Opt-in capture: a lethal hit produces a structured Attacked{killed} + a Died,
+        // and the kind()/Display surfaces are stable for a logger to key on.
+        let atk = unit(0, Team::A, 0);
+        let tgt = unit(1, Team::B, 1).with_integrity(1.0); // fragile — the hit kills
+        let mut b = Battle::new(vec![atk, tgt], 1).with_log();
+        b.resolve_attack(0, 1);
+        b.reap();
+        let kinds: Vec<&str> = b.events().iter().map(|r| r.event.kind()).collect();
+        assert!(kinds.contains(&"attacked"));
+        assert!(kinds.contains(&"died"));
+        let hit = b.events().iter().find(|r| r.event.kind() == "attacked").unwrap();
+        assert!(matches!(hit.event, CombatEvent::Attacked { killed: true, .. }));
+        assert!(!hit.to_string().is_empty()); // renders a human line
+    }
+
+    #[test]
+    fn the_log_is_off_by_default() {
+        let mut b = Battle::new(vec![unit(0, Team::A, 0), unit(1, Team::B, 1)], 1);
+        b.resolve_attack(0, 1);
+        assert!(b.events().is_empty()); // no capture unless with_log()
     }
 
     #[test]
