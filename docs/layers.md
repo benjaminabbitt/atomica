@@ -8,8 +8,9 @@ to the decorator id that spawned it**, and any component can **reference and rem
 another's** — the counterplay substrate. Generalises the hand-rolled cyberware fold
 ([`cyberware.md`](cyberware.md) Phases A–F) to also carry weapons, armor, buffs, and
 behavior-corruption. ◆ = decision (overridable, per repo convention). Status: ✅
-**built — L1–L5** (see §7/§9); the `Character` gen is the single source of truth, the
-flat stat line and the hand-rolled fold are gone. **L6** (content decorators) is next.*
+**built — L1–L6** (see §7/§9); the `Character` gen is the single source of truth —
+stats, weapons, armor, behavior and corruption all compose, the flat stat line and the
+hand-rolled fold are gone. **L7+** (Cascade/breach ladder, Smartgun, contagion) is next.*
 
 ---
 
@@ -332,7 +333,8 @@ not a blocker.
 | **L3 ✅** | **behavior composes from the gen** — `Realized::targeting()/movement()` (last/ highest-priority `Override`); `Unit` embeds a behavior `Character`, the action phase reads it (`select_target` / `movement_step`), `with_targeting`/`with_movement` program it, `spoof` corrupts it. Finishes combat **Phase 1** | `lib.rs` action phase + 5 tests |
 | **L4 ✅** (stat read-through) | the loop reads stats **through the gen**: `Unit` composed accessors `link()`/`firewall()`/`immunity()`/`initiative()`/`max_integrity()`; the loop (hack TN/gates, woven order, resist TN, init) calls them. `apply_modifier` installs a stat `Factor` that composes live — a firewall debuff lands a hack, a buff reorders initiative. *(Transitional flat-fields-as-base seam **closed by L5**.)* | `lib.rs` accessors + loop reads + 2 tests |
 | **L5 ✅** (flat-base retirement — the big bang) | the flat stat line is **gone**. The authored base lives in `Character.base` (`BaseLine`); the **live pools** (Integrity / Barrier / Plating / `alive`) live on the `Character`. **Implants** are decorators (`Unit.implants: Vec<InstalledImplant>{spec, gen}`; condition on the decorator; `refold` deleted; install/breach `resize_pools` by the Δ in composed maxima). **Statuses** are decorators (`add_status` installs/merges by `label`; `status_phase` → `Character::dispatch`; passive Stun/Slow/Vuln compose; `decay_phase` → `decay()`; the `Status` struct, `Magnitude::amount`, `resist_tn`, the free `apply_damage`, and `Defense` all deleted). Picks up the L2b deferrals: **stochastic resist-roll** (`Decorator::gate`, RNG into `dispatch`) and **stacking-merge** (`Character::apply_status`). The gen is now the **single source** | `chargen` + `lib.rs` + `status.rs` + game/run; ~190 sites, 142+14 tests |
-| **L6** (content decorators) | the back half: model **weapon / armor / corruption** as decorators on the gen (the armor matrix and `Attack` are still standalone) so a smartgun / debuff-on-hit composes like everything else; plus the remaining deferrals — **Cascade crit-gating** and the breach **per-effect §6 severity ladder** | `lib.rs` combat + `implant.rs` |
+| **L6 ✅** (content decorators) | **weapons** retire onto the gen as `Capability::Weapon(Attack)` grants (`realize().weapons()` is the loadout; a chrome arm grants one like a deck grants `Hack`; `weapon_at`/`rearm`/`with_attack` read & edit it). **Armor class** composes as `Override::Armor` (base in `BaseLine.armor`; gear wins last; `Unit::armor_class()`). **Corruption** is first-class content (`corruption.rs`): `Worm`/`Virus` debuff-source decorators tagged for **tag-targeted cleanse** (`Remove::Tag` wards), alongside the existing `spoof` behavior-corruption | `chargen` + `lib.rs` + `corruption.rs` + game; 6 tests |
+| **L7+** (remaining threads) | the deferrals: **Cascade crit-gating** and the breach **per-effect §6 severity ladder** (`implant.rs`); the **Smartgun/IFF** smart-targeting mod; and the **contagion families** (Virus/Worm **spreading** via Data-spill) — a system of its own | `lib.rs` combat + `implant.rs` |
 
 **Test impact (as built):** the implant tests (install / disable / degrade / EMP /
 cascade) re-expressed on the factor API — the breach/condition **semantics are
@@ -354,12 +356,13 @@ and
 
 ## 9. Status
 
-✅ **built — L1 through L5.** The `Character` (gen + `BaseLine` + pools) is the single
-source of truth: every stat composes through `realize()`, the live pools sit on the
-`Character`, and implants / statuses / behavior are all decorators. The flat stat line
-and the parallel fold / status-pool engines are **gone** (no `refold`, no `Unit.statuses`,
-no `Defense`). **Next: L6** — weapon / armor / corruption as content decorators, plus the
-remaining deferrals (Cascade crit-gating, the breach per-effect §6 ladder).
+✅ **built — L1 through L6.** The `Character` (gen + `BaseLine` + pools) is the single
+source of truth: every stat, the weapon loadout, armor class, and behavior all compose
+through `realize()`; the live pools sit on the `Character`; implants, statuses, weapons,
+armor, buffs and corruption are **all decorators**. The flat stat line and the parallel
+fold / status-pool engines are **gone** (no `refold`, no `Unit.statuses`, no `Defense`,
+no flat `attack` / `armor_class`). **Next (L7+):** Cascade crit-gating + the breach
+per-effect §6 ladder, the Smartgun/IFF mod, and the spreading **contagion** families.
 
 ---
 
