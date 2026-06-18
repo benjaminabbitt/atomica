@@ -12,7 +12,10 @@
 //! propagating via Data-spill — the contagion families) is a separate later layer;
 //! here a corruption lands on exactly the unit it's applied to.
 
-use crate::chargen::{Contagion, Decorator, Factor, Remove, Stat, Tag, Vector};
+use crate::chargen::{
+    Amount, Contagion, Decorator, Event, Factor, HookEffect, Remove, Stat, Tag, Vector,
+};
+use crate::PenTier;
 
 /// A library of named **corruption** decorators and their **cleanse** wards (content;
 /// magnitudes are illustrative — TBD per the design).
@@ -26,18 +29,25 @@ impl Corruption {
             .with_label("Worm")
     }
 
-    /// **Bio virus** — a biological corruption (`Tag::Virus`) that rots Immunity by
-    /// `immunity` for `turns`, softening the target for a bio status / poison.
-    pub fn virus(immunity: f32, turns: u32) -> Decorator {
+    /// **Bio virus** — a biological corruption (`Tag::Virus`): a **fever DoT** of `dot`
+    /// each tick (Internal — it bypasses armor) that also rots Immunity by `immunity`
+    /// for `turns` (softening the host for the next strain). The DoT is the combat bite;
+    /// the Immunity rot is the snowball.
+    pub fn virus(immunity: f32, dot: f32, turns: u32) -> Decorator {
         Decorator::timed(Tag::Virus, turns, vec![Factor::add(Stat::Immunity, -immunity)])
             .with_label("Virus")
+            .with_hook(
+                Event::TickStart,
+                HookEffect::Damage { amount: Amount::Flat(dot), pen: PenTier::Internal, can_kill: true },
+            )
     }
 
     /// **Plague** — a *contagious* virus (`docs/corruption.md`): the [`Self::virus`]
-    /// debuff that also **spreads by proximity** (within 1 hex), each jump a contest of
-    /// `virulence` vs the victim's Immunity. Friend or foe — keep the infected isolated.
-    pub fn plague(immunity: f32, virulence: i32, turns: u32) -> Decorator {
-        Self::virus(immunity, turns)
+    /// fever / Immunity-rot that also **spreads by proximity** (within 1 hex), each jump
+    /// a contest of `virulence` vs the victim's Immunity. Friend or foe — keep the
+    /// infected isolated, because the fever rides along with it.
+    pub fn plague(immunity: f32, dot: f32, virulence: i32, turns: u32) -> Decorator {
+        Self::virus(immunity, dot, turns)
             .with_contagion(Contagion { virulence, resist: Stat::Immunity, vector: Vector::Proximity(1) })
     }
 
@@ -88,19 +98,19 @@ mod tests {
     fn a_plague_is_a_contagious_virus() {
         // The contagious variant is the virus debuff plus a Contagion the phase reads.
         let mut c = Character::new(base());
-        c.install(Corruption::plague(4.0, 6, 5));
+        c.install(Corruption::plague(4.0, 2.0, 6, 5));
         assert_eq!(c.realize().immunity(), 6); // still rots Immunity like a plain virus
         assert_eq!(c.active_contagions().len(), 1); // and it's a spread source
         // The plain virus is *not* contagious — single-target corruption.
         let mut d = Character::new(base());
-        d.install(Corruption::virus(4.0, 5));
+        d.install(Corruption::virus(4.0, 2.0, 5));
         assert!(d.active_contagions().is_empty());
     }
 
     #[test]
     fn an_antivirus_strips_only_viruses_not_buffs() {
         let mut c = Character::new(base());
-        c.install(Corruption::virus(4.0, 3)); // Immunity 10 → 6
+        c.install(Corruption::virus(4.0, 2.0, 3)); // Immunity 10 → 6
         // a friendly Buff on the same stat — the antivirus must NOT touch it.
         c.install(Decorator::timed(Tag::Buff, 9, vec![Factor::add(Stat::Immunity, 3.0)]));
         assert_eq!(c.realize().immunity(), 9); // 10 − 4 + 3

@@ -118,7 +118,7 @@ fn carrier(name: &str) -> Unit {
         .with_skill(Skill::Gunnery, 3)
         .with_evasion(14.0)
         .with_attack(weapon(4.0, DamageType::Piercing, PenTier::External, 2));
-    u.apply_modifier(Corruption::plague(4.0, 10, 8));
+    u.apply_modifier(Corruption::plague(4.0, 3.0, 10, 8));
     u
 }
 

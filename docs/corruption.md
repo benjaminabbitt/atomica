@@ -24,8 +24,10 @@ its family. The three families and their surfaces:
 | **Spoof** ✅ | `Spoof` | **behavior** (a `CORRUPTION`-priority targeting override) | — | a counter-spoof ward |
 
 Content lives in `corruption.rs` ([`Corruption`]): `virus` / `worm` (the
-stat-rot debuffs), `plague` / `worm_swarm` (their **contagious** variants), and
-the `antivirus` / `firewall_patch` wards. Behavior corruption is
+stat-rot debuffs — the **virus** also carries a **fever DoT**, Internal so it bypasses
+armor: the combat bite, while the Immunity rot is the snowball), `plague` /
+`worm_swarm` (their **contagious** variants), and the `antivirus` / `firewall_patch`
+wards. Behavior corruption is
 [`Unit::spoof`](../crates/sim/src/lib.rs) (already wired). A worm is also a
 **breach vector** — see [`cyberware.md`](cyberware.md) §6 and
 `Battle::worm_breach` (logic-bomb trips one implant; Cascade trips all on a

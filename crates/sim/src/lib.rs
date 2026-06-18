@@ -2091,7 +2091,7 @@ mod tests {
         // Contagion phase: a virulent plague on a low-Immunity neighbour wins the jump
         // and copies itself over — the victim is now both sick *and* contagious.
         let mut carrier = unit(0, Team::B, 0);
-        carrier.apply_modifier(Corruption::plague(4.0, 10, 5)); // virulence 10 vs Immunity 0
+        carrier.apply_modifier(Corruption::plague(4.0, 3.0, 10, 5)); // virulence 10 vs Immunity 0
         let victim = unit(1, Team::B, 1); // adjacent, default Immunity 0
         let bystander = unit(2, Team::B, 5); // far away — out of proximity
         let mut b = Battle::new(vec![carrier, victim, bystander], 7);
@@ -2107,7 +2107,7 @@ mod tests {
         // augmented neighbour catches it; an adjacent Machine (no body to carry / re-spread
         // it) is a dead end and never infected — even at Immunity 0.
         let mut carrier = unit(0, Team::B, 0);
-        carrier.apply_modifier(Corruption::plague(4.0, 10, 5));
+        carrier.apply_modifier(Corruption::plague(4.0, 3.0, 10, 5));
         let bio = unit(1, Team::B, 1); // augmented — a valid host
         let drone = Unit::new(2, "Drone", Team::B, Chassis::Machine).at(Hex::new(0, 1)); // adjacent
         let mut b = Battle::new(vec![carrier, bio, drone], 7);
@@ -2117,11 +2117,23 @@ mod tests {
     }
 
     #[test]
+    fn a_virus_fever_chips_the_infected_each_tick() {
+        // The plague's combat bite: a fever DoT (Internal — bypasses armor) damages the
+        // host on the status tick, independent of any attacks.
+        let mut tgt = unit(1, Team::B, 6); // far from the attacker — only the fever can hurt it
+        tgt.apply_modifier(Corruption::virus(0.0, 5.0, 5)); // 5/tick, no Immunity rot
+        let before = tgt.integrity();
+        let mut b = Battle::new(vec![unit(0, Team::A, 0), tgt], 1);
+        b.status_phase(); // the tick that fires DoTs
+        assert_eq!(b.units[1].integrity(), before - 5.0);
+    }
+
+    #[test]
     fn deploy_keeps_a_plague_but_clears_combat_statuses() {
         // A carrier's plague is authored loadout — it survives the between-combats cleanse
         // (`clear_statuses`); an acquired combat status (Burn) does not.
         let mut u = unit(0, Team::B, 0);
-        u.apply_modifier(Corruption::plague(4.0, 10, 5)); // loadout corruption
+        u.apply_modifier(Corruption::plague(4.0, 3.0, 10, 5)); // loadout corruption
         u.add_status(StatusSpec::burn(), 4, 2); // acquired in combat
         u.character.clear_statuses();
         assert_eq!(u.character.active_contagions().len(), 1); // plague kept
@@ -2133,7 +2145,7 @@ mod tests {
         // Same proximity, but a hardened immune system (high Immunity TN) beats the
         // contest — a weak plague can't take hold.
         let mut carrier = unit(0, Team::B, 0);
-        carrier.apply_modifier(Corruption::plague(4.0, 2, 5)); // virulence 2 (3d6+2 ≤ 20)
+        carrier.apply_modifier(Corruption::plague(4.0, 3.0, 2, 5)); // virulence 2 (3d6+2 ≤ 20)
         let mut victim = unit(1, Team::B, 1);
         victim.character.base_mut().immunity = 30.0; // TN 30 — unbeatable here
         let mut b = Battle::new(vec![carrier, victim], 7);
