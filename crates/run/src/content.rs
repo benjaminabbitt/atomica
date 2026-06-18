@@ -415,10 +415,29 @@ pub fn last_stand() -> RunPlan {
     )
 }
 
-/// The **campaign** — the full [`crate::Game`] tier: the tuned gauntlet, then the harder
-/// street war, then a last stand, with R&R between each. Field it with [`full_squad`].
+/// A **capture** run — a **Hold** objective: fight through the gate and take the node, then
+/// keep it. The teeth are positional (Hold *fails* if the fight ends without control), so
+/// it exercises the objective-seeking AI — the squad flows to the point and holds it rather
+/// than just hunting the enemy. On the checkpoint map, the hold hex sits past the gate.
+pub fn capture() -> RunPlan {
+    RunPlan::new(
+        "Node Capture",
+        // Closing defenders only — a *kiting* enemy would never be hunted while the squad
+        // fixates on the node, so the fight wouldn't end. They come to contest the point.
+        vec![Encounter::new(
+            "Uplink",
+            vec![enforcer("Guard"), brute("Bruiser"), mook("Sentry-1"), mook("Sentry-2")],
+        )
+        .on(alley())
+        .with_objective(ObjectiveKind::Hold(Hex::new(4, 2), 6))],
+    )
+}
+
+/// The **campaign** — the full [`crate::Game`] tier: the tuned gauntlet, the harder street
+/// war, a node capture, then a last stand, with R&R between each. Field it with
+/// [`full_squad`].
 pub fn campaign() -> GamePlan {
-    GamePlan::new("Night City", vec![gauntlet(), street_war(), last_stand()])
+    GamePlan::new("Night City", vec![gauntlet(), street_war(), capture(), last_stand()])
 }
 
 #[cfg(test)]

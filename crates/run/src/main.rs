@@ -36,6 +36,7 @@ fn scenario(name: &str) -> (Vec<Unit>, RunPlan) {
     match name {
         "street" | "streetwar" => (content::full_squad(), content::street_war()),
         "laststand" | "last" => (content::full_squad(), content::last_stand()),
+        "capture" | "hold" => (content::full_squad(), content::capture()),
         _ => (content::starter_roster(), content::gauntlet()),
     }
 }

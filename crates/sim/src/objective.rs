@@ -34,6 +34,13 @@ impl ObjectiveStatus {
 /// A scored achievement. Returns `Failed` *only* when its fail condition is met.
 pub trait Objective {
     fn status(&self, units: &[Unit], tick: u32, fight_over: bool) -> ObjectiveStatus;
+
+    /// A **board hex the player should move toward** to make progress (Reach / Hold), or
+    /// `None` for objectives with no position (Eliminate / Survive). The AI flows units
+    /// onto it so positional objectives actually resolve in auto-play.
+    fn focus(&self) -> Option<Hex> {
+        None
+    }
 }
 
 fn any_alive(units: &[Unit], team: Team) -> bool {
@@ -85,6 +92,9 @@ impl Objective for Reach {
         } else {
             ObjectiveStatus::Pending
         }
+    }
+    fn focus(&self) -> Option<Hex> {
+        Some(self.hex)
     }
 }
 
@@ -153,6 +163,9 @@ impl Objective for Hold {
             ObjectiveStatus::Pending
         }
     }
+    fn focus(&self) -> Option<Hex> {
+        Some(self.hex)
+    }
 }
 
 /// A Clone-able **objective descriptor** — built into a boxed [`Objective`] when a
@@ -209,6 +222,16 @@ impl Objectives {
     /// The status of every goal at the current state.
     pub fn report(&self, units: &[Unit], tick: u32, fight_over: bool) -> Vec<ObjectiveStatus> {
         self.goals.iter().map(|g| g.objective.status(units, tick, fight_over)).collect()
+    }
+
+    /// The board hex the player should flow toward — the first **unmet** positional goal's
+    /// focus (Reach / Hold), or `None`. Drives objective-seeking movement in the sim.
+    pub fn focus(&self, units: &[Unit], tick: u32, fight_over: bool) -> Option<Hex> {
+        self.goals.iter().find_map(|g| {
+            (g.objective.status(units, tick, fight_over) != ObjectiveStatus::Achieved)
+                .then(|| g.objective.focus())
+                .flatten()
+        })
     }
 
     /// Sum of rewards from **achieved** goals.

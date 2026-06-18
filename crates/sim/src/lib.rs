@@ -1051,36 +1051,67 @@ impl<R: RandomSource> Battle<R> {
         }
     }
 
-    /// One unit's **physical** activation (§7J/§10.4/§10.5): pick a target by its
-    /// targeting profile, move up to `speed` hexes by its movement profile (through
-    /// free hexes), then fire the best weapon whose **range band** covers the target.
-    /// A *closing* profile (Advance/Flank/Swarm) halts once any weapon can reach —
-    /// standoff — so a ranged build doesn't walk into melee.
+    /// One unit's **physical** activation (§7J/§10.4/§10.5): move by a **cost budget** of
+    /// `speed`, then fire the best weapon whose **range band** covers a target.
+    ///
+    /// The move goal is normally the enemy picked by the targeting profile (a *closing*
+    /// profile halts at standoff — once a weapon reaches — so a ranged build doesn't walk
+    /// into melee). But a player unit **not already in a fight** is pulled toward an unmet
+    /// **objective** hex (Reach / Hold), flowing to the point and shooting through. Each
+    /// step spends [`Terrain::move_cost`]; the soft zone edge costs more, so a unit can't
+    /// push far past it (the friction that corners a kiter without a wall).
     fn physical_activation(&mut self, i: usize) {
-        let Some(target) = self.select_target(i) else {
-            return;
-        };
+        let enemy = self.select_target(i);
+        let in_range = enemy.is_some_and(|t| self.units[i].weapon_at(self.reach(i, t)).is_some());
+        // Objective pull: only a player unit with no enemy already in range chases the point.
+        let objective =
+            if self.units[i].team == Team::A && !in_range { self.objective_focus() } else { None };
         let closes = matches!(
             self.units[i].movement(),
             MovementProfile::Advance | MovementProfile::Flank | MovementProfile::Swarm
         );
-        for _ in 0..self.units[i].speed.max(0) {
-            let dist = self.reach(i, target);
-            if closes && self.units[i].weapon_at(dist).is_some() {
-                break; // standoff: a weapon already reaches — stop closing and fire
-            }
-            let next = self.movement_step(i, target);
+
+        let mut budget = self.units[i].speed.max(0);
+        loop {
+            let next = if let Some(goal) = objective {
+                if self.units[i].pos == goal {
+                    break; // standing on the objective — hold it
+                }
+                self.close_step(i, goal, false)
+            } else if let Some(target) = enemy {
+                if closes && self.units[i].weapon_at(self.reach(i, target)).is_some() {
+                    break; // standoff: a weapon already reaches — stop closing and fire
+                }
+                self.movement_step(i, target)
+            } else {
+                break; // nothing to chase
+            };
             if next == self.units[i].pos {
-                break; // at the profile's goal, or boxed in
+                break; // at the goal, boxed in, or priced out of the only step
             }
+            let cost = self.terrain.move_cost(next);
+            if cost > budget {
+                break; // soft-edge friction: can't afford to push further out this tick
+            }
+            budget -= cost;
             let from = self.units[i].pos;
             self.units[i].pos = next;
             self.emit(CombatEvent::Moved { unit: self.units[i].id, from, to: next });
         }
-        let dist = self.reach(i, target);
-        if let Some(weapon) = self.units[i].weapon_at(dist) {
-            self.resolve_attack_with(i, target, weapon);
+
+        // Act: fire on the best enemy now in range (positions have changed).
+        if let Some(target) = self.select_target(i) {
+            let dist = self.reach(i, target);
+            if let Some(weapon) = self.units[i].weapon_at(dist) {
+                self.resolve_attack_with(i, target, weapon);
+            }
         }
+    }
+
+    /// The hex a **player** unit should flow toward — the first unmet Reach / Hold
+    /// objective's focus, or `None` (no positional objective, or already achieved).
+    fn objective_focus(&self) -> Option<Hex> {
+        self.objectives.focus(&self.units, self.tick, self.fight_over())
     }
 
     /// The **engagement distance** between two units — the grid distance, except a
@@ -1196,7 +1227,7 @@ impl<R: RandomSource> Battle<R> {
         // Tiebreak among equally-progressing steps: dodge hazards, then take cover, then
         // the flank bias, then a stable positional key. Progress (path/grid) always wins.
         let neighbours = || here.neighbors().into_iter().filter(|h| open(*h));
-        if self.terrain.bounds().is_some() {
+        if self.terrain.zone().is_some() {
             // BFS hop-distance from the goal over traversable hexes: the step is the
             // neighbour nearest the goal *by real path*, so walls and edges get rounded.
             let flow = self.flow_field(i, goal);
@@ -1229,7 +1260,7 @@ impl<R: RandomSource> Battle<R> {
         while let Some(cur) = frontier.pop_front() {
             let d = dist[&cur];
             for n in cur.neighbors() {
-                if dist.contains_key(&n) || !self.terrain.in_bounds(n) {
+                if dist.contains_key(&n) || !self.terrain.pathable(n) {
                     continue;
                 }
                 let traversable = (self.terrain.passable(n) && !self.occupied_by_other(i, n))
@@ -2782,22 +2813,39 @@ mod tests {
     // -- Terrain: bounds, pathing, cover, hazards -------------------------------------
 
     #[test]
-    fn a_bounded_board_corners_a_kiter() {
+    fn zone_friction_pins_a_kiter_at_the_edge() {
         let kiter = || {
             let mut gun = Attack::melee(5.0);
             gun.range = 3; // a skirmisher wanting standoff 3, crowded at distance 1
             unit(0, Team::A, 0).with_movement(MovementProfile::Kite).with_attack(gun) // corner (0,0)
         };
-        let foe = || unit(1, Team::B, 1); // adjacent at (1,0)
-        // Open plane: the kiter flees to a greater gap — uncatchable by an equal-speed chase.
+        let foe = || unit(1, Team::B, 1).with_movement(MovementProfile::Hold); // adjacent
+        // It *wants* to flee outward — on the open plane it does (cost-1 step, uncatchable).
         let open = Battle::new(vec![kiter(), foe()], 1);
         assert!(open.movement_step(0, 1).distance(Hex::new(1, 0)) > 1);
-        // Bounded arena: every escape hex is off-board, so it can't extend the gap — pinned
-        // in the corner, and a pursuer runs it down. (The real fix for the kite stalemate.)
-        let walled = Battle::new(vec![kiter(), foe()], 1).with_terrain(Terrain::arena(6, 4));
-        let step = walled.movement_step(0, 1);
-        assert!(walled.terrain.in_bounds(step));
-        assert_eq!(step.distance(Hex::new(1, 0)), 1); // can't back off any further
+        // With a zone the flee hex lies past the soft edge, costing more move (>1) than a
+        // speed-1 unit has — so a full activation can't afford it and the kiter stays put,
+        // pinned where a pursuer runs it down. (The friction fix for the kite stalemate.)
+        let mut zoned = Battle::new(vec![kiter(), foe()], 1).with_terrain(Terrain::arena(6, 4));
+        assert!(zoned.terrain.move_cost(zoned.movement_step(0, 1)) > 1); // flee step is dear
+        zoned.physical_activation(0);
+        assert!(zoned.terrain.in_zone(zoned.units[0].pos)); // couldn't leave the zone
+    }
+
+    #[test]
+    fn a_player_unit_flows_to_a_reach_objective() {
+        // Objective-seeking: with an unmet Reach goal and no enemy in range, a player unit
+        // moves toward the point (not just the enemy) so the objective resolves in auto-play.
+        let mover = unit(0, Team::A, 1).at(Hex::new(0, 0)).with_speed(2);
+        let foe = unit(1, Team::B, 7).at(Hex::new(7, 0)).with_movement(MovementProfile::Hold);
+        let goal = Hex::new(4, 0);
+        let objs = Objectives::new(vec![Goal::new(ObjectiveKind::Reach(goal).build(), 0, 0)]);
+        let mut b = Battle::new(vec![mover, foe], 1)
+            .with_terrain(Terrain::arena(8, 4))
+            .with_objectives(objs);
+        let before = b.units[0].pos.distance(goal);
+        b.physical_activation(0);
+        assert!(b.units[0].pos.distance(goal) < before); // closed on the objective hex
     }
 
     #[test]

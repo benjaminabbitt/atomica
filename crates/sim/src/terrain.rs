@@ -5,11 +5,16 @@
 //! uncatchable (a kiter on an open plane never gets cornered) and removes the positional
 //! game. A [`Terrain`] gives a battle three things:
 //!
-//! - **Bounds** — a hard outer extent ([`Bounds`]); off-board hexes are impassable, so a
-//!   retreat eventually hits a wall and the kiter is run down. Default is `None`
-//!   (unbounded), so engine tests and an ad-hoc battle behave exactly as before.
+//! - **Zone + friction** — a [`Bounds`] **deployment / engagement zone** of free ground.
+//!   The edge is *soft*, not a wall: a unit may step beyond it, but each hex outside costs
+//!   **escalating movement** ([`Terrain::move_cost`]) — `1 + distance past the zone`. With
+//!   the small move stats in play a unit can barely poke a hex past the line, so a kiter
+//!   bogs down in the fringe and a pursuer (moving at cost 1 inside) runs it down — the
+//!   stalemate dies without a hard wall to bump. Default is `None` (open, cost-1
+//!   everywhere), so engine tests and an ad-hoc battle behave exactly as before.
 //! - **Blockers** — impassable [`Tile::Blocked`] hexes (rubble / wall) movement must
-//!   route *around* (see the BFS step in `lib.rs`).
+//!   route *around* (see the BFS step in `lib.rs`). These *are* hard — only the map edge
+//!   is soft.
 //! - **Cover & hazards** — a [`Tile::Cover`] hex makes its occupant harder to hit (a
 //!   to-hit TN bonus, read in the attack pipeline); a [`Tile::Hazard`] hex damages
 //!   whoever stands on it each tick.
@@ -60,8 +65,8 @@ impl Tile {
     }
 }
 
-/// A hard rectangular **extent** in axial coords — `[min_q, max_q] × [min_r, max_r]`,
-/// inclusive. Off-board hexes are impassable.
+/// A rectangular **zone** in axial coords — `[min_q, max_q] × [min_r, max_r]`, inclusive.
+/// The free-movement / deployment area; outside it movement is *penalised*, not blocked.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub struct Bounds {
     pub min_q: i32,
@@ -71,27 +76,41 @@ pub struct Bounds {
 }
 
 impl Bounds {
-    /// Is `h` inside the extent (inclusive)?
+    /// Is `h` inside the zone (inclusive)?
     pub fn contains(self, h: Hex) -> bool {
         (self.min_q..=self.max_q).contains(&h.q) && (self.min_r..=self.max_r).contains(&h.r)
     }
+
+    /// The nearest in-zone hex to `h` (clamped per axis) — `h` itself when already inside.
+    fn clamp(self, h: Hex) -> Hex {
+        Hex::new(h.q.clamp(self.min_q, self.max_q), h.r.clamp(self.min_r, self.max_r))
+    }
+
+    /// How far `h` lies **outside** the zone (0 when inside) — the friction distance.
+    fn overshoot(self, h: Hex) -> i32 {
+        h.distance(self.clamp(h))
+    }
 }
 
-/// A battle's **board**: an optional hard extent plus sparse terrain. The default is an
-/// open, unbounded plane (no bounds, every hex [`Tile::Open`]) — the engine's prior
-/// behavior, so existing battles are unchanged until they opt into a map.
+/// How far past the zone the engine still bothers to path/track (the friction makes a unit
+/// bog down within a hex or two of the edge, so a small fringe is plenty).
+const FRINGE: i32 = 3;
+
+/// A battle's **board**: an optional engagement [`Bounds`] zone plus sparse terrain. The
+/// default is an open, unbounded plane (no zone, every hex [`Tile::Open`], move-cost 1) —
+/// the engine's prior behavior, so existing battles are unchanged until they opt into a map.
 #[derive(Clone, Debug, Default)]
 pub struct Terrain {
-    bounds: Option<Bounds>,
+    zone: Option<Bounds>,
     tiles: HashMap<Hex, Tile>,
 }
 
 impl Terrain {
-    /// An **arena**: a bounded `depth × frontage` rectangle (columns `0..depth`, rows
+    /// An **arena**: a `depth × frontage` engagement zone (columns `0..depth`, rows
     /// `0..frontage`) of open ground, ready to have terrain placed on it.
     pub fn arena(depth: i32, frontage: i32) -> Self {
         Self {
-            bounds: Some(Bounds {
+            zone: Some(Bounds {
                 min_q: 0,
                 max_q: (depth - 1).max(0),
                 min_r: 0,
@@ -101,9 +120,9 @@ impl Terrain {
         }
     }
 
-    /// The board's hard extent, if any (`None` = unbounded).
-    pub fn bounds(&self) -> Option<Bounds> {
-        self.bounds
+    /// The board's engagement zone, if any (`None` = open plane).
+    pub fn zone(&self) -> Option<Bounds> {
+        self.zone
     }
 
     /// Builder: place a single `tile` at `hex` (`Open` removes any feature there).
@@ -117,29 +136,43 @@ impl Terrain {
     }
 
     /// Builder: stamp the same `tile` across many hexes (walls, a cover line, a hazard
-    /// field). Off-board hexes are ignored, so a map can over-paint freely.
+    /// field). Out-of-zone hexes are ignored, so a map can over-paint freely.
     pub fn fill(mut self, hexes: impl IntoIterator<Item = Hex>, tile: Tile) -> Self {
         for h in hexes {
-            if self.in_bounds(h) {
+            if self.in_zone(h) {
                 self = self.set(h, tile);
             }
         }
         self
     }
 
-    /// The tile at `hex` — `Open` for any unlisted (or off-board) hex.
+    /// The tile at `hex` — `Open` for any unlisted hex.
     pub fn tile(&self, hex: Hex) -> Tile {
         self.tiles.get(&hex).copied().unwrap_or_default()
     }
 
-    /// Is `hex` within the board's extent? (Always true when unbounded.)
-    pub fn in_bounds(&self, hex: Hex) -> bool {
-        self.bounds.is_none_or(|b| b.contains(hex))
+    /// Is `hex` inside the engagement zone? (Always true on the open plane.)
+    pub fn in_zone(&self, hex: Hex) -> bool {
+        self.zone.is_none_or(|b| b.contains(hex))
     }
 
-    /// Can a unit stand on / move through `hex` — on the board **and** not a blocker?
+    /// The **movement cost** to enter `hex`: `1` inside the zone (or on the open plane),
+    /// rising by `1` per hex of overshoot past the zone edge. The soft-boundary friction —
+    /// venturing out is allowed but increasingly expensive, so a flee bottoms out fast.
+    pub fn move_cost(&self, hex: Hex) -> i32 {
+        1 + self.zone.map_or(0, |b| b.overshoot(hex))
+    }
+
+    /// Is `hex` worth pathing through — inside the zone or within the thin [`FRINGE`] past
+    /// it? Bounds the BFS flow field so it always terminates (units never get further out).
+    pub fn pathable(&self, hex: Hex) -> bool {
+        self.zone.is_none_or(|b| b.overshoot(hex) <= FRINGE)
+    }
+
+    /// Can a unit stand on / move through `hex` — i.e. not a hard blocker? (The zone edge
+    /// is soft, charged via [`move_cost`](Self::move_cost), not refused here.)
     pub fn passable(&self, hex: Hex) -> bool {
-        self.in_bounds(hex) && self.tile(hex).passable()
+        self.tile(hex).passable()
     }
 
     /// The cover TN a unit standing on `hex` gains (added to attackers' to-hit TN).
@@ -158,20 +191,22 @@ mod tests {
     use super::*;
 
     #[test]
-    fn an_open_unbounded_board_is_all_passable() {
+    fn an_open_board_is_all_passable_at_cost_one() {
         let t = Terrain::default();
-        assert!(t.passable(Hex::new(100, -50))); // no bounds — anywhere goes
+        assert!(t.passable(Hex::new(100, -50))); // no zone — anywhere goes
+        assert_eq!(t.move_cost(Hex::new(100, -50)), 1); // and always cheap
         assert_eq!(t.cover_tn(Hex::new(0, 0)), 0);
         assert!(t.hazard(Hex::new(0, 0)).is_none());
     }
 
     #[test]
-    fn an_arena_bounds_the_play_area() {
-        let t = Terrain::arena(8, 6); // cols 0..=7, rows 0..=5
-        assert!(t.passable(Hex::new(0, 0)));
-        assert!(t.passable(Hex::new(7, 5)));
-        assert!(!t.passable(Hex::new(8, 0))); // past the depth edge — off-board
-        assert!(!t.passable(Hex::new(0, -1))); // past the frontage edge
+    fn the_zone_edge_is_soft_friction_not_a_wall() {
+        let t = Terrain::arena(8, 6); // zone cols 0..=7, rows 0..=5
+        assert_eq!(t.move_cost(Hex::new(3, 3)), 1); // inside — free
+        assert!(t.passable(Hex::new(8, 0))); // off-zone is still steppable...
+        assert_eq!(t.move_cost(Hex::new(8, 0)), 2); // ...but the first fringe hex costs 2
+        assert_eq!(t.move_cost(Hex::new(10, 0)), 4); // and it climbs: 1 + 3 overshoot
+        assert!(!t.pathable(Hex::new(20, 0))); // far out — past where the AI bothers to path
     }
 
     #[test]
