@@ -412,6 +412,7 @@ mod tests {
                 emp: false,
                 footprint: Footprint::Single,
                 smart: false,
+                awkward: false,
             })
     }
 

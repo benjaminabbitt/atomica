@@ -63,15 +63,19 @@ pub struct Implant {
     pub condition: Condition,
     /// Inbuilt implants are non-removable identity (§7F).
     pub removable: bool,
+    /// **Digital tag** (`docs/cyberware.md` §6): does this implant present a surface a
+    /// breach can trip? `true` for networked chrome (decks, smartware); `false` for
+    /// **inert physical** cyberware (subdermal plating), which no hack / worm / EMP can
+    /// touch. Declared per-implant — gates every breach vector via [`Implant::is_digital`].
+    pub digital: bool,
 }
 
 impl Implant {
-    /// Is this implant **digital** — i.e. does it present a surface a breach can trip?
-    /// True if it grants a hack, raises Link, or carries breach liabilities; false for
-    /// **inert physical** cyberware (subdermal plating), which no hack / worm / EMP can
-    /// touch (only physical wear / destruction). Gates every breach vector.
+    /// Is this implant **digital** — does it present a surface a breach can trip? Reads
+    /// the explicit [`Implant::digital`] tag. `false` ⇒ inert physical cyberware, immune
+    /// to every breach vector (hack / worm / EMP); only physical wear / destruction.
     pub fn is_digital(&self) -> bool {
-        self.grant_hack.is_some() || self.contribution.link > 0 || !self.hack_effects.is_empty()
+        self.digital
     }
 
     /// A **cyberdeck** — grants the hack loadout and raises Link (the surface) +
@@ -85,6 +89,7 @@ impl Implant {
             hack_effects: vec![StatusSpec::lockware()], // Lockout (placeholder)
             condition: Condition::Online,
             removable: true,
+            digital: true,
         }
     }
 
@@ -99,6 +104,7 @@ impl Implant {
             hack_effects: vec![],
             condition: Condition::Online,
             removable: true,
+            digital: false,
         }
     }
 
@@ -111,6 +117,7 @@ impl Implant {
             hack_effects: vec![StatusSpec::crash()], // Seizure
             condition: Condition::Online,
             removable: true,
+            digital: true,
         }
     }
 
@@ -124,6 +131,7 @@ impl Implant {
             hack_effects: vec![StatusSpec::breach()], // Breach (vuln)
             condition: Condition::Online,
             removable: true,
+            digital: true,
         }
     }
 
@@ -138,6 +146,7 @@ impl Implant {
             hack_effects: vec![StatusSpec::bleed(), StatusSpec::crash()], // Overdose
             condition: Condition::Online,
             removable: true,
+            digital: true,
         }
     }
 
@@ -151,6 +160,7 @@ impl Implant {
             hack_effects: vec![StatusSpec::bleed()], // Overload (Internal DoT)
             condition: Condition::Online,
             removable: true,
+            digital: true,
         }
     }
 

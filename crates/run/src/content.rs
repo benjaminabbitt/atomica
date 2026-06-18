@@ -12,8 +12,7 @@ use atomica_sim::{
 };
 
 fn weapon(damage: f32, dtype: DamageType, pen: PenTier, range: i32) -> Attack {
-    // Role from reach: a reach-1 weapon is Melee, anything longer is Gunnery (and so
-    // takes the range-difficulty penalty on its to-hit roll).
+    // Role from reach: a reach-1 weapon is Melee, anything longer is Gunnery.
     let skill = if range > 1 { Skill::Gunnery } else { Skill::Melee };
     Attack {
         damage,
@@ -26,7 +25,15 @@ fn weapon(damage: f32, dtype: DamageType, pen: PenTier, range: i32) -> Attack {
         emp: false,
         footprint: Footprint::Single,
         smart: false,
+        awkward: false,
     }
+}
+
+/// Builder: mark a weapon **awkward** (a rifle / polearm / heavy weapon) — clumsy
+/// to-hit when an enemy is jammed up close (§7G).
+fn awkward(mut a: Attack) -> Attack {
+    a.awkward = true;
+    a
 }
 
 fn body(name: &str, hp: f32, init: f32) -> Unit {
@@ -51,7 +58,7 @@ pub fn runner(name: &str) -> Unit {
         .with_skill(Skill::Gunnery, 6)
         .with_skill(Skill::Hacking, 5)
         .with_evasion(7.0)
-        .with_attack(weapon(8.0, DamageType::Piercing, PenTier::Contact, 4));
+        .with_attack(awkward(weapon(8.0, DamageType::Piercing, PenTier::Contact, 4))); // a rifle — clumsy in a clinch
     u.install(Implant::cyberdeck());
     u
 }

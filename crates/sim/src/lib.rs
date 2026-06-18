@@ -162,6 +162,10 @@ pub struct Attack {
     /// from foe**, so its line of fire / blast **spares the attacker's team** — a dumb
     /// weapon firing through occupied hexes can mow down allies in the path; this can't.
     pub smart: bool,
+    /// **Awkward tag** (`docs/combat.md` §7G): a long / unwieldy weapon (rifle, polearm,
+    /// many heavy weapons) is **clumsy up close** — a to-hit penalty when the target is
+    /// jammed against it, fading to none at proper range. See [`Attack::awkward_penalty`].
+    pub awkward: bool,
 }
 
 impl Attack {
@@ -184,17 +188,24 @@ impl Attack {
             emp: false,
             footprint: Footprint::Single,
             smart: false,
+            awkward: false,
         }
     }
 
-    /// The **range difficulty** this weapon's to-hit roll suffers at hex-distance `dist`
-    /// (§7G): a gun gets harder the farther the shot — `RANGE_PENALTY_PER_HEX` per hex
-    /// past point-blank. **Melee weapons have none**, and **hacking is unaffected**
-    /// (it never routes through here).
-    pub fn range_penalty(&self, dist: i32) -> i32 {
-        match self.skill {
-            Skill::Gunnery => (dist - 1).max(0) * RANGE_PENALTY_PER_HEX,
-            _ => 0,
+    /// The **awkward** to-hit penalty this weapon suffers at hex-distance `dist` (§7G) —
+    /// a TN bump (harder to hit) when a long / unwieldy weapon is **too close**, fading
+    /// to none at proper range. Only weapons with the [`awkward`](Attack::awkward) tag pay
+    /// it; a handy weapon (pistol, blade) never does, and **hacking never routes through
+    /// here**, so range can't touch the digital realm. Bands: same-hex `-4` (≈never —
+    /// occupancy keeps units apart), adjacent `-2`, range ≥ 2 `0`.
+    pub fn awkward_penalty(&self, dist: i32) -> i32 {
+        if !self.awkward {
+            return 0;
+        }
+        match dist {
+            d if d <= 0 => AWKWARD_POINT_BLANK, // same hex — practically unreachable
+            1 => AWKWARD_ADJACENT,              // jammed in close
+            _ => 0,                             // at proper range
         }
     }
 
@@ -678,9 +689,10 @@ const EMP_MAGNITUDE: u32 = 2;
 /// reach (Cascade), not its per-slot force. Placeholder (TBD).
 const WORM_DEGRADE: u32 = 2;
 
-/// How much a gun's to-hit TN rises per hex past point-blank (§7G range difficulty).
-/// Melee is exempt; hacking never routes through here. Placeholder (TBD).
-const RANGE_PENALTY_PER_HEX: i32 = 2;
+/// To-hit TN bumps an **awkward** weapon pays for being too close (§7G): `-2` jammed
+/// adjacent, `-4` same-hex (occupancy keeps units apart, so ≈never). Placeholder (TBD).
+const AWKWARD_ADJACENT: i32 = 2;
+const AWKWARD_POINT_BLANK: i32 = 4;
 
 /// Cap on the meshed-PAN synergy bonus to a hack rating (§5). Placeholder (TBD).
 const MESH_SYNERGY_CAP: i32 = 3;
@@ -1072,12 +1084,12 @@ impl<R: RandomSource> Battle<R> {
     fn resolve_attack_with(&mut self, attacker: usize, target: usize, atk: Attack) {
         let atk_id = self.units[attacker].id;
         // To-hit (§7G, design-delta §394): roll `3d6 + weapon skill + accuracy` vs the
-        // target's Evasion plus the gun's range penalty. A **non-positive TN auto-hits**
-        // with no roll — so an undefended (Evasion 0) melee blow always lands and burns
-        // no RNG (the deterministic auto-hit pipeline; dice only matter once a defender
-        // can actually evade or a shot reaches).
+        // target's Evasion plus an awkward weapon's close-quarters penalty. A
+        // **non-positive TN auto-hits** with no roll — so an undefended (Evasion 0) melee
+        // blow always lands and burns no RNG (the deterministic auto-hit pipeline; dice
+        // only matter once a defender can evade or a long weapon is jammed up close).
         let dist = self.reach(attacker, target);
-        let tn = self.units[target].evasion() + atk.range_penalty(dist);
+        let tn = self.units[target].evasion() + atk.awkward_penalty(dist);
         if tn > 0 {
             let rating = self.units[attacker].skill(atk.skill) + atk.accuracy;
             if !resolve_contest(&mut self.rng, Contest::new(rating, 0, tn)).success {
@@ -2593,6 +2605,7 @@ mod tests {
             emp: false,
             footprint: Footprint::Single,
             smart: false,
+            awkward: false,
         }
     }
 
@@ -2628,13 +2641,17 @@ mod tests {
     }
 
     #[test]
-    fn range_difficulty_hurts_guns_not_melee() {
-        // A gun's to-hit TN climbs with distance; a melee weapon's never does.
-        let g = gun(10.0, 1, 8); // Gunnery
-        assert_eq!(g.range_penalty(1), 0); // point-blank: none
-        assert_eq!(g.range_penalty(5), (5 - 1) * RANGE_PENALTY_PER_HEX);
-        assert!(g.range_penalty(8) > g.range_penalty(3)); // farther = harder
-        assert_eq!(Attack::melee(10.0).range_penalty(8), 0); // melee is exempt at any reach
+    fn an_awkward_weapon_is_clumsy_up_close_not_at_range() {
+        // A long / unwieldy weapon (awkward tag) pays a to-hit penalty jammed in close,
+        // fading to none at proper range; a handy weapon (and any melee) never pays it.
+        let mut rifle = gun(10.0, 1, 8);
+        rifle.awkward = true;
+        assert_eq!(rifle.awkward_penalty(1), AWKWARD_ADJACENT); // adjacent: clumsy (-2)
+        assert_eq!(rifle.awkward_penalty(2), 0); // at proper range: clean
+        assert_eq!(rifle.awkward_penalty(8), 0); // and stays clean however far
+        assert_eq!(rifle.awkward_penalty(0), AWKWARD_POINT_BLANK); // same hex (≈never): -4
+        assert_eq!(gun(10.0, 1, 8).awkward_penalty(1), 0); // a handy gun: no penalty
+        assert_eq!(Attack::melee(10.0).awkward_penalty(1), 0); // melee: never awkward
     }
 
     #[test]
@@ -2689,11 +2706,8 @@ mod tests {
     fn a_ranged_closer_halts_at_standoff_then_fires() {
         // Rifle 2..=6, speed 5, target 6 away. Advance closes only until in band
         // (distance 6), then fires from there instead of walking into melee.
-        let mut atk = unit(0, Team::A, 0)
-            .with_speed(5)
-            .with_initiative(10.0)
-            .with_skill(Skill::Gunnery, 12); // a marksman — clears the long-range penalty
-        atk.set_weapon(gun(12.0, 2, 6));
+        let mut atk = unit(0, Team::A, 0).with_speed(5).with_initiative(10.0);
+        atk.set_weapon(gun(12.0, 2, 6)); // a handy rifle — no awkward / range penalty
         let mut dummy = unit(1, Team::B, 6).with_movement(MovementProfile::Hold);
         dummy.character.integrity = 100.0;
         let mut b = Battle::new(vec![atk, dummy], 1);
