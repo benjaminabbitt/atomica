@@ -340,8 +340,8 @@ fn rest_and_recuperate(roster: &mut [Unit]) {
         for idx in 0..u.implants.len() {
             u.repair_implant(idx);
         }
-        u.integrity = u.max_integrity;
-        u.statuses.clear();
+        u.character.clear_statuses();
+        u.character.fill(); // back to full Integrity / Plating / Barrier
     }
 }
 
@@ -355,7 +355,7 @@ fn deploy(template: &Unit, next_id: &mut u32, team: Team, pos: Hex) -> Unit {
     *next_id += 1;
     u.team = team;
     u.pos = pos;
-    u.statuses.clear(); // transient combat effects don't carry between combats
+    u.character.clear_statuses(); // transient combat effects don't carry between combats
     u
 }
 
@@ -474,11 +474,11 @@ mod tests {
         ];
         let mut run = Run::new(roster, encounters, 11);
         run.fight_next().unwrap(); // combat 1
-        let after_1 = run.roster()[0].integrity;
+        let after_1 = run.roster()[0].integrity();
         assert!(after_1 < 50.0); // took damage and carries it (deploy no longer heals)
         run.fight_next().unwrap(); // combat 2 — fought on from the wounded state
         assert_eq!(run.outcome(), RunOutcome::Won);
-        assert!(run.roster()[0].integrity < after_1); // even more worn — attrition
+        assert!(run.roster()[0].integrity() < after_1); // even more worn — attrition
     }
 
     #[test]
@@ -492,7 +492,7 @@ mod tests {
         ];
         let mut game = Game::new(roster, GamePlan::new("Campaign", runs), 11);
         game.play_run().unwrap(); // run 1 wounds the Vet...
-        assert_eq!(game.roster()[0].integrity, 50.0); // ...but R&R restored it before run 2
+        assert_eq!(game.roster()[0].integrity(), 50.0); // ...but R&R restored it before run 2
         game.play_run().unwrap();
         assert_eq!(game.outcome(), GameOutcome::Won);
     }

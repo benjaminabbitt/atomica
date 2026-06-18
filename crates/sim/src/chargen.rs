@@ -22,7 +22,7 @@
 //! pool refactor *onto* (L2 / L2b); it coexists with the current `Unit` fold until
 //! those land.
 
-use crate::{resolve_contest, Contest, Hex, MovementProfile, PenTier, RandomSource, TargetingProfile};
+use crate::{resolve_contest, Contest, MovementProfile, PenTier, RandomSource, TargetingProfile};
 
 /// A decorator's stable handle. A [`Modifier`]'s `source` links back to the
 /// decorator that spawned it, so removing/expiring the decorator drops exactly its
@@ -324,6 +324,9 @@ impl Condition {
 #[derive(Clone, Debug)]
 pub struct Decorator {
     pub tag: Tag,
+    /// A human / merge label (a status's name) — its identity for **stacking merge**
+    /// ([`Character::apply_status`]) and UI display. `None` for anonymous gear / buffs.
+    pub label: Option<&'static str>,
     /// Slot in the priority-ordered gen — higher wins overrides (default
     /// [`Priority::GEAR`]).
     pub priority: Priority,
@@ -361,6 +364,7 @@ impl Decorator {
     pub fn gear(tag: Tag, factors: Vec<Factor>) -> Self {
         Self {
             tag,
+            label: None,
             priority: Priority::GEAR,
             condition: Condition::Online,
             stacks: 1,
@@ -443,6 +447,12 @@ impl Decorator {
     /// Builder: set the initial [`Condition`] (default `Online`).
     pub fn with_condition(mut self, condition: Condition) -> Self {
         self.condition = condition;
+        self
+    }
+
+    /// Builder: set the merge / display [`label`](Decorator::label) (a status's name).
+    pub fn with_label(mut self, label: &'static str) -> Self {
+        self.label = Some(label);
         self
     }
 
@@ -631,7 +641,6 @@ pub struct Character {
     next_gen: u32,
 
     // --- live pools (path-dependent state, §3 — not composed) ---
-    pub pos: Hex,
     pub integrity: f32,
     pub barrier: f32,
     pub plating: f32,
@@ -648,13 +657,23 @@ impl Character {
             base,
             gen: Vec::new(),
             next_gen: 0,
-            pos: Hex::new(0, 0),
             integrity: base.max_integrity,
             barrier: base.barrier,
             plating: base.plating,
             alive: true,
             log: Vec::new(),
         }
+    }
+
+    /// The authored stat [`BaseLine`] the decorators compose on top of.
+    pub fn base(&self) -> BaseLine {
+        self.base
+    }
+
+    /// Mutable access to the authored base — the construction / authoring seam (a
+    /// `with_*` builder edits it, then `fill`s the pools). Live state stays on the pools.
+    pub fn base_mut(&mut self) -> &mut BaseLine {
+        &mut self.base
     }
 
     // -- the gen: install / remove (each mutation dirties the realized cache) --
@@ -672,6 +691,45 @@ impl Character {
         let idx = self.gen.partition_point(|d| (d.priority, d.id.0) < key);
         self.gen.insert(idx, dec);
         id
+    }
+
+    /// Apply a **status** decorator with stacking-merge by [`label`](Decorator::label)
+    /// (the `stacking` axis): if a live decorator with the same label is present, merge
+    /// into it — refresh its duration to the longer, and when `stack_cap` is `Some(max)`
+    /// add stacks (capped). Otherwise install fresh. Returns the live decorator's id.
+    pub fn apply_status(&mut self, dec: Decorator, stack_cap: Option<u32>) -> GenId {
+        if let Some(label) = dec.label {
+            if let Some(existing) =
+                self.gen.iter_mut().find(|d| d.label == Some(label) && !d.is_expired())
+            {
+                if let Some(max) = stack_cap {
+                    existing.stacks = (existing.stacks + dec.stacks).min(max);
+                }
+                if let (Expiration::Duration(a), Expiration::Duration(b)) =
+                    (existing.expiration, dec.expiration)
+                {
+                    existing.expiration = Expiration::Duration(a.max(b));
+                }
+                return existing.id;
+            }
+        }
+        self.install(dec)
+    }
+
+    /// The active labelled decorators (statuses) as `(label, stacks)` — for UI / queries.
+    pub fn status_labels(&self) -> Vec<(&'static str, u32)> {
+        self.gen.iter().filter_map(|d| d.label.map(|l| (l, d.stacks))).collect()
+    }
+
+    /// Strip every **status** (labelled decorator) — the between-combats cleanse. Gear,
+    /// implants and behavior overrides (unlabelled) stay.
+    pub fn clear_statuses(&mut self) {
+        self.gen.retain(|d| d.label.is_none());
+    }
+
+    /// Is any active decorator carrying a [`Flag::Stun`]? (read by the action phase.)
+    pub fn stunned(&self) -> bool {
+        self.realize().stunned()
     }
 
     /// Remove a decorator by its id (a deck going Offline, a buff dispelled). Its
@@ -955,6 +1013,30 @@ impl Character {
         let max = self.realize().max_integrity();
         if self.integrity > max {
             self.integrity = max;
+        }
+    }
+
+    /// The composed maxima `(max_integrity, plating, barrier)` — snapshot before a gen
+    /// change so [`resize_pools`](Character::resize_pools) can apply the delta.
+    pub fn maxima(&self) -> (f32, f32, f32) {
+        let r = self.realize();
+        (r.max_integrity(), r.plating(), r.barrier())
+    }
+
+    /// Resize the live pools by the **change** in composed maxima since `before`
+    /// (`(max_integrity, plating, barrier)`) — the implant install / breach / repair
+    /// path. Capacity that comes online arrives **filled** (plating / barrier track
+    /// their max; a max-Integrity rise gains the HP); a **drop** chunks the pool to fit.
+    pub fn resize_pools(&mut self, before: (f32, f32, f32)) {
+        let (bm, bp, bb) = before;
+        let r = self.realize();
+        self.plating = (self.plating + r.plating() - bp).max(0.0);
+        self.barrier = (self.barrier + r.barrier() - bb).max(0.0);
+        let d = r.max_integrity() - bm;
+        if d > 0.0 {
+            self.integrity += d;
+        } else {
+            self.integrity = self.integrity.min(r.max_integrity());
         }
     }
 

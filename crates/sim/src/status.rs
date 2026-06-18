@@ -15,7 +15,7 @@ use crate::chargen::{
     Amount as GenAmount, Decorator, Event, Expiration, Factor, Flag, HookEffect, Resist as GenResist,
     Stat, Tag, Wear,
 };
-use crate::{PenTier, Unit};
+use crate::PenTier;
 
 /// Axis: magnitude — how an amount is computed from the target.
 #[derive(Clone, Copy, Debug)]
@@ -35,14 +35,6 @@ impl Magnitude {
             Magnitude::Flat(a) => GenAmount::Flat(a),
             Magnitude::PctMax(p) => GenAmount::PctMax(p),
             Magnitude::PctCurrent(p) => GenAmount::PctCurrent(p),
-        }
-    }
-
-    pub fn amount(self, unit: &Unit) -> f32 {
-        match self {
-            Magnitude::Flat(a) => a,
-            Magnitude::PctMax(p) => p * unit.max_integrity,
-            Magnitude::PctCurrent(p) => p * unit.integrity,
         }
     }
 
@@ -141,14 +133,10 @@ pub struct StatusSpec {
     pub resist: Resist,
 }
 
-/// A live status instance on a unit.
-#[derive(Clone, Copy, Debug)]
-pub struct Status {
-    pub spec: StatusSpec,
-    pub stacks: u32,
-    /// Ticks remaining (used when `decay == Duration`).
-    pub duration: u32,
-}
+// A live status is now a **decorator** on the unit's `character` (`docs/layers.md`
+// L2b): [`StatusSpec::to_decorator`] projects the spec, and [`Character::apply_status`]
+// installs it with stacking-merge. The spec is the definition; the decorator the
+// instance.
 
 // --- Named statuses (placeholder magnitudes — TBD) ---------------------------
 //
@@ -297,8 +285,9 @@ impl StatusSpec {
             Decay::Duration => Expiration::Duration(duration),
             Decay::Stacks => Expiration::Permanent, // lifetime is the stack count
         };
-        // Statuses are debuffs by default (the pool the loop applies to enemies).
-        let mut d = Decorator::status(Tag::Debuff, stacks, expiration, wear);
+        // Statuses are debuffs by default (the pool the loop applies to enemies). The
+        // name is the decorator's merge / display label.
+        let mut d = Decorator::status(Tag::Debuff, stacks, expiration, wear).with_label(self.name);
         match self.effect {
             Effect::Dot { magnitude, pen } => {
                 d = d.with_hook(

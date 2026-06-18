@@ -55,8 +55,7 @@ pub use rng::{RandomSource, ScriptedRng, SplitMix64};
 pub use roll::{resolve_contest, Contest, RollOutcome};
 pub use skills::{Chassis, Skill, Skills};
 pub use status::{
-    Behavior, Decay, Effect, Magnitude, Resist, Stacking, Status, StatusSpec, Targeting, Timing,
-    Trigger,
+    Behavior, Decay, Effect, Magnitude, Resist, Stacking, StatusSpec, Targeting, Timing, Trigger,
 };
 
 /// Which side a unit fights for.
@@ -99,15 +98,6 @@ pub enum PenTier {
     Contact,
     /// Bypasses Barrier + Plating — straight to Integrity.
     Internal,
-}
-
-/// The external defense layers that sit in front of Integrity.
-#[derive(Clone, Copy, Debug, Default)]
-pub struct Defense {
-    /// Barrier/Shield — the outermost (External) layer.
-    pub barrier: f32,
-    /// Plating/Armor — the Contact layer.
-    pub plating: f32,
 }
 
 /// The area an attack covers (§7G). **Physical AoE has friendly fire on** — it hits
@@ -166,6 +156,16 @@ impl Attack {
     }
 }
 
+/// An installed implant: the authored [`Implant`] (its `Contribution`, granted hack,
+/// and breach `hack_effects`) paired with the [`GenId`] of its decorator on the unit's
+/// `character`. The **live condition** lives on the decorator (`docs/layers.md` L5);
+/// the breach ladder reads / writes it by this id and fires the spec's liabilities.
+#[derive(Clone, Debug)]
+pub struct InstalledImplant {
+    pub spec: Implant,
+    pub gen: GenId,
+}
+
 /// A combatant. The stat line mirrors the design's "Unit anatomy".
 #[derive(Clone, Debug)]
 pub struct Unit {
@@ -174,10 +174,6 @@ pub struct Unit {
     pub team: Team,
     pub pos: Hex,
 
-    /// The single HP pool — all damage ultimately reduces it.
-    pub integrity: f32,
-    pub max_integrity: f32,
-    pub defense: Defense,
     /// Armor class for the [`armor`] matrix.
     pub armor_class: ArmorClass,
     /// Innate class — sets the skill floor, contagion exposure, etc. (§7J).
@@ -185,19 +181,9 @@ pub struct Unit {
     /// Per-character skill levels (chassis baseline + earned) — roll modifiers (§10).
     pub skills: Skills,
 
-    /// Physical Initiative — turn order in the world (higher acts first).
-    pub initiative: f32,
     /// The **move stat** (§10.4): how many hexes the unit may step per activation
-    /// (move-then-act). `0` ⇒ stationary.
+    /// (move-then-act). `0` ⇒ stationary. (A board concern, not a composed stat.)
     pub speed: i32,
-    /// Digital Initiative / net presence (Link, §7D). Integer **bandwidth tiers**;
-    /// `0` ⇒ immune to all digital attack. Feeds the hack channel + digital init.
-    pub link: i32,
-    /// Resist vs Worm + hacks — the Target Number a digital stochastic roll must
-    /// beat (`3d6 + power` vs this), §13.
-    pub firewall: i32,
-    /// Resist vs Virus — the Target Number a bio stochastic roll must beat, §13.
-    pub immunity: i32,
 
     /// The **primary** weapon — the default profile and the one isolated tests use.
     pub attack: Attack,
@@ -205,30 +191,23 @@ pub struct Unit {
     /// **range band** covers the target distance each activation (a rifle + sidearm,
     /// a polearm + dagger).
     pub weapons: Vec<Attack>,
-    /// Optional netrunning loadout — the digital action this unit takes on its
-    /// turn (§7F). `None` ⇒ no deck. Usually **granted by a cyberdeck implant**
-    /// (folded in by [`Unit::install`]), not hand-set.
-    pub hack: Option<Hack>,
-    /// Installed cyberware (`docs/cyberware.md`). Each implant folds its
-    /// [`Contribution`] into the stat line above while active; its liabilities
-    /// fire on breach. The stats above are the derived (base + Σ active) line.
-    pub implants: Vec<Implant>,
+    /// Installed cyberware (`docs/cyberware.md`) — each an [`InstalledImplant`]: a
+    /// decorator on the `character` (its `Contribution` composes; its condition rides
+    /// the decorator) plus the authored spec the breach ladder fires from.
+    pub implants: Vec<InstalledImplant>,
     /// The implant network mode (§5): meshed (synergy, Cascade-vulnerable) vs
     /// segmented (contained, no synergy). A loadout commitment.
     pub pan: Pan,
-    /// Active à-la-carte statuses.
-    pub statuses: Vec<Status>,
-    /// The **behavior layer** ([`layers.md`](../../docs/layers.md) L3): a `Character`
-    /// whose realized `targeting` / `movement` [`Override`]s drive the action phase
-    /// (§7J). The unit's *program*; a spoof installs a `CORRUPTION`-priority override
-    /// that wins — "the enemy hacks your script". Stats still read the flat fields
-    /// above (the stat read-through is the remaining migration).
+    /// The unit's [`Character`] ([`layers.md`](../../docs/layers.md) L5): it owns
+    /// **everything composed** — the authored `BaseLine`, the gen (implants / statuses
+    /// / buffs / behavior as decorators), and the **live pools** (Integrity / Barrier /
+    /// Plating / alive). The stat accessors and pools below all read through it; there
+    /// are no flat stat fields left.
     pub character: Character,
     /// What fires when this unit dies (§10.9). `None` by default.
     pub on_death: DeathTrigger,
     /// Has the death trigger already fired? (Set by the reaper so it fires once.)
     pub death_resolved: bool,
-    pub alive: bool,
 }
 
 impl Unit {
@@ -241,17 +220,10 @@ impl Unit {
             name: name.into(),
             team,
             pos: Hex::new(0, 0),
-            integrity: 30.0,
-            max_integrity: 30.0,
-            defense: Defense::default(),
             armor_class: ArmorClass::default(),
             chassis,
             skills: chassis.baseline_skills(),
-            initiative: 5.0,
             speed: 1,
-            link: 0,
-            firewall: 0,
-            immunity: 0,
             attack: Attack {
                 damage: 10.0,
                 dtype: DamageType::Piercing,
@@ -262,14 +234,11 @@ impl Unit {
                 footprint: Footprint::Single,
             },
             weapons: Vec::new(),
-            hack: None,
             implants: Vec::new(),
             pan: Pan::Meshed,
-            statuses: Vec::new(),
-            character: Character::new(BaseLine::default()),
+            character: Character::new(BaseLine { max_integrity: 30.0, initiative: 5.0, ..BaseLine::default() }),
             on_death: DeathTrigger::None,
             death_resolved: false,
-            alive: true,
         }
     }
 
@@ -279,16 +248,16 @@ impl Unit {
         self
     }
 
-    /// Builder: set Integrity (and its max).
+    /// Builder: set Integrity (its base max **and** the live pool).
     pub fn with_integrity(mut self, hp: f32) -> Self {
-        self.integrity = hp;
-        self.max_integrity = hp;
+        self.character.base_mut().max_integrity = hp;
+        self.character.integrity = hp;
         self
     }
 
     /// Builder: set the physical Initiative.
     pub fn with_initiative(mut self, initiative: f32) -> Self {
-        self.initiative = initiative;
+        self.character.base_mut().initiative = initiative;
         self
     }
 
@@ -343,27 +312,10 @@ impl Unit {
         self
     }
 
-    /// The **stat base** for composition (`docs/layers.md`): a [`BaseLine`] from the
-    /// unit's authored flat stat line. The `character`'s decorators (behavior +
-    /// installed modifiers) compose **on top** of this — so a buff/debuff/gear adds a
-    /// stat `Factor` and the effective accessors below honour it. *(Transitional: the
-    /// flat fields are still the base — the implant fold + status pool haven't moved
-    /// onto the gen yet; this establishes the read-through seam.)*
-    fn stat_base(&self) -> BaseLine {
-        BaseLine {
-            link: self.link as f32,
-            firewall: self.firewall as f32,
-            immunity: self.immunity as f32,
-            initiative: self.initiative,
-            max_integrity: self.max_integrity,
-            ..BaseLine::default()
-        }
-    }
-
-    /// Compose the unit's stat line **on demand**: its flat base + the `character`'s
-    /// modifier decorators (§0). The single read path the loop goes through.
+    /// Compose the unit's stat line **on demand**: the `character`'s authored base +
+    /// its modifier decorators (§0). The single read path the loop goes through.
     fn realized(&self) -> Realized {
-        self.character.realize_with_base(self.stat_base())
+        self.character.realize()
     }
 
     /// Effective **Link** — base + composed modifiers (§7D).
@@ -382,9 +334,22 @@ impl Unit {
     pub fn initiative(&self) -> f32 {
         self.realized().initiative()
     }
-    /// Effective **max Integrity**.
+    /// Effective **max Integrity** (composed).
     pub fn max_integrity(&self) -> f32 {
         self.realized().max_integrity()
+    }
+    /// The live **Integrity** pool (current HP).
+    pub fn integrity(&self) -> f32 {
+        self.character.integrity
+    }
+    /// The active statuses as `(name, stacks)` — the labelled decorators on the gen.
+    pub fn statuses(&self) -> Vec<(&'static str, u32)> {
+        self.character.status_labels()
+    }
+    /// The flat **damage bonus** this unit adds to every weapon hit — the composed
+    /// `Damage` stat (an implant combat-stim, a buff). Weapons carry their own base.
+    pub fn damage_bonus(&self) -> f32 {
+        self.realized().damage()
     }
 
     /// Install a stat/behavior **modifier** on the unit (a buff, debuff, or gear) — a
@@ -417,7 +382,7 @@ impl Unit {
     }
 
     pub fn is_alive(&self) -> bool {
-        self.alive && self.integrity > 0.0
+        self.character.alive && self.character.integrity > 0.0
     }
 
     /// This unit's level in `skill` — the bonus it brings to a contested roll (§13).
@@ -436,72 +401,60 @@ impl Unit {
         resolve_contest(rng, Contest::new(self.skill(skill), equipment, tn))
     }
 
-    /// Apply a status, honoring its stacking axis (merge with any same-named one).
+    /// Apply a status, honoring its stacking axis — installs (or merges into) a
+    /// decorator on the `character` ([`Character::apply_status`]).
     pub fn add_status(&mut self, spec: StatusSpec, duration: u32, stacks: u32) {
-        if let Some(existing) = self.statuses.iter_mut().find(|s| s.spec.name == spec.name) {
-            match spec.stacking {
-                Stacking::Refresh => existing.duration = existing.duration.max(duration),
-                Stacking::Stack { max } => {
-                    existing.stacks = (existing.stacks + stacks).min(max);
-                    existing.duration = existing.duration.max(duration);
-                }
-            }
-        } else {
-            self.statuses.push(Status { spec, stacks, duration });
-        }
+        let cap = match spec.stacking {
+            Stacking::Refresh => None,
+            Stacking::Stack { max } => Some(max),
+        };
+        self.character.apply_status(spec.to_decorator(stacks, duration), cap);
     }
 
-    /// Install `implant`, folding the benefit it delivers (scaled by its
-    /// condition, §6) into the derived stat line and granting any deck loadout
-    /// while active.
+    /// Install `implant` as a **decorator on the `character`** (`docs/layers.md` L5):
+    /// its `Contribution` composes into the stat accessors, its condition rides the
+    /// decorator, and a deck's loadout is **granted** (read via [`Unit::hack`]). No
+    /// flat-field fold; the capacity it lends (a pump's +HP, a plate's armor) comes
+    /// online **filled** via [`resize_pools`](Character::resize_pools).
     pub fn install(&mut self, implant: Implant) {
-        self.refold(&implant, 0.0, implant.condition.benefit_factor());
-        if implant.condition.is_active() {
-            if let Some(h) = implant.grant_hack {
-                self.hack = Some(h);
-            }
-        }
-        self.implants.push(implant);
+        let before = self.character.maxima();
+        let gen = self.character.install(implant.to_decorator());
+        self.character.resize_pools(before);
+        self.implants.push(InstalledImplant { spec: implant, gen });
     }
 
-    /// Apply the *change* in an implant's delivered contribution between two
-    /// condition factors. Integer stats use `round(new) − round(old)` (exact and
-    /// reversible — no rounded-delta drift across half-steps); continuous stats
-    /// scale linearly.
-    fn refold(&mut self, implant: &Implant, old: f32, new: f32) {
-        let c = implant.contribution;
-        let at = |f: f32, x: i32| (f * x as f32).round() as i32;
-        self.link += at(new, c.link) - at(old, c.link);
-        self.firewall += at(new, c.firewall) - at(old, c.firewall);
-        let d = new - old;
-        self.defense.plating += d * c.plating;
-        self.initiative += d * c.initiative;
-        self.attack.damage += d * c.damage;
-        self.max_integrity += d * c.max_integrity;
-        if d > 0.0 {
-            self.integrity += d * c.max_integrity; // gain the extra HP
-        } else if c.max_integrity != 0.0 {
-            self.integrity = self.integrity.min(self.max_integrity); // clamp on loss
-        }
+    /// The netrunning loadout this unit can run — granted by an active deck implant
+    /// (composed; `None` ⇒ no deck or it's Offline).
+    pub fn hack(&self) -> Option<Hack> {
+        self.realized().hack()
     }
 
-    /// Move the implant at `idx` to `cond`, folding the change in delivered
-    /// benefit and toggling its granted hack on the active boundary. Destroyed is
-    /// terminal. Returns the implant's `hack_effects` iff this knocks it from
-    /// active to inactive (a breach — the caller fires them per the §6 ladder).
+    /// Grant a netrunning loadout via a built-in deck (a granting decorator) — content
+    /// / test convenience; normally a deck implant grants it. Returns its [`GenId`].
+    pub fn grant_hack(&mut self, hack: Hack) -> GenId {
+        self.character
+            .install(Decorator::gear(Tag::Implant, vec![]).with_grant(Capability::Hack(hack)))
+    }
+
+    /// The live [`Condition`] of the implant at `idx` (read from its decorator).
+    pub fn implant_condition(&self, idx: usize) -> Condition {
+        self.character.condition_of(self.implants[idx].gen).unwrap_or(Condition::Destroyed)
+    }
+
+    /// Move the implant at `idx` to `cond` on its decorator, then re-clamp the pools to
+    /// the new composed maxima. Destroyed is terminal. Returns the implant's
+    /// `hack_effects` iff this knocks it from active to inactive (a breach — the caller
+    /// fires them per the §6 ladder).
     fn transition(&mut self, idx: usize, cond: Condition) -> Vec<StatusSpec> {
-        let old = self.implants[idx].condition;
+        let old = self.implant_condition(idx);
         if old == Condition::Destroyed {
             return Vec::new(); // terminal
         }
-        let im = self.implants[idx].clone();
-        self.refold(&im, old.benefit_factor(), cond.benefit_factor());
-        if let Some(h) = im.grant_hack {
-            self.hack = cond.is_active().then_some(h);
-        }
-        self.implants[idx].condition = cond;
+        let before = self.character.maxima();
+        self.character.set_condition(self.implants[idx].gen, cond);
+        self.character.resize_pools(before);
         if old.is_active() && !cond.is_active() {
-            im.hack_effects
+            self.implants[idx].spec.hack_effects.clone()
         } else {
             Vec::new()
         }
@@ -517,7 +470,7 @@ impl Unit {
     /// (`Online → Degraded → Offline → Destroyed`): physical wear, *reduced*
     /// benefit, **no liability fired** (§3.1 — wear is not a breach).
     pub fn degrade_implant(&mut self, idx: usize) {
-        let next = self.implants[idx].condition.degraded();
+        let next = self.implant_condition(idx).degraded();
         self.transition(idx, next);
     }
 
@@ -530,17 +483,12 @@ impl Unit {
     /// The first active (breachable) implant — the hack's target slot (a
     /// targeting rule is a later refinement).
     fn first_active_implant(&self) -> Option<usize> {
-        self.implants.iter().position(|im| im.condition.is_active())
+        (0..self.implants.len()).find(|&i| self.implant_condition(i).is_active())
     }
 
     /// Indices of all active (breachable) implants — Cascade and EMP hit them all.
     fn active_implant_indices(&self) -> Vec<usize> {
-        self.implants
-            .iter()
-            .enumerate()
-            .filter(|(_, im)| im.condition.is_active())
-            .map(|(i, _)| i)
-            .collect()
+        (0..self.implants.len()).filter(|&i| self.implant_condition(i).is_active()).collect()
     }
 
     /// Throughput bonus from a **meshed** PAN (§5): networked implants boost each
@@ -554,19 +502,15 @@ impl Unit {
         }
     }
 
+    /// Is the unit **stunned** (a Crash / Seizure decorator present)? — composed.
     fn is_stunned(&self) -> bool {
-        self.statuses.iter().any(|s| matches!(s.spec.effect, Effect::Stun))
+        self.realized().stunned()
     }
 
-    /// Initiative after Lag-style slows.
+    /// Initiative after Lag-style slows — composed (a `Slow` status is a `More` factor
+    /// on Initiative, so the realized accessor already folds it).
     fn effective_initiative(&self) -> f32 {
-        let mut init = self.initiative();
-        for s in &self.statuses {
-            if let Effect::Slow(f) = s.spec.effect {
-                init *= f;
-            }
-        }
-        init
+        self.initiative()
     }
 
     /// Digital **bandwidth** — Link floored to an integer (§7D). The hack channel
@@ -577,15 +521,9 @@ impl Unit {
         self.link().max(0)
     }
 
-    /// Incoming-damage multiplier from Breach-style vulnerabilities.
+    /// Incoming-damage multiplier from Breach-style `Vuln` flags — composed.
     fn vuln_mult(&self) -> f32 {
-        let mut m = 1.0;
-        for s in &self.statuses {
-            if let Effect::Vuln(f) = s.spec.effect {
-                m *= f;
-            }
-        }
-        m
+        self.realized().vuln()
     }
 }
 
@@ -600,15 +538,6 @@ const EMP_MAGNITUDE: u32 = 2;
 
 /// Cap on the meshed-PAN synergy bonus to a hack rating (§5). Placeholder (TBD).
 const MESH_SYNERGY_CAP: i32 = 3;
-
-/// The Target Number a stochastic status rolls against (its `resist` axis, §13).
-fn resist_tn(unit: &Unit, resist: Resist) -> i32 {
-    match resist {
-        Resist::None => 0,
-        Resist::Immunity => unit.immunity(),
-        Resist::Firewall => unit.firewall(),
-    }
-}
 
 /// Outcome of a resolved battle.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -754,44 +683,17 @@ impl<R: RandomSource> Battle<R> {
         }
     }
 
+    /// The **status tick** (§1): dispatch `TickStart` to every living unit's gen — each
+    /// active status decorator's hooks fire (DoTs / shred apply to its pools, gated by
+    /// the stochastic `behavior` roll, resolved against its own composed resist TN), and
+    /// the decorator lifetimes decay. Passive statuses (Stun / Slow / Vuln) carry no
+    /// hook — they compose into the accessors and are read in other phases.
     fn status_phase(&mut self) {
-        for i in 0..self.units.len() {
-            if !self.units[i].is_alive() {
+        for unit in self.units.iter_mut() {
+            if !unit.is_alive() {
                 continue;
             }
-            // Take the list out so we can mutate the unit while iterating it.
-            let statuses = std::mem::take(&mut self.units[i].statuses);
-            for st in &statuses {
-                let fires = match st.spec.behavior {
-                    Behavior::Deterministic => true,
-                    Behavior::Stochastic { power } => {
-                        // 3d6 + power + stacks vs the target's resist TN (§13).
-                        let tn = resist_tn(&self.units[i], st.spec.resist);
-                        let skill = power + st.stacks as i32;
-                        resolve_contest(&mut self.rng, Contest::new(skill, 0, tn)).success
-                    }
-                };
-                if !fires {
-                    continue;
-                }
-                match st.spec.effect {
-                    Effect::Dot { magnitude, pen } => {
-                        let amt = magnitude.amount(&self.units[i]) * st.stacks as f32;
-                        apply_damage(&mut self.units[i], amt, pen, magnitude.can_kill());
-                    }
-                    Effect::PlatingShred(mag) => {
-                        let amt = mag.amount(&self.units[i]) * st.stacks as f32;
-                        let p = &mut self.units[i].defense.plating;
-                        *p = (*p - amt).max(0.0);
-                    }
-                    // Stun / Slow / Vuln are passive modifiers, read in other phases.
-                    Effect::Stun | Effect::Slow(_) | Effect::Vuln(_) => {}
-                }
-                if !self.units[i].is_alive() {
-                    break;
-                }
-            }
-            self.units[i].statuses = statuses;
+            unit.character.dispatch(Event::TickStart, self.tick, &mut self.rng);
         }
     }
 
@@ -888,10 +790,10 @@ impl<R: RandomSource> Battle<R> {
             TargetingProfile::Backline => enemies()
                 .max_by_key(|(_, u)| (me.pos.distance(u.pos), std::cmp::Reverse(u.id)))
                 .map(|(j, _)| j),
-            TargetingProfile::LowestIntegrity => by_f32(|u| u.integrity, false),
+            TargetingProfile::LowestIntegrity => by_f32(|u| u.integrity(), false),
             TargetingProfile::HighestThreat => by_f32(|u| u.attack.damage, true),
             TargetingProfile::WeakestArmor => {
-                by_f32(|u| u.defense.barrier + u.defense.plating, false)
+                by_f32(|u| u.character.barrier + u.character.plating, false)
             }
         }
     }
@@ -961,18 +863,11 @@ impl<R: RandomSource> Battle<R> {
             .map(|(j, _)| j)
     }
 
+    /// The **cleanup phase** (§1): wear every unit's gen by one decay step — durations
+    /// lose a tick, stack-decay statuses lose a stack — and drop the expired.
     fn decay_phase(&mut self) {
         for u in &mut self.units {
-            for st in &mut u.statuses {
-                match st.spec.decay {
-                    Decay::Duration => st.duration = st.duration.saturating_sub(1),
-                    Decay::Stacks => st.stacks = st.stacks.saturating_sub(1),
-                }
-            }
-            u.statuses.retain(|st| match st.spec.decay {
-                Decay::Duration => st.duration > 0,
-                Decay::Stacks => st.stacks > 0,
-            });
+            u.character.decay();
         }
     }
 
@@ -998,11 +893,14 @@ impl<R: RandomSource> Battle<R> {
     /// damage pipeline per target — the armor matrix (type vs class) × that unit's
     /// Breach vulnerability.
     fn resolve_attack_with(&mut self, attacker: usize, target: usize, atk: Attack) {
+        // Weapon base + the attacker's composed damage bonus (an implant combat-stim).
+        let base = atk.damage + self.units[attacker].damage_bonus();
+        let src = self.units[attacker].id.0;
         for t in self.footprint_targets(attacker, target, atk) {
             let mult =
                 armor::matrix(atk.dtype, self.units[t].armor_class) * self.units[t].vuln_mult();
-            let dmg = atk.damage * mult;
-            apply_damage(&mut self.units[t], dmg, atk.pen, true);
+            let dmg = base * mult;
+            self.units[t].character.apply_pool_damage(self.tick, src, dmg, atk.pen, true);
             if atk.emp && self.units[t].is_alive() {
                 self.apply_emp(t);
             }
@@ -1053,12 +951,12 @@ impl<R: RandomSource> Battle<R> {
         let mut order: Vec<usize> = (0..self.units.len())
             .filter(|&i| {
                 let u = &self.units[i];
-                u.is_alive() && u.hack.is_some() && u.link() > 0
+                u.is_alive() && u.hack().is_some() && u.link() > 0
             })
             .collect();
         order.sort_by(|&a, &b| {
             let (ua, ub) = (&self.units[a], &self.units[b]);
-            ub.link.cmp(&ua.link).then(ua.id.cmp(&ub.id))
+            ub.link().cmp(&ua.link()).then(ua.id.cmp(&ub.id))
         });
 
         for i in order {
@@ -1092,7 +990,7 @@ impl<R: RandomSource> Battle<R> {
                 continue;
             }
             order.push((u.effective_initiative(), u.id.0, 0, i, false));
-            if u.hack.is_some() && u.link() > 0 {
+            if u.hack().is_some() && u.link() > 0 {
                 order.push((u.link() as f32, u.id.0, 1, i, true));
             }
         }
@@ -1141,11 +1039,14 @@ impl<R: RandomSource> Battle<R> {
             DeathTrigger::Detonate { damage, dtype, pen, radius } => {
                 use std::collections::HashSet;
                 let hexes: HashSet<Hex> = center.within(radius).into_iter().collect();
+                let src = self.units[i].id.0;
                 for t in 0..self.units.len() {
                     if t != i && self.units[t].is_alive() && hexes.contains(&self.units[t].pos) {
                         let mult = armor::matrix(dtype, self.units[t].armor_class)
                             * self.units[t].vuln_mult();
-                        apply_damage(&mut self.units[t], damage * mult, pen, true);
+                        self.units[t]
+                            .character
+                            .apply_pool_damage(self.tick, src, damage * mult, pen, true);
                     }
                 }
             }
@@ -1177,7 +1078,7 @@ impl<R: RandomSource> Battle<R> {
     /// to hack; defense is the Firewall alone. Zero Link stays the hard
     /// reachability gate. Lands the hack's payload (margin-scaled) on success.
     pub fn resolve_hack(&mut self, attacker: usize, target: usize) -> HackResult {
-        let Some(hack) = self.units[attacker].hack else {
+        let Some(hack) = self.units[attacker].hack() else {
             return HackResult::NoHack;
         };
         // Hard gate (§7D/§7F): a runner needs net presence; the target a surface.
@@ -1242,7 +1143,7 @@ impl<R: RandomSource> Battle<R> {
     /// range — the hack's target selection.
     fn nearest_hackable_enemy(&self, i: usize) -> Option<usize> {
         let me = &self.units[i];
-        let range = me.hack.map_or(0, |h| h.range);
+        let range = me.hack().map_or(0, |h| h.range);
         self.units
             .iter()
             .enumerate()
@@ -1258,35 +1159,6 @@ impl<R: RandomSource> Battle<R> {
     }
 }
 
-/// Route `amount` through the defense layers selected by `pen`, spilling any
-/// remainder inward. `can_kill == false` (the PctCurrent "softener") floors
-/// Integrity at 1.0 instead of dropping the unit.
-fn apply_damage(unit: &mut Unit, amount: f32, pen: PenTier, can_kill: bool) {
-    let mut remaining = amount;
-    if matches!(pen, PenTier::External) {
-        remaining = absorb(&mut unit.defense.barrier, remaining);
-    }
-    if matches!(pen, PenTier::External | PenTier::Contact) {
-        remaining = absorb(&mut unit.defense.plating, remaining);
-    }
-    unit.integrity -= remaining;
-    if unit.integrity <= 0.0 {
-        if can_kill {
-            unit.integrity = 0.0;
-            unit.alive = false;
-        } else {
-            unit.integrity = 1.0;
-        }
-    }
-}
-
-/// Subtract from a layer, returning the overflow that passes through it.
-fn absorb(layer: &mut f32, amount: f32) -> f32 {
-    let soaked = layer.min(amount);
-    *layer -= soaked;
-    amount - soaked
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1297,17 +1169,10 @@ mod tests {
             name: format!("U{id}"),
             team,
             pos: Hex::new(q, 0),
-            integrity: 30.0,
-            max_integrity: 30.0,
-            defense: Defense::default(),
             armor_class: ArmorClass::Mail,
             chassis: Chassis::Augmented,
             skills: Chassis::Augmented.baseline_skills(),
-            initiative: 5.0,
             speed: 1,
-            link: 0,
-            firewall: 0,
-            immunity: 0,
             attack: Attack {
                 damage: 10.0,
                 dtype: DamageType::Piercing,
@@ -1318,14 +1183,15 @@ mod tests {
                 footprint: Footprint::Single,
             },
             weapons: Vec::new(),
-            hack: None,
             implants: Vec::new(),
             pan: Pan::Meshed,
-            statuses: Vec::new(),
-            character: Character::new(BaseLine::default()),
+            character: Character::new(BaseLine {
+                max_integrity: 30.0,
+                initiative: 5.0,
+                ..BaseLine::default()
+            }),
             on_death: DeathTrigger::None,
             death_resolved: false,
-            alive: true,
         }
     }
 
@@ -1333,22 +1199,22 @@ mod tests {
     /// Its hack strength comes from its own Link & Hacking — set those per test.
     fn runner(id: u32, team: Team, q: i32, range: i32) -> Unit {
         let mut u = unit(id, team, q);
-        u.link = 3;
-        u.hack = Some(Hack::new(range, StatusSpec::lockware(), 1, 5));
+        u.character.base_mut().link = 3.0;
+        u.grant_hack(Hack::new(range, StatusSpec::lockware(), 1, 5));
         u
     }
 
     /// A unit with a hackable digital surface: Link > 0 and a Firewall TN.
     fn networked(id: u32, team: Team, q: i32, firewall: i32) -> Unit {
         let mut u = unit(id, team, q);
-        u.link = 2;
-        u.firewall = firewall;
+        u.character.base_mut().link = 2.0;
+        u.character.base_mut().firewall = firewall as f32;
         u
     }
 
     fn duel() -> Battle {
         let mut a = unit(0, Team::A, 0);
-        a.initiative = 6.0;
+        a.character.base_mut().initiative = 6.0;
         let b = unit(1, Team::B, 3);
         Battle::new(vec![a, b], 123)
     }
@@ -1356,51 +1222,53 @@ mod tests {
     #[test]
     fn layers_absorb_then_integrity() {
         let mut u = unit(0, Team::A, 0);
-        u.defense = Defense { barrier: 5.0, plating: 5.0 };
-        apply_damage(&mut u, 12.0, PenTier::External, true);
-        assert_eq!(u.integrity, 28.0); // 5 + 5 soaked, 2 through
-        assert_eq!(u.defense.barrier, 0.0);
-        assert_eq!(u.defense.plating, 0.0);
+        u.character.barrier = 5.0;
+        u.character.plating = 5.0;
+        u.character.apply_pool_damage(0, 0, 12.0, PenTier::External, true);
+        assert_eq!(u.character.integrity, 28.0); // 5 + 5 soaked, 2 through
+        assert_eq!(u.character.barrier, 0.0);
+        assert_eq!(u.character.plating, 0.0);
     }
 
     #[test]
     fn internal_bypasses_layers() {
         let mut u = unit(0, Team::A, 0);
-        u.defense = Defense { barrier: 99.0, plating: 99.0 };
-        apply_damage(&mut u, 10.0, PenTier::Internal, true);
-        assert_eq!(u.integrity, 20.0);
-        assert_eq!(u.defense.barrier, 99.0);
+        u.character.barrier = 99.0;
+        u.character.plating = 99.0;
+        u.character.apply_pool_damage(0, 0, 10.0, PenTier::Internal, true);
+        assert_eq!(u.character.integrity, 20.0);
+        assert_eq!(u.character.barrier, 99.0);
     }
 
     #[test]
     fn softener_never_kills() {
         let mut u = unit(0, Team::A, 0);
-        apply_damage(&mut u, 9999.0, PenTier::Internal, false);
-        assert_eq!(u.integrity, 1.0);
-        assert!(u.alive);
+        u.character.apply_pool_damage(0, 0, 9999.0, PenTier::Internal, false);
+        assert_eq!(u.character.integrity, 1.0);
+        assert!(u.character.alive);
     }
 
     #[test]
     fn burn_dot_ticks_down_integrity() {
         let mut b = Battle::new(vec![unit(0, Team::A, 0)], 1);
         b.units[0].add_status(StatusSpec::burn(), 3, 2); // 2 stacks × 2 dmg, Contact
-        let before = b.units[0].integrity;
+        let before = b.units[0].character.integrity;
         b.status_phase();
         // No plating ⇒ full 4 reaches Integrity.
-        assert_eq!(b.units[0].integrity, before - 4.0);
+        assert_eq!(b.units[0].character.integrity, before - 4.0);
     }
 
     #[test]
     fn full_immunity_blocks_poison() {
         let mut u = unit(0, Team::A, 0);
-        u.immunity = 30; // resist TN beyond any 3d6 + power roll
+        u.character.base_mut().immunity = 30.0; // resist TN beyond any 3d6 + power roll
         let mut b = Battle::new(vec![u], 7);
         b.units[0].add_status(StatusSpec::poison(), 5, 1);
-        let before = b.units[0].integrity;
+        let before = b.units[0].character.integrity;
         for _ in 0..20 {
             b.status_phase();
         }
-        assert_eq!(b.units[0].integrity, before);
+        assert_eq!(b.units[0].character.integrity, before);
     }
 
     #[test]
@@ -1411,7 +1279,7 @@ mod tests {
         let mut b = Battle::new(vec![attacker, target], 1);
         // Piercing vs Mail = 1.0, so 10 base × 1.5 breach = 15.
         b.resolve_attack(0, 1);
-        assert_eq!(b.units[1].integrity, 30.0 - 15.0);
+        assert_eq!(b.units[1].character.integrity, 30.0 - 15.0);
     }
 
     #[test]
@@ -1442,7 +1310,7 @@ mod tests {
         assert_eq!(x.resolve(1000), y.resolve(1000));
         assert_eq!(x.tick, y.tick);
         for (a, b) in x.units.iter().zip(&y.units) {
-            assert_eq!(a.integrity, b.integrity);
+            assert_eq!(a.character.integrity, b.character.integrity);
             assert_eq!(a.pos, b.pos);
         }
     }
@@ -1450,25 +1318,25 @@ mod tests {
     #[test]
     fn injected_scripted_rng_forces_poison_to_fire() {
         let mut u = unit(0, Team::A, 0);
-        u.immunity = 5; // low resist TN
+        u.character.base_mut().immunity = 5.0; // low resist TN
         u.add_status(StatusSpec::poison(), 5, 1);
         // 3d6 = 6, + poison power 3 + 1 stack = 10 ≥ TN 5 ⇒ fires.
         let mut b = Battle::with_rng(vec![u], ScriptedRng::from_d6([2, 2, 2]));
-        let before = b.units[0].integrity;
+        let before = b.units[0].character.integrity;
         b.status_phase();
-        assert!(b.units[0].integrity < before);
+        assert!(b.units[0].character.integrity < before);
     }
 
     #[test]
     fn injected_scripted_rng_forces_poison_to_whiff() {
         let mut u = unit(0, Team::A, 0);
-        u.immunity = 30; // resist TN out of reach
+        u.character.base_mut().immunity = 30.0; // resist TN out of reach
         u.add_status(StatusSpec::poison(), 5, 1);
         // 3d6 = 6, + power + stack = 10 < TN 30 ⇒ whiffs.
         let mut b = Battle::with_rng(vec![u], ScriptedRng::from_d6([2, 2, 2]));
-        let before = b.units[0].integrity;
+        let before = b.units[0].character.integrity;
         b.status_phase();
-        assert_eq!(b.units[0].integrity, before);
+        assert_eq!(b.units[0].character.integrity, before);
     }
 
     #[test]
@@ -1494,7 +1362,7 @@ mod tests {
         let won = vec![unit(0, Team::A, 0)]; // only player alive ⇒ enemy wiped
         assert_eq!(WinFight.status(&won, 1, true), ObjectiveStatus::Achieved);
         let mut lost = vec![unit(0, Team::A, 0), unit(1, Team::B, 1)];
-        lost[0].alive = false; // player wiped
+        lost[0].character.alive = false; // player wiped
         assert_eq!(WinFight.status(&lost, 1, true), ObjectiveStatus::Failed);
     }
 
@@ -1513,7 +1381,7 @@ mod tests {
         assert_eq!(obj.status(&alive, 0, false), ObjectiveStatus::Pending);
         assert_eq!(obj.status(&alive, 3, false), ObjectiveStatus::Achieved);
         let mut dead = vec![unit(0, Team::A, 0)];
-        dead[0].alive = false;
+        dead[0].character.alive = false;
         assert_eq!(obj.status(&dead, 1, false), ObjectiveStatus::Failed);
     }
 
@@ -1526,7 +1394,7 @@ mod tests {
         assert_eq!(obj.status(&held, 1, false), ObjectiveStatus::Pending); // holds, but too early
         assert_eq!(obj.status(&held, 3, false), ObjectiveStatus::Achieved); // held to the round
         let mut cleared = held.clone();
-        cleared[1].alive = false; // enemy gone → captured immediately
+        cleared[1].character.alive = false; // enemy gone → captured immediately
         assert_eq!(obj.status(&cleared, 1, false), ObjectiveStatus::Achieved);
         let away = vec![unit(0, Team::A, 0), unit(1, Team::B, 5)]; // player not on the hex
         assert_eq!(obj.status(&away, 9, true), ObjectiveStatus::Failed); // fight over, never held
@@ -1547,11 +1415,11 @@ mod tests {
         let both = vec![unit(0, Team::A, 0), unit(1, Team::B, 1)];
         assert_eq!(obj.status(&both, 5, false), ObjectiveStatus::Pending); // lose first
         let mut close = vec![unit(0, Team::A, 0), unit(1, Team::B, 1), unit(2, Team::B, 2)];
-        close[0].alive = false; // player down, 2 enemies left ≤ 2
+        close[0].character.alive = false; // player down, 2 enemies left ≤ 2
         assert_eq!(obj.status(&close, 9, true), ObjectiveStatus::Achieved);
         let mut blown =
             vec![unit(0, Team::A, 0), unit(1, Team::B, 1), unit(2, Team::B, 2), unit(3, Team::B, 3)];
-        blown[0].alive = false; // 3 enemies left > 2 → lost too badly
+        blown[0].character.alive = false; // 3 enemies left > 2 → lost too badly
         assert_eq!(obj.status(&blown, 9, true), ObjectiveStatus::Failed);
     }
 
@@ -1573,7 +1441,7 @@ mod tests {
     #[test]
     fn losing_the_simple_objective_counts_as_a_loss() {
         let mut us = vec![unit(0, Team::A, 0), unit(1, Team::B, 1)];
-        us[0].alive = false; // player wiped → WinFight Failed
+        us[0].character.alive = false; // player wiped → WinFight Failed
         let objs = Objectives::new(vec![Goal::new(Box::new(WinFight), 10, 5)]);
         let b = Battle::with_rng(us, SplitMix64::new(1)).with_objectives(objs);
         assert_eq!(b.winnings(), 0);
@@ -1609,21 +1477,21 @@ mod tests {
     fn zero_link_target_is_immune_to_hacks() {
         let atk = runner(0, Team::A, 0, 1);
         let mut tgt = networked(1, Team::B, 0, 8);
-        tgt.link = 0; // air-gapped — no surface to reach
+        tgt.character.base_mut().link = 0.0; // air-gapped — no surface to reach
                         // Empty RNG: a roll here would panic, proving the gate short-circuits.
         let mut b = Battle::with_rng(vec![atk, tgt], ScriptedRng::default());
         assert_eq!(b.resolve_hack(0, 1), HackResult::NoSurface);
-        assert!(b.units[1].statuses.is_empty());
+        assert!(b.units[1].statuses().is_empty());
     }
 
     #[test]
     fn offline_attacker_cannot_hack() {
         let mut atk = runner(0, Team::A, 0, 1);
-        atk.link = 0; // dark — no presence to reach with
+        atk.character.base_mut().link = 0.0; // dark — no presence to reach with
         let tgt = networked(1, Team::B, 0, 8);
         let mut b = Battle::with_rng(vec![atk, tgt], ScriptedRng::default());
         assert_eq!(b.resolve_hack(0, 1), HackResult::Offline);
-        assert!(b.units[1].statuses.is_empty());
+        assert!(b.units[1].statuses().is_empty());
     }
 
     #[test]
@@ -1631,10 +1499,10 @@ mod tests {
         // Attacker Link 6, target Link 2 → channel 2 (the target bottlenecks it);
         // rating avg(Hacking 4, 2) = 3.
         let mut atk = runner(0, Team::A, 0, 1);
-        atk.link = 6;
+        atk.character.base_mut().link = 6.0;
         atk.skills.set(Skill::Hacking, 4);
         let mut tgt = networked(1, Team::B, 0, 0);
-        tgt.link = 2;
+        tgt.character.base_mut().link = 2.0;
         let mut b = Battle::with_rng(vec![atk, tgt], ScriptedRng::from_d6([4, 4, 4])); // 12
         let HackResult::Rolled { outcome, .. } = b.resolve_hack(0, 1) else { panic!() };
         assert_eq!(outcome.total, 12 + 3);
@@ -1644,10 +1512,10 @@ mod tests {
     fn a_thin_runner_link_bottlenecks_the_channel() {
         // Mirror: attacker Link 2, target Link 6 → channel 2; same rating 3.
         let mut atk = runner(0, Team::A, 0, 1);
-        atk.link = 2;
+        atk.character.base_mut().link = 2.0;
         atk.skills.set(Skill::Hacking, 4);
         let mut tgt = networked(1, Team::B, 0, 0);
-        tgt.link = 6;
+        tgt.character.base_mut().link = 6.0;
         let mut b = Battle::with_rng(vec![atk, tgt], ScriptedRng::from_d6([4, 4, 4])); // 12
         let HackResult::Rolled { outcome, .. } = b.resolve_hack(0, 1) else { panic!() };
         assert_eq!(outcome.total, 12 + 3); // channel min(2, 6) = 2
@@ -1658,10 +1526,10 @@ mod tests {
         // Same runner; only the target's Link (the channel) changes.
         let total_vs = |target_link: i32| {
             let mut atk = runner(0, Team::A, 0, 1);
-            atk.link = 6;
+            atk.character.base_mut().link = 6.0;
             atk.skills.set(Skill::Hacking, 6);
             let mut tgt = networked(1, Team::B, 0, 0);
-            tgt.link = target_link;
+            tgt.character.base_mut().link = target_link as f32;
             let mut b = Battle::with_rng(vec![atk, tgt], ScriptedRng::from_d6([4, 4, 4])); // 12
             let HackResult::Rolled { outcome, .. } = b.resolve_hack(0, 1) else { panic!() };
             outcome.total
@@ -1677,10 +1545,10 @@ mod tests {
         // Defense is the Firewall wall in full — target Link feeds the channel,
         // not the TN (if Link capped the TN here it would be 4, not 12).
         let mut atk = runner(0, Team::A, 0, 1);
-        atk.link = 4;
+        atk.character.base_mut().link = 4.0;
         atk.skills.set(Skill::Hacking, 6);
         let mut tgt = networked(1, Team::B, 0, 12);
-        tgt.link = 4;
+        tgt.character.base_mut().link = 4.0;
         let mut b = Battle::with_rng(vec![atk, tgt], ScriptedRng::from_d6([4, 4, 4])); // 12
         let HackResult::Rolled { outcome, .. } = b.resolve_hack(0, 1) else { panic!() };
         // channel min(4, 4) = 4; rating avg(6, 4) = 5; total 17 vs full Firewall 12.
@@ -1692,30 +1560,30 @@ mod tests {
     #[test]
     fn margin_scales_the_landed_stacks() {
         let mut atk = runner(0, Team::A, 0, 1);
-        atk.link = 4;
+        atk.character.base_mut().link = 4.0;
         atk.skills.set(Skill::Hacking, 6); // channel min(4, 4) = 4 → rating avg(6, 4) = 5
         let mut tgt = networked(1, Team::B, 0, 2);
-        tgt.link = 4;
+        tgt.character.base_mut().link = 4.0;
         // 3d6 = 9, + rating 5 = 14 vs Firewall 2 → margin 12 → 1 + 12/3 = 5 stacks.
         let mut b = Battle::with_rng(vec![atk, tgt], ScriptedRng::from_d6([3, 3, 3]));
         assert!(b.resolve_hack(0, 1).landed());
-        assert_eq!(b.units[1].statuses[0].spec.name, "Lockware");
-        assert_eq!(b.units[1].statuses[0].stacks, 5);
+        assert_eq!(b.units[1].statuses()[0].0, "Lockware");
+        assert_eq!(b.units[1].statuses()[0].1, 5);
     }
 
     #[test]
     fn digital_phase_hacks_the_nearest_reachable_enemy() {
         let mut atk = runner(0, Team::A, 0, 4); // antenna range 4
-        atk.link = 4;
+        atk.character.base_mut().link = 4.0;
         atk.skills.set(Skill::Hacking, 4);
         let mut near = networked(1, Team::B, 2, 2); // distance 2 ≤ range 4
-        near.link = 4;
+        near.character.base_mut().link = 4.0;
         let mut far = networked(2, Team::B, 9, 2); // out of range
-        far.link = 4;
+        far.character.base_mut().link = 4.0;
         let mut b = Battle::with_rng(vec![atk, near, far], ScriptedRng::from_d6([4, 4, 4]));
         b.digital_phase();
-        assert!(!b.units[1].statuses.is_empty()); // near got hacked
-        assert!(b.units[2].statuses.is_empty()); // far one untouched (out of range)
+        assert!(!b.units[1].statuses().is_empty()); // near got hacked
+        assert!(b.units[2].statuses().is_empty()); // far one untouched (out of range)
     }
 
     #[test]
@@ -1726,17 +1594,17 @@ mod tests {
         // Empty RNG: a stunned runner must not roll.
         let mut b = Battle::with_rng(vec![atk, tgt], ScriptedRng::default());
         b.digital_phase();
-        assert!(b.units[1].statuses.is_empty());
+        assert!(b.units[1].statuses().is_empty());
     }
 
     #[test]
     fn hacking_resolution_is_deterministic() {
         let setup = || {
             let mut atk = runner(0, Team::A, 0, 4);
-            atk.link = 4;
+            atk.character.base_mut().link = 4.0;
             atk.skills.set(Skill::Hacking, 4);
             let mut tgt = networked(1, Team::B, 2, 4);
-            tgt.link = 4;
+            tgt.character.base_mut().link = 4.0;
             Battle::new(vec![atk, tgt], 99)
         };
         let mut x = setup();
@@ -1746,19 +1614,19 @@ mod tests {
             y.step();
         }
         for (a, b) in x.units.iter().zip(&y.units) {
-            assert_eq!(a.integrity, b.integrity);
-            assert_eq!(a.statuses.len(), b.statuses.len());
+            assert_eq!(a.character.integrity, b.character.integrity);
+            assert_eq!(a.statuses().len(), b.statuses().len());
         }
     }
 
     #[test]
     fn installing_a_cyberdeck_grants_the_hack_and_folds_the_surface() {
         let mut u = unit(0, Team::A, 0); // base: no deck, Link 0, Firewall 0
-        assert!(u.hack.is_none());
+        assert!(u.hack().is_none());
         u.install(Implant::cyberdeck());
-        assert!(u.hack.is_some()); // benefit: the unit can now hack
-        assert_eq!(u.link, 5); // folded surface
-        assert_eq!(u.firewall, 2); // folded wall
+        assert!(u.hack().is_some()); // benefit: the unit can now hack
+        assert_eq!(u.link(), 5); // folded surface
+        assert_eq!(u.firewall(), 2); // folded wall
     }
 
     #[test]
@@ -1767,14 +1635,14 @@ mod tests {
         let mut atk = runner(0, Team::A, 0, 4);
         atk.skills.set(Skill::Hacking, 4);
         let mut tgt = unit(1, Team::B, 1);
-        tgt.link = 3;
-        tgt.firewall = 4;
+        tgt.character.base_mut().link = 3.0;
+        tgt.character.base_mut().firewall = 4.0;
         tgt.install(Implant::subdermal_plating());
         tgt.install(Implant::reflex_booster());
         assert_eq!(tgt.pan, Pan::Meshed); // the default
         let mut b = Battle::with_rng(vec![atk, tgt], ScriptedRng::from_d6([6, 6, 6])); // crit
         b.resolve_hack(0, 1);
-        assert!(b.units[1].implants.iter().all(|im| im.condition == Condition::Offline));
+        assert!((0..b.units[1].implants.len()).all(|i| b.units[1].implant_condition(i) == Condition::Offline));
     }
 
     #[test]
@@ -1783,15 +1651,15 @@ mod tests {
         let mut atk = runner(0, Team::A, 0, 4);
         atk.skills.set(Skill::Hacking, 4);
         let mut tgt = unit(1, Team::B, 1);
-        tgt.link = 3;
-        tgt.firewall = 4;
+        tgt.character.base_mut().link = 3.0;
+        tgt.character.base_mut().firewall = 4.0;
         tgt.pan = Pan::Segmented;
         tgt.install(Implant::subdermal_plating()); // idx 0 — the targeted slot
         tgt.install(Implant::reflex_booster()); // idx 1 — contained
         let mut b = Battle::with_rng(vec![atk, tgt], ScriptedRng::from_d6([6, 6, 6])); // crit
         b.resolve_hack(0, 1);
-        assert_eq!(b.units[1].implants[0].condition, Condition::Offline);
-        assert_eq!(b.units[1].implants[1].condition, Condition::Online); // contained
+        assert_eq!(b.units[1].implant_condition(0), Condition::Offline);
+        assert_eq!(b.units[1].implant_condition(1), Condition::Online); // contained
     }
 
     #[test]
@@ -1804,7 +1672,7 @@ mod tests {
             atk.install(Implant::cyberdeck()); // grants the hack + Link 5
             atk.install(Implant::reflex_booster()); // 2 active → meshed synergy +1
             let mut tgt = networked(1, Team::B, 0, 4);
-            tgt.link = 5;
+            tgt.character.base_mut().link = 5.0;
             let mut b = Battle::with_rng(vec![atk, tgt], ScriptedRng::from_d6([4, 4, 4]));
             let HackResult::Rolled { outcome, .. } = b.resolve_hack(0, 1) else { panic!() };
             outcome.total
@@ -1815,19 +1683,19 @@ mod tests {
     #[test]
     fn emp_fries_all_chrome_bypassing_firewall() {
         let mut tgt = unit(1, Team::B, 0);
-        tgt.firewall = 99; // EMP ignores the wall entirely
+        tgt.character.base_mut().firewall = 99.0; // EMP ignores the wall entirely
         tgt.install(Implant::subdermal_plating()); // +6 Plating, Shed liability
         tgt.install(Implant::cyberdeck()); // Link 5, grants hack, Lockout liability
-        assert!(tgt.hack.is_some());
+        assert!(tgt.hack().is_some());
         let mut atk = unit(0, Team::A, 0);
         atk.attack.emp = true;
         // Empty RNG: an EMP rolls nothing (a physical pulse, not a contest).
         let mut b = Battle::with_rng(vec![atk, tgt], ScriptedRng::default());
         b.resolve_attack(0, 1);
-        assert_eq!(b.units[1].implants[0].condition, Condition::Offline);
-        assert_eq!(b.units[1].implants[1].condition, Condition::Offline);
-        assert!(b.units[1].hack.is_none()); // deck bricked
-        assert_eq!(b.units[1].defense.plating, 0.0); // plating benefit fried
+        assert_eq!(b.units[1].implant_condition(0), Condition::Offline);
+        assert_eq!(b.units[1].implant_condition(1), Condition::Offline);
+        assert!(b.units[1].hack().is_none()); // deck bricked
+        assert_eq!(b.units[1].character.plating, 0.0); // plating benefit fried
     }
 
     #[test]
@@ -1839,8 +1707,8 @@ mod tests {
         atk.attack.emp = true;
         let mut b = Battle::with_rng(vec![atk, tgt], ScriptedRng::default());
         b.resolve_attack(0, 1);
-        assert_eq!(b.units[1].implants[0].condition, Condition::Offline); // disabled
-        assert!(!b.units[1].statuses.iter().any(|s| matches!(s.spec.effect, Effect::Stun)));
+        assert_eq!(b.units[1].implant_condition(0), Condition::Offline); // disabled
+        assert!(!b.units[1].is_stunned());
     }
 
     #[test]
@@ -1852,20 +1720,20 @@ mod tests {
         b.resolve_attack(0, 1);
         assert!(b.units[1].implants.is_empty());
         // no chrome to fry → EMP adds no statuses (only the kinetic hit landed)
-        assert!(b.units[1].statuses.is_empty());
+        assert!(b.units[1].statuses().is_empty());
     }
 
     #[test]
     fn a_degraded_implant_delivers_half_its_benefit() {
         let mut u = unit(0, Team::A, 0);
         u.install(Implant::subdermal_plating()); // +6 Plating, Online
-        assert_eq!(u.defense.plating, 6.0);
+        assert_eq!(u.character.plating, 6.0);
         u.degrade_implant(0); // Online → Degraded
-        assert_eq!(u.implants[0].condition, Condition::Degraded);
-        assert_eq!(u.defense.plating, 3.0); // half benefit
+        assert_eq!(u.implant_condition(0), Condition::Degraded);
+        assert_eq!(u.character.plating, 3.0); // half benefit
         u.degrade_implant(0); // Degraded → Offline
-        assert_eq!(u.implants[0].condition, Condition::Offline);
-        assert_eq!(u.defense.plating, 0.0); // none
+        assert_eq!(u.implant_condition(0), Condition::Offline);
+        assert_eq!(u.character.plating, 0.0); // none
     }
 
     #[test]
@@ -1874,8 +1742,8 @@ mod tests {
         u.install(Implant::subdermal_plating());
         u.degrade_implant(0); // Degraded, plating 3
         u.repair_implant(0);
-        assert_eq!(u.implants[0].condition, Condition::Online);
-        assert_eq!(u.defense.plating, 6.0); // restored full
+        assert_eq!(u.implant_condition(0), Condition::Online);
+        assert_eq!(u.character.plating, 6.0); // restored full
     }
 
     #[test]
@@ -1885,42 +1753,43 @@ mod tests {
         u.degrade_implant(0); // Degraded
         u.degrade_implant(0); // Offline
         u.degrade_implant(0); // Destroyed
-        assert_eq!(u.implants[0].condition, Condition::Destroyed);
+        assert_eq!(u.implant_condition(0), Condition::Destroyed);
         u.repair_implant(0); // terminal — a no-op
-        assert_eq!(u.implants[0].condition, Condition::Destroyed);
-        assert_eq!(u.defense.plating, 0.0); // stays gone
+        assert_eq!(u.implant_condition(0), Condition::Destroyed);
+        assert_eq!(u.character.plating, 0.0); // stays gone
     }
 
     #[test]
     fn a_degraded_deck_still_hacks_on_a_thinner_surface() {
         let mut u = unit(0, Team::A, 0);
         u.install(Implant::cyberdeck()); // Link 5, grants hack
-        assert_eq!(u.link, 5);
+        assert_eq!(u.link(), 5);
         u.degrade_implant(0); // Degraded — still active
-        assert!(u.hack.is_some()); // a degraded deck still hacks
-        assert_eq!(u.link, 3); // round(0.5 × 5) = 3 — thinner surface
+        assert!(u.hack().is_some()); // a degraded deck still hacks
+        assert_eq!(u.link(), 3); // round(0.5 × 5) = 3 — thinner surface
         u.degrade_implant(0); // Offline
-        assert!(u.hack.is_none()); // now bricked
-        assert_eq!(u.link, 0); // and exact — no rounding drift
+        assert!(u.hack().is_none()); // now bricked
+        assert_eq!(u.link(), 0); // and exact — no rounding drift
     }
 
     #[test]
     fn firewall_suite_folds_the_wall() {
         let mut u = unit(0, Team::A, 0); // base Firewall 0
         u.install(Implant::firewall_suite());
-        assert_eq!(u.firewall, 4);
-        assert_eq!(u.link, 1); // a little surface comes with it
+        assert_eq!(u.firewall(), 4);
+        assert_eq!(u.link(), 1); // a little surface comes with it
     }
 
     #[test]
     fn combat_stim_folds_damage_and_lifts_integrity_with_the_pump() {
         let mut u = unit(0, Team::A, 0);
-        let (base_dmg, base_hp) = (u.attack.damage, u.max_integrity);
+        let base_hp = u.max_integrity();
         u.install(Implant::combat_stim());
-        assert_eq!(u.attack.damage, base_dmg + 4.0);
+        assert_eq!(u.damage_bonus(), 4.0); // +4 composed damage bonus (weapon base unchanged)
+        assert_eq!(u.attack.damage, 10.0);
         u.install(Implant::metabolic_pump());
-        assert_eq!(u.max_integrity, base_hp + 8.0);
-        assert_eq!(u.integrity, base_hp + 8.0); // gained the HP too
+        assert_eq!(u.max_integrity(), base_hp + 8.0);
+        assert_eq!(u.character.integrity, base_hp + 8.0); // gained the HP too
     }
 
     #[test]
@@ -1930,22 +1799,22 @@ mod tests {
         let mut atk = runner(0, Team::A, 0, 4);
         atk.skills.set(Skill::Hacking, 6);
         let mut tgt = unit(1, Team::B, 1);
-        tgt.link = 4;
-        tgt.firewall = 4; // big margin, no crit
+        tgt.character.base_mut().link = 4.0;
+        tgt.character.base_mut().firewall = 4.0; // big margin, no crit
         tgt.install(Implant::combat_stim());
         let mut b = Battle::with_rng(vec![atk, tgt], ScriptedRng::from_d6([3, 3, 3]));
         b.resolve_hack(0, 1);
-        let has_dot = b.units[1].statuses.iter().any(|s| matches!(s.spec.effect, Effect::Dot { .. }));
-        let has_stun = b.units[1].statuses.iter().any(|s| matches!(s.spec.effect, Effect::Stun));
+        let has_dot = b.units[1].statuses().iter().any(|(n, _)| *n == "Bleed");
+        let has_stun = b.units[1].is_stunned();
         assert!(has_dot && !has_stun);
     }
 
     #[test]
     fn subdermal_plating_folds_into_defense() {
         let mut u = unit(0, Team::A, 0);
-        let base = u.defense.plating;
+        let base = u.character.plating;
         u.install(Implant::subdermal_plating());
-        assert_eq!(u.defense.plating, base + 6.0);
+        assert_eq!(u.character.plating, base + 6.0);
     }
 
     #[test]
@@ -1954,8 +1823,8 @@ mod tests {
         let mut deck = Implant::cyberdeck();
         deck.condition = Condition::Offline; // installed dead
         u.install(deck);
-        assert!(u.hack.is_none());
-        assert_eq!(u.link, 0);
+        assert!(u.hack().is_none());
+        assert_eq!(u.link(), 0);
     }
 
     #[test]
@@ -1963,14 +1832,14 @@ mod tests {
         let mut u = unit(0, Team::A, 0);
         u.install(Implant::cyberdeck());
         let effects = u.disable_implant(0); // the §6 disable floor (a breach)
-        assert!(u.hack.is_none()); // bricked — lost the deck
-        assert_eq!(u.link, 0); // surface folded back out
+        assert!(u.hack().is_none()); // bricked — lost the deck
+        assert_eq!(u.link(), 0); // surface folded back out
         assert!(!effects.is_empty()); // liabilities returned for the ladder (later phase)
-        assert_eq!(u.implants[0].condition, Condition::Offline);
+        assert_eq!(u.implant_condition(0), Condition::Offline);
         u.repair_implant(0); // Ripperdoc
-        assert!(u.hack.is_some());
-        assert_eq!(u.link, 5);
-        assert_eq!(u.implants[0].condition, Condition::Online);
+        assert!(u.hack().is_some());
+        assert_eq!(u.link(), 5);
+        assert_eq!(u.implant_condition(0), Condition::Online);
     }
 
     #[test]
@@ -1979,13 +1848,13 @@ mod tests {
         let mut atk = runner(0, Team::A, 0, 4); // Link 3
         atk.skills.set(Skill::Hacking, 4);
         let mut tgt = unit(1, Team::B, 1);
-        tgt.link = 2;
+        tgt.character.base_mut().link = 2.0;
         tgt.install(Implant::reflex_booster()); // Seizure liability (stun)
-        tgt.firewall = 12; // channel min(3,2)=2 → rating avg(4,2)=3; dice 9 → 12 = TN, margin 0
+        tgt.character.base_mut().firewall = 12.0; // channel min(3,2)=2 → rating avg(4,2)=3; dice 9 → 12 = TN, margin 0
         let mut b = Battle::with_rng(vec![atk, tgt], ScriptedRng::from_d6([3, 3, 3]));
         assert!(b.resolve_hack(0, 1).landed());
-        assert_eq!(b.units[1].implants[0].condition, Condition::Offline); // disabled
-        assert!(b.units[1].statuses.is_empty()); // nothing fired (margin 0, no crit)
+        assert_eq!(b.units[1].implant_condition(0), Condition::Offline); // disabled
+        assert!(b.units[1].statuses().is_empty()); // nothing fired (margin 0, no crit)
     }
 
     #[test]
@@ -1994,14 +1863,14 @@ mod tests {
         let mut atk = runner(0, Team::A, 0, 4); // Link 3
         atk.skills.set(Skill::Hacking, 6);
         let mut tgt = unit(1, Team::B, 1);
-        tgt.link = 4;
+        tgt.character.base_mut().link = 4.0;
         tgt.install(Implant::subdermal_plating()); // Shed = Corrode (not stun)
-        tgt.firewall = 4; // channel min(3,4)=3 → rating avg(6,3)=4; dice 9 → 13 vs 4, margin 9
+        tgt.character.base_mut().firewall = 4.0; // channel min(3,4)=3 → rating avg(6,3)=4; dice 9 → 13 vs 4, margin 9
         let mut b = Battle::with_rng(vec![atk, tgt], ScriptedRng::from_d6([3, 3, 3]));
         b.resolve_hack(0, 1);
-        assert_eq!(b.units[1].implants[0].condition, Condition::Offline);
-        assert_eq!(b.units[1].statuses[0].spec.name, "Corrode"); // Shed fired
-        assert_eq!(b.units[1].statuses[0].stacks, 3); // margin 9 / 3
+        assert_eq!(b.units[1].implant_condition(0), Condition::Offline);
+        assert_eq!(b.units[1].statuses()[0].0, "Corrode"); // Shed fired
+        assert_eq!(b.units[1].statuses()[0].1, 3); // margin 9 / 3
     }
 
     #[test]
@@ -2010,13 +1879,13 @@ mod tests {
         let mut atk = runner(0, Team::A, 0, 4);
         atk.skills.set(Skill::Hacking, 4);
         let mut tgt = unit(1, Team::B, 1);
-        tgt.link = 3;
-        tgt.firewall = 12;
+        tgt.character.base_mut().link = 3.0;
+        tgt.character.base_mut().firewall = 12.0;
         tgt.install(Implant::reflex_booster()); // Seizure (stun)
         let mut b = Battle::with_rng(vec![atk, tgt], ScriptedRng::from_d6([6, 6, 6])); // nat 18
         b.resolve_hack(0, 1);
-        assert_eq!(b.units[1].implants[0].condition, Condition::Offline);
-        assert!(b.units[1].statuses.iter().any(|s| matches!(s.spec.effect, Effect::Stun)));
+        assert_eq!(b.units[1].implant_condition(0), Condition::Offline);
+        assert!(b.units[1].is_stunned());
     }
 
     #[test]
@@ -2027,12 +1896,12 @@ mod tests {
         let mut tgt = unit(1, Team::B, 1);
         tgt.skills.set(Skill::Hacking, 4);
         tgt.install(Implant::cyberdeck()); // grants the hack + Link 5
-        assert!(tgt.hack.is_some());
-        tgt.firewall = 4;
+        assert!(tgt.hack().is_some());
+        tgt.character.base_mut().firewall = 4.0;
         let mut b = Battle::with_rng(vec![atk, tgt], ScriptedRng::from_d6([3, 3, 3]));
         b.resolve_hack(0, 1);
-        assert!(b.units[1].hack.is_none()); // deck bricked → no hacking back
-        assert_eq!(b.units[1].implants[0].condition, Condition::Offline);
+        assert!(b.units[1].hack().is_none()); // deck bricked → no hacking back
+        assert_eq!(b.units[1].implant_condition(0), Condition::Offline);
     }
 
     // -- stat read-through: modifiers compose into the effective line --------
@@ -2040,7 +1909,7 @@ mod tests {
     #[test]
     fn a_modifier_composes_into_the_effective_stat() {
         let mut u = unit(0, Team::A, 0);
-        u.firewall = 9;
+        u.character.base_mut().firewall = 9.0;
         assert_eq!(u.firewall(), 9); // base
         u.apply_modifier(Decorator::gear(Tag::Gear, vec![Factor::add(Stat::Firewall, 4.0)]));
         assert_eq!(u.firewall(), 13); // base + flat add
@@ -2052,10 +1921,10 @@ mod tests {
     #[test]
     fn a_firewall_debuff_makes_a_hack_land_in_the_loop() {
         let mut atk = runner(0, Team::A, 0, 4);
-        atk.link = 4;
+        atk.character.base_mut().link = 4.0;
         atk.skills.set(Skill::Hacking, 4); // rating avg(4, 4) = 4
         let mut tgt = networked(1, Team::B, 1, 14); // base Firewall 14
-        tgt.link = 4;
+        tgt.character.base_mut().link = 4.0;
         // Debuff Firewall by 4 → effective 10; the loop reads firewall() through the gen.
         tgt.apply_modifier(Decorator::gear(Tag::Debuff, vec![Factor::add(Stat::Firewall, -4.0)]));
         // 3d6 = 8, + rating 4 = 12: misses base 14, but beats the debuffed 10.
@@ -2071,7 +1940,7 @@ mod tests {
         let tgt = networked(1, Team::B, 1, 9); // soft target, in deck range 6
         let mut b = Battle::with_rng(vec![atk, tgt], ScriptedRng::from_d6([4, 4, 4]));
         b.digital_phase();
-        assert!(!b.units[1].statuses.is_empty()); // hacked via the installed deck
+        assert!(!b.units[1].statuses().is_empty()); // hacked via the installed deck
     }
 
     // -- L3: behavior profiles drive the action phase (§7J) -------------------
@@ -2081,7 +1950,7 @@ mod tests {
         let a = unit(0, Team::A, 0).with_targeting(TargetingProfile::LowestIntegrity);
         let healthy = unit(1, Team::B, 2); // nearer, full HP
         let mut wounded = unit(2, Team::B, 4); // farther, low HP
-        wounded.integrity = 5.0;
+        wounded.character.integrity = 5.0;
         let b = Battle::new(vec![a, healthy, wounded], 1);
         assert_eq!(b.select_target(0), Some(2)); // the wounded, despite the distance
     }
@@ -2143,11 +2012,11 @@ mod tests {
         // Speed 5: a unit 3 hexes out closes *and* attacks in one activation.
         let atk = unit(0, Team::A, 0).with_speed(5).with_initiative(10.0);
         let mut dummy = unit(1, Team::B, 3).with_movement(MovementProfile::Hold);
-        dummy.integrity = 100.0;
+        dummy.character.integrity = 100.0;
         let mut b = Battle::new(vec![atk, dummy], 1);
         b.action_phase();
         assert!(b.units[0].pos.distance(Hex::new(3, 0)) <= 1); // closed to melee
-        assert!(b.units[1].integrity < 100.0); // and hit, same turn
+        assert!(b.units[1].character.integrity < 100.0); // and hit, same turn
     }
 
     #[test]
@@ -2203,12 +2072,12 @@ mod tests {
         let enemy_mate = unit(2, Team::B, 4); // (4,0), adjacent to target
         let our_own = unit(3, Team::A, 2); // (2,0), adjacent to target — our ally
         let mut b = Battle::new(vec![atk, enemy, enemy_mate, our_own], 1);
-        let hp: Vec<f32> = b.units.iter().map(|u| u.integrity).collect();
+        let hp: Vec<f32> = b.units.iter().map(|u| u.character.integrity).collect();
         b.resolve_attack(0, 1);
-        assert!(b.units[1].integrity < hp[1]); // the target
-        assert!(b.units[2].integrity < hp[2]); // its neighbour
-        assert!(b.units[3].integrity < hp[3]); // OUR unit — friendly fire is on
-        assert_eq!(b.units[0].integrity, hp[0]); // the attacker is spared
+        assert!(b.units[1].character.integrity < hp[1]); // the target
+        assert!(b.units[2].character.integrity < hp[2]); // its neighbour
+        assert!(b.units[3].character.integrity < hp[3]); // OUR unit — friendly fire is on
+        assert_eq!(b.units[0].character.integrity, hp[0]); // the attacker is spared
     }
 
     #[test]
@@ -2221,12 +2090,12 @@ mod tests {
         let mut off = unit(4, Team::B, 1);
         off.pos = Hex::new(1, 1); // off the +q axis — spared
         let mut b = Battle::new(vec![atk, on1, on2, on3, off], 1);
-        let hp: Vec<f32> = b.units.iter().map(|u| u.integrity).collect();
+        let hp: Vec<f32> = b.units.iter().map(|u| u.character.integrity).collect();
         b.resolve_attack(0, 1);
-        assert!(b.units[1].integrity < hp[1]);
-        assert!(b.units[2].integrity < hp[2]);
-        assert!(b.units[3].integrity < hp[3]);
-        assert_eq!(b.units[4].integrity, hp[4]); // off the line
+        assert!(b.units[1].character.integrity < hp[1]);
+        assert!(b.units[2].character.integrity < hp[2]);
+        assert!(b.units[3].character.integrity < hp[3]);
+        assert_eq!(b.units[4].character.integrity, hp[4]); // off the line
     }
 
     #[test]
@@ -2235,10 +2104,10 @@ mod tests {
         let target = unit(1, Team::B, 1);
         let bystander = unit(2, Team::B, 2);
         let mut b = Battle::new(vec![atk, target, bystander], 1);
-        let hp: Vec<f32> = b.units.iter().map(|u| u.integrity).collect();
+        let hp: Vec<f32> = b.units.iter().map(|u| u.character.integrity).collect();
         b.resolve_attack(0, 1);
-        assert!(b.units[1].integrity < hp[1]);
-        assert_eq!(b.units[2].integrity, hp[2]); // untouched
+        assert!(b.units[1].character.integrity < hp[1]);
+        assert_eq!(b.units[2].character.integrity, hp[2]); // untouched
     }
 
     // -- Phase 4: woven initiative (§7C/§10.3) ---------------------------------
@@ -2249,11 +2118,11 @@ mod tests {
         // Initiative 5. The single track interleaves: the runner *hacks* first (6),
         // the bruiser *swings* (5), then the runner *moves* (1).
         let mut runner = unit(0, Team::A, 0);
-        runner.initiative = 1.0;
-        runner.link = 6;
-        runner.hack = Some(Hack::new(4, StatusSpec::lockware(), 1, 4));
+        runner.character.base_mut().initiative = 1.0;
+        runner.character.base_mut().link = 6.0;
+        runner.grant_hack(Hack::new(4, StatusSpec::lockware(), 1, 4));
         let mut bruiser = unit(1, Team::B, 1);
-        bruiser.initiative = 5.0;
+        bruiser.character.base_mut().initiative = 5.0;
         let b = Battle::new(vec![runner, bruiser], 1);
         assert_eq!(b.woven_order(), vec![(0, true), (1, false), (0, false)]);
     }
@@ -2308,11 +2177,11 @@ mod tests {
         let mut atk = unit(0, Team::A, 0).with_speed(5).with_initiative(10.0);
         atk.attack = gun(12.0, 2, 6);
         let mut dummy = unit(1, Team::B, 6).with_movement(MovementProfile::Hold);
-        dummy.integrity = 100.0;
+        dummy.character.integrity = 100.0;
         let mut b = Battle::new(vec![atk, dummy], 1);
         b.action_phase();
         assert_eq!(b.units[0].pos, Hex::new(0, 0)); // already in band — never moved
-        assert!(b.units[1].integrity < 100.0); // fired from range
+        assert!(b.units[1].character.integrity < 100.0); // fired from range
     }
 
     #[test]
@@ -2321,9 +2190,9 @@ mod tests {
         let atk = unit(0, Team::A, 0).with_weapon(gun(7.0, 1, 1)); // primary 1..=1 + knife 1..=1
         let target = unit(1, Team::B, 1);
         let mut b = Battle::new(vec![atk, target], 1);
-        let before = b.units[1].integrity;
+        let before = b.units[1].character.integrity;
         b.action_phase();
-        assert!(b.units[1].integrity < before);
+        assert!(b.units[1].character.integrity < before);
     }
 
     // -- Phase 6: death triggers (§10.9) ---------------------------------------
@@ -2332,7 +2201,7 @@ mod tests {
     fn detonate_blasts_neighbours_on_death() {
         // A bomb dies and explodes, hurting both an enemy and an ally nearby.
         let mut bomb = unit(0, Team::B, 0);
-        bomb.integrity = 1.0;
+        bomb.character.integrity = 1.0;
         bomb.on_death =
             DeathTrigger::Detonate { damage: 20.0, dtype: DamageType::Piercing, pen: PenTier::Internal, radius: 1 };
         let mut killer = unit(1, Team::A, 0);
@@ -2340,12 +2209,12 @@ mod tests {
         let bystander = unit(2, Team::B, 1); // ally of the bomb, also adjacent
         let mut b = Battle::new(vec![bomb, killer, bystander], 1);
         // kill the bomb directly via a status DoT path: just zero it and reap.
-        apply_damage(&mut b.units[0], 5.0, PenTier::Internal, true);
+        b.units[0].character.apply_pool_damage(0, 0, 5.0, PenTier::Internal, true);
         assert!(!b.units[0].is_alive());
-        let (k, s) = (b.units[1].integrity, b.units[2].integrity);
+        let (k, s) = (b.units[1].character.integrity, b.units[2].character.integrity);
         b.reap();
-        assert!(b.units[1].integrity < k); // the killer caught the blast
-        assert!(b.units[2].integrity < s); // and the bomb's own ally (friendly fire)
+        assert!(b.units[1].character.integrity < k); // the killer caught the blast
+        assert!(b.units[2].character.integrity < s); // and the bomb's own ally (friendly fire)
         assert!(b.units[0].death_resolved); // fired exactly once
     }
 
@@ -2353,7 +2222,7 @@ mod tests {
     fn detonate_can_chain_through_a_second_bomb() {
         let bomb = |id, q| {
             let mut u = unit(id, Team::B, q);
-            u.integrity = 1.0;
+            u.character.integrity = 1.0;
             u.on_death = DeathTrigger::Detonate {
                 damage: 50.0,
                 dtype: DamageType::Piercing,
@@ -2363,7 +2232,7 @@ mod tests {
             u
         };
         let mut b = Battle::new(vec![bomb(0, 0), bomb(1, 1)], 1);
-        apply_damage(&mut b.units[0], 5.0, PenTier::Internal, true); // pop the first
+        b.units[0].character.apply_pool_damage(0, 0, 5.0, PenTier::Internal, true); // pop the first
         b.reap();
         // the first blast killed the second, whose blast fired in turn.
         assert!(!b.units[1].is_alive());
@@ -2379,11 +2248,11 @@ mod tests {
         let atk = unit(0, Team::A, 0).with_speed(0).with_initiative(10.0);
         let mut foe = unit(1, Team::B, 1);
         foe.pos = Hex::new(1, 1);
-        foe.integrity = 100.0;
+        foe.character.integrity = 100.0;
         let mut b = Battle::new(vec![atk, foe], 1).with_seam(SeamOffset::Up);
         assert_eq!(b.units[0].pos.distance(b.units[1].pos), 2); // not grid-adjacent
         b.action_phase();
-        assert!(b.units[1].integrity < 100.0); // the seam engaged them anyway
+        assert!(b.units[1].character.integrity < 100.0); // the seam engaged them anyway
     }
 
     #[test]
@@ -2393,25 +2262,25 @@ mod tests {
         let atk = unit(0, Team::A, 0).with_speed(0).with_initiative(10.0);
         let mut foe = unit(1, Team::B, 1);
         foe.pos = Hex::new(1, 1);
-        foe.integrity = 100.0;
+        foe.character.integrity = 100.0;
         let mut b = Battle::new(vec![atk, foe], 1).with_seam(SeamOffset::Down);
         b.action_phase();
-        assert_eq!(b.units[1].integrity, 100.0); // distance 2, no seam pairing → untouched
+        assert_eq!(b.units[1].character.integrity, 100.0); // distance 2, no seam pairing → untouched
     }
 
     #[test]
     fn data_spill_infects_nearby_enemies_on_death() {
         let mut host = unit(0, Team::B, 0);
-        host.integrity = 1.0;
+        host.character.integrity = 1.0;
         host.on_death =
             DeathTrigger::DataSpill { spec: StatusSpec::lockware(), stacks: 2, duration: 3, radius: 1 };
         let mut enemy = unit(1, Team::A, 0);
         enemy.pos = Hex::new(1, 0); // adjacent enemy
         let ally = unit(2, Team::B, 1); // adjacent ally — NOT infected by a spill
         let mut b = Battle::new(vec![host, enemy, ally], 1);
-        apply_damage(&mut b.units[0], 5.0, PenTier::Internal, true);
+        b.units[0].character.apply_pool_damage(0, 0, 5.0, PenTier::Internal, true);
         b.reap();
-        assert_eq!(b.units[1].statuses.len(), 1); // the enemy got the leaked payload
-        assert!(b.units[2].statuses.is_empty()); // the ally did not
+        assert_eq!(b.units[1].statuses().len(), 1); // the enemy got the leaked payload
+        assert!(b.units[2].statuses().is_empty()); // the ally did not
     }
 }

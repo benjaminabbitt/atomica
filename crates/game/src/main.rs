@@ -5,8 +5,8 @@
 //! timer. All game rules live in the sim crate.
 
 use atomica_sim::{
-    ArmorClass, Attack, BaseLine, Battle, Character, Chassis, DamageType, DeathTrigger, Defense,
-    Footprint, Hex, Implant, Outcome, Pan, Skill, StatusSpec, Team, Unit, UnitId,
+    ArmorClass, Attack, BaseLine, Battle, Character, Chassis, DamageType, DeathTrigger, Footprint,
+    Hex, Implant, Outcome, Pan, Skill, StatusSpec, Team, Unit, UnitId,
 };
 use egui_macroquad::egui;
 use macroquad::prelude::*;
@@ -30,17 +30,10 @@ fn demo_battle() -> Battle {
         name: name.to_string(),
         team,
         pos: Hex::new(q, r),
-        integrity: 40.0,
-        max_integrity: 40.0,
-        defense: Defense { barrier: 6.0, plating: 6.0 },
         armor_class,
         chassis: Chassis::Augmented,
         skills: Chassis::Augmented.baseline_skills(),
-        initiative: init,
         speed: 1,
-        link: 0,
-        firewall: 0,
-        immunity: 0,
         attack: Attack {
             damage: dmg,
             dtype,
@@ -51,14 +44,19 @@ fn demo_battle() -> Battle {
             footprint: Footprint::Single,
         },
         weapons: Vec::new(),
-        hack: None,
         implants: Vec::new(),
         pan: Pan::Meshed,
-        statuses: Vec::new(),
-        character: Character::new(BaseLine::default()),
+        // The composed home: base stat line + filled pools (Integrity / Plating /
+        // Barrier 40 / 6 / 6); link / firewall come from installs / the lines below.
+        character: Character::new(BaseLine {
+            max_integrity: 40.0,
+            initiative: init,
+            plating: 6.0,
+            barrier: 6.0,
+            ..BaseLine::default()
+        }),
         on_death: DeathTrigger::None,
         death_resolved: false,
-        alive: true,
     };
     use atomica_sim::PenTier::*;
     use ArmorClass::*;
@@ -77,11 +75,11 @@ fn demo_battle() -> Battle {
     // The enemy line shows the netrunning spread (§ calibration): Bulwark is a
     // hardened, connected "fortress" (deep if cracked); SMG a soft, low-Link
     // "mook" (easy to land but the thin channel keeps it shallow).
-    units[2].link = 5;
-    units[2].firewall = 15; // hardened + connected
+    units[2].character.base_mut().link = 5.0;
+    units[2].character.base_mut().firewall = 15.0; // hardened + connected
     units[2].attack.emp = true; // an EMP maul — frying the Runner's deck on contact
-    units[3].link = 2;
-    units[3].firewall = 9; // soft + dark
+    units[3].character.base_mut().link = 2.0;
+    units[3].character.base_mut().firewall = 9.0; // soft + dark
     // Seed a couple of statuses so the pipeline is visible on first run.
     units[2].add_status(StatusSpec::burn(), 6, 3);
     units[3].add_status(StatusSpec::lag(), 6, 1);
@@ -133,7 +131,7 @@ async fn main() {
             draw_text(&u.name, p.x - HEX_SIZE * 0.7, p.y - 4.0, 18.0, col);
 
             // Integrity bar.
-            let frac = (u.integrity / u.max_integrity).clamp(0.0, 1.0);
+            let frac = (u.integrity() / u.max_integrity()).clamp(0.0, 1.0);
             let bw = HEX_SIZE * 1.3;
             let bx = p.x - bw / 2.0;
             let by = p.y + 6.0;
@@ -171,21 +169,21 @@ async fn main() {
                         continue;
                     }
                     let statuses: String = u
-                        .statuses
+                        .statuses()
                         .iter()
-                        .map(|s| {
-                            if s.stacks > 1 {
-                                format!("{}×{}", s.spec.name, s.stacks)
+                        .map(|(name, stacks)| {
+                            if *stacks > 1 {
+                                format!("{name}×{stacks}")
                             } else {
-                                s.spec.name.to_string()
+                                name.to_string()
                             }
                         })
                         .collect::<Vec<_>>()
                         .join(", ");
-                    let deck = if u.hack.is_some() { "⚡" } else { " " };
+                    let deck = if u.hack().is_some() { "⚡" } else { " " };
                     ui.label(format!(
                         "{:?}  {:<7}{} {:>4.0}/{:<3.0}  [{:?}]  L{:<2} {}",
-                        u.team, u.name, deck, u.integrity, u.max_integrity, u.armor_class, u.link,
+                        u.team, u.name, deck, u.integrity(), u.max_integrity(), u.armor_class, u.link(),
                         statuses
                     ));
                 }
