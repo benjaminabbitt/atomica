@@ -37,6 +37,7 @@ mod rng;
 mod roll;
 mod skills;
 mod status;
+mod terrain;
 
 pub use armor::ArmorClass;
 pub use board::{Board, SeamOffset};
@@ -58,6 +59,7 @@ pub use objective::{
 pub use rng::{RandomSource, ScriptedRng, SplitMix64};
 pub use roll::{resolve_contest, Contest, RollOutcome};
 pub use skills::{Chassis, Skill, Skills};
+pub use terrain::{Bounds, Terrain, Tile};
 pub use status::{
     Behavior, Decay, Effect, Magnitude, Resist, Stacking, StatusSpec, Targeting, Timing, Trigger,
 };
@@ -799,6 +801,9 @@ pub struct Battle<R: RandomSource = SplitMix64> {
     objectives: Objectives,
     /// The two-board **seam** stagger (§7B). Rolled at start; settable by item.
     pub board: Board,
+    /// The **terrain** — bounds + blockers/cover/hazards (`docs/combat.md`). Default is an
+    /// open, unbounded plane, so a battle behaves as before until it opts into a map.
+    pub terrain: Terrain,
     withdrawn: bool,
     /// Opt-in structured event trace (`docs/...`) — off by default; `with_log` enables it.
     log: EventLog,
@@ -842,6 +847,7 @@ impl<R: RandomSource> Battle<R> {
             rng,
             objectives,
             board: Board::default(),
+            terrain: Terrain::default(),
             withdrawn: false,
             log: EventLog::default(),
         }
@@ -850,6 +856,12 @@ impl<R: RandomSource> Battle<R> {
     /// Builder: set the seam offset (§7B — the mesh item that picks the stagger).
     pub fn with_seam(mut self, offset: SeamOffset) -> Self {
         self.board = Board::new(offset);
+        self
+    }
+
+    /// Builder: lay the battle on a [`Terrain`] map — bounds, blockers, cover, hazards.
+    pub fn with_terrain(mut self, terrain: Terrain) -> Self {
+        self.terrain = terrain;
         self
     }
 
@@ -911,7 +923,8 @@ impl<R: RandomSource> Battle<R> {
         self.tick += 1;
 
         self.status_phase();
-        self.reap(); // DoTs can kill — fire their death triggers
+        self.terrain_phase(); // hazard hexes burn whoever stands on them
+        self.reap(); // DoTs / hazards can kill — fire their death triggers
         self.woven_phase();
         self.contagion_phase(); // corruption jumps to fresh victims (contested)
         self.decay_phase();
@@ -974,6 +987,34 @@ impl<R: RandomSource> Battle<R> {
                 self.emit(CombatEvent::Damaged {
                     unit: self.units[i].id,
                     cause,
+                    amount: dealt,
+                    killed: !self.units[i].is_alive(),
+                });
+            }
+        }
+    }
+
+    /// The **terrain phase** — every living unit standing on a [`Tile::Hazard`] hex takes
+    /// its tick of environmental damage (run through the armor matrix like any hit). It
+    /// surfaces as a `Damaged{cause:"hazard"}` event, and a lethal tick is reaped (death
+    /// triggers fire) like a DoT. The `u32::MAX` source marks "the environment".
+    fn terrain_phase(&mut self) {
+        for i in 0..self.units.len() {
+            if !self.units[i].is_alive() {
+                continue;
+            }
+            let Some((dmg, dtype, pen)) = self.terrain.hazard(self.units[i].pos) else {
+                continue;
+            };
+            let mult =
+                armor::matrix(dtype, self.units[i].armor_class()) * self.units[i].vuln_mult();
+            let before = self.units[i].integrity();
+            self.units[i].character.apply_pool_damage(self.tick, u32::MAX, dmg * mult, pen, true);
+            let dealt = before - self.units[i].integrity();
+            if dealt > 0.0 {
+                self.emit(CombatEvent::Damaged {
+                    unit: self.units[i].id,
+                    cause: "hazard",
                     amount: dealt,
                     killed: !self.units[i].is_alive(),
                 });
@@ -1086,49 +1127,101 @@ impl<R: RandomSource> Battle<R> {
         }
     }
 
-    /// One step for unit `i` toward what its **movement profile** wants (§7J), routed
-    /// only through **free** hexes (§10.5a occupancy). Returns the best free neighbour,
-    /// or the unit's own hex when it's already at the goal or **boxed in** (every
-    /// improving neighbour occupied). Greedy single-hex pathing — full A* is later.
+    /// One step for unit `i` toward what its **movement profile** wants (§7J), routed only
+    /// through **passable, free** hexes — on-board, not a blocker (`terrain`), and not held
+    /// by another unit (§10.5a). *Closing* profiles path around walls (BFS on a bounded
+    /// board); *fleeing* profiles back off toward the farthest free hex (cornered against
+    /// the board edge). Hazards are stepped around when there's a choice. Returns the
+    /// unit's own hex when it's already at the goal or **boxed in**.
     fn movement_step(&self, i: usize, target: usize) -> Hex {
         let here = self.units[i].pos;
         let tpos = self.units[target].pos;
-        // Candidate hexes: stay put, or step to a free neighbour. `once(here)` is
-        // first so it wins ties — a unit only moves when a neighbour is strictly
-        // better by the profile's scoring.
-        let free = |h: &Hex| !self.occupied_by_other(i, *h);
-        let candidates =
-            || std::iter::once(here).chain(here.neighbors().into_iter().filter(free));
+        // Stay put, or step to a passable, unoccupied neighbour. `once(here)` is first so
+        // it wins ties — a unit only moves when a neighbour is strictly better.
+        let open = |h: &Hex| self.terrain.passable(*h) && !self.occupied_by_other(i, *h);
+        let burn = |h: &Hex| self.terrain.hazard(*h).is_some() as i32; // 1 ⇒ avoid if able
+        let candidates = || std::iter::once(here).chain(here.neighbors().into_iter().filter(open));
         match self.units[i].movement() {
             MovementProfile::Hold => here,
-            MovementProfile::Advance => {
-                candidates().min_by_key(|h| h.distance(tpos)).unwrap_or(here)
-            }
-            MovementProfile::Flank => candidates()
-                .min_by_key(|h| (h.distance(tpos), -(h.r - tpos.r).abs(), h.q, h.r))
-                .unwrap_or(here),
+            MovementProfile::Advance => self.close_step(i, tpos, false),
+            MovementProfile::Flank => self.close_step(i, tpos, true),
             MovementProfile::Swarm => match self.nearest_enemy(i) {
-                Some(e) => {
-                    let ep = self.units[e].pos;
-                    candidates().min_by_key(|h| h.distance(ep)).unwrap_or(here)
-                }
+                Some(e) => self.close_step(i, self.units[e].pos, false),
                 None => here,
             },
             MovementProfile::Kite => match self.nearest_enemy(i) {
                 Some(e) => {
                     let ep = self.units[e].pos;
-                    candidates().max_by_key(|h| (h.distance(ep), -h.q, -h.r)).unwrap_or(here)
+                    candidates().max_by_key(|h| (h.distance(ep), -burn(h), -h.q, -h.r)).unwrap_or(here)
                 }
                 None => here,
             },
             MovementProfile::Disperse => match self.nearest_ally(i) {
                 Some(a) => {
                     let ap = self.units[a].pos;
-                    candidates().max_by_key(|h| (h.distance(ap), -h.q, -h.r)).unwrap_or(here)
+                    candidates().max_by_key(|h| (h.distance(ap), -burn(h), -h.q, -h.r)).unwrap_or(here)
                 }
                 None => here,
             },
         }
+    }
+
+    /// One **closing** step from unit `i` toward `goal`, routing around blockers / edges
+    /// and shying from hazards. On a **bounded** board this follows a BFS flow field (real
+    /// pathing — a wall is rounded, not stuck against); on the open default plane it's the
+    /// greedy nearest neighbour (no obstacles to route around, so prior behavior is kept,
+    /// bit-for-bit). `flank` breaks ties toward the target's frontage row (approach wide).
+    fn close_step(&self, i: usize, goal: Hex, flank: bool) -> Hex {
+        let here = self.units[i].pos;
+        let open = |h: Hex| self.terrain.passable(h) && !self.occupied_by_other(i, h);
+        let burn = |h: Hex| self.terrain.hazard(h).is_some() as i32;
+        let lateral = |h: Hex| if flank { -(h.r - goal.r).abs() } else { 0 };
+        let neighbours = || here.neighbors().into_iter().filter(|h| open(*h));
+        if self.terrain.bounds().is_some() {
+            // BFS hop-distance from the goal over traversable hexes: the step is the
+            // neighbour nearest the goal *by real path*, so walls and edges get rounded.
+            let flow = self.flow_field(i, goal);
+            let here_d = flow.get(&here).copied().unwrap_or(i32::MAX);
+            neighbours()
+                .filter_map(|h| flow.get(&h).map(|d| (h, *d)))
+                .filter(|(_, d)| *d < here_d) // only a step that genuinely closes
+                .min_by_key(|(h, d)| (*d, burn(*h), lateral(*h), h.q, h.r))
+                .map_or(here, |(h, _)| h)
+        } else {
+            // Open plane: greedy single-hex toward the goal (`once(here)` wins ties).
+            std::iter::once(here)
+                .chain(neighbours())
+                .min_by_key(|h| (h.distance(goal), burn(*h), lateral(*h), h.q, h.r))
+                .unwrap_or(here)
+        }
+    }
+
+    /// BFS hop-distances **from `goal` outward** over hexes unit `i` could traverse
+    /// (passable terrain, not held by another unit) — a flow field for pathing around
+    /// obstacles. The goal hex seeds distance 0 even when occupied (it's the thing being
+    /// approached), and `i`'s own hex is always traversable. Bounded by the board extent,
+    /// so it terminates; only called on a bounded board.
+    fn flow_field(&self, i: usize, goal: Hex) -> std::collections::HashMap<Hex, i32> {
+        use std::collections::{HashMap, VecDeque};
+        let mut dist: HashMap<Hex, i32> = HashMap::new();
+        let mut frontier = VecDeque::new();
+        dist.insert(goal, 0);
+        frontier.push_back(goal);
+        while let Some(cur) = frontier.pop_front() {
+            let d = dist[&cur];
+            for n in cur.neighbors() {
+                if dist.contains_key(&n) || !self.terrain.in_bounds(n) {
+                    continue;
+                }
+                let traversable = (self.terrain.passable(n) && !self.occupied_by_other(i, n))
+                    || n == self.units[i].pos;
+                if traversable {
+                    dist.insert(n, d + 1);
+                    frontier.push_back(n);
+                }
+            }
+        }
+        dist
     }
 
     /// Is hex `h` occupied by a *living* unit other than `i`? (§10.5a — occupied hexes
@@ -1191,7 +1284,11 @@ impl<R: RandomSource> Battle<R> {
         // blow always lands and burns no RNG (the deterministic auto-hit pipeline; dice
         // only matter once a defender can evade or the shot is hard).
         let dist = self.reach(attacker, target);
-        let tn = self.units[target].evasion() + atk.tags.to_hit_penalty(dist);
+        // Defense TN = the target's Evasion + the weapon's range penalty + any **cover**
+        // the target's hex grants (§7G positioning — a unit behind cover is harder to hit).
+        let tn = self.units[target].evasion()
+            + atk.tags.to_hit_penalty(dist)
+            + self.terrain.cover_tn(self.units[target].pos);
         if tn > 0 {
             let rating = self.units[attacker].skill(atk.skill) + atk.accuracy;
             if !resolve_contest(&mut self.rng, Contest::new(rating, 0, tn)).success {
@@ -2647,6 +2744,79 @@ mod tests {
         // remove the blocker (id 1) and it advances into the freed lane.
         let b2 = Battle::new(vec![unit(0, Team::A, 0), unit(2, Team::B, 2)], 1);
         assert_eq!(b2.movement_step(0, 1), Hex::new(1, 0));
+    }
+
+    // -- Terrain: bounds, pathing, cover, hazards -------------------------------------
+
+    #[test]
+    fn a_bounded_board_corners_a_kiter() {
+        let kiter = || unit(0, Team::A, 0).with_movement(MovementProfile::Kite); // corner (0,0)
+        let foe = || unit(1, Team::B, 1); // adjacent at (1,0)
+        // Open plane: the kiter flees to a greater gap — uncatchable by an equal-speed chase.
+        let open = Battle::new(vec![kiter(), foe()], 1);
+        assert!(open.movement_step(0, 1).distance(Hex::new(1, 0)) > 1);
+        // Bounded arena: every escape hex is off-board, so it can't extend the gap — pinned
+        // in the corner, and a pursuer runs it down. (The real fix for the kite stalemate.)
+        let walled = Battle::new(vec![kiter(), foe()], 1).with_terrain(Terrain::arena(6, 4));
+        let step = walled.movement_step(0, 1);
+        assert!(walled.terrain.in_bounds(step));
+        assert_eq!(step.distance(Hex::new(1, 0)), 1); // can't back off any further
+    }
+
+    #[test]
+    fn advance_paths_around_a_wall() {
+        // A blocker on the direct lane: grid-distance can't improve (every closer hex is
+        // the wall or off-board), so a greedy mover would stick. The BFS flow field routes
+        // it around through the open flank instead.
+        let mover = unit(0, Team::A, 1).at(Hex::new(0, 1)).with_movement(MovementProfile::Advance);
+        let target = unit(1, Team::B, 2).at(Hex::new(2, 1));
+        let terrain = Terrain::arena(6, 4).set(Hex::new(1, 1), Tile::Blocked);
+        let b = Battle::new(vec![mover, target], 1).with_terrain(terrain);
+        let step = b.movement_step(0, 1);
+        assert_ne!(step, Hex::new(1, 1)); // never walks into the wall
+        assert_ne!(step, Hex::new(0, 1)); // and doesn't stay boxed — it goes around
+        assert_eq!(step, Hex::new(0, 2)); // the flanking hex on the shortest real path
+    }
+
+    #[test]
+    fn cover_raises_the_to_hit_tn() {
+        // 3d6 = 12, +0 skill: clears bare Evasion 10, but not Evasion 10 + cover 4.
+        let make = |cover: bool| {
+            let attacker = unit(0, Team::A, 0).with_skill(Skill::Melee, 0);
+            let target = unit(1, Team::B, 1).with_evasion(10.0);
+            let mut terrain = Terrain::default();
+            if cover {
+                terrain = terrain.set(Hex::new(1, 0), Tile::Cover(4));
+            }
+            Battle::with_rng(vec![attacker, target], ScriptedRng::from_d6([4, 4, 4]))
+                .with_terrain(terrain)
+                .with_log()
+        };
+        let mut open = make(false);
+        let w = open.units[0].weapon_at_any().unwrap();
+        open.resolve_attack_with(0, 1, w);
+        assert_eq!(open.events().last().unwrap().event.kind(), "attacked"); // no cover — lands
+
+        let mut covered = make(true);
+        let w2 = covered.units[0].weapon_at_any().unwrap();
+        covered.resolve_attack_with(0, 1, w2);
+        assert_eq!(covered.events().last().unwrap().event.kind(), "missed"); // cover saved it
+    }
+
+    #[test]
+    fn a_hazard_hex_burns_its_occupant() {
+        let mut victim = unit(0, Team::A, 2); // stands on the hazard at (2,0)
+        victim.character.integrity = 50.0;
+        let bystander = unit(1, Team::B, 5); // on open ground — untouched
+        let terrain = Terrain::arena(8, 4).set(
+            Hex::new(2, 0),
+            Tile::Hazard { damage: 9.0, dtype: DamageType::Piercing, pen: PenTier::Internal },
+        );
+        let mut b = Battle::new(vec![victim, bystander], 1).with_terrain(terrain).with_log();
+        b.terrain_phase();
+        assert!(b.units[0].character.integrity < 50.0); // the field burned it
+        assert_eq!(b.units[1].character.integrity, 30.0); // bystander on open ground is fine
+        assert_eq!(b.events().last().unwrap().event.kind(), "damaged"); // surfaced as an event
     }
 
     #[test]
