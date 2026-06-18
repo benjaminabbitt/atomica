@@ -1404,71 +1404,78 @@ impl<R: RandomSource> Battle<R> {
                 armor::matrix(atk.dtype, self.units[t].armor_class()) * self.units[t].vuln_mult();
             let dmg = base * mult;
             let (before, was_alive) = (self.units[t].integrity(), self.units[t].is_alive());
-            self.units[t].character.apply_pool_damage(self.tick, src, dmg, atk.pen, true);
-            let wound = before - self.units[t].integrity();
+            // Layered: Barrier/Plating soak first, then **hit-location chrome** soaks (a
+            // blow that lands on cyberware is absorbed by it — ablative — chewing its HP and
+            // sparing the flesh), then whatever overflows wounds Integrity.
+            let past_armor = self.units[t].character.absorb_armor(dmg, atk.pen);
+            let to_flesh = self.absorb_at_location(t, past_armor);
+            self.units[t].character.apply_integrity(self.tick, src, to_flesh, true);
             self.emit(CombatEvent::Attacked {
                 attacker: atk_id,
                 target: self.units[t].id,
                 dtype: atk.dtype,
-                amount: wound,
+                amount: before - self.units[t].integrity(),
                 killed: was_alive && !self.units[t].is_alive(),
             });
-            // A **telling blow** (it reached Integrity) rolls hit location: it may have
-            // landed on a piece of cyberware and chewed it up (§ hit location).
-            if wound > 0.0 && self.units[t].is_alive() {
-                self.apply_hit_location(t, wound);
-            }
             if atk.emp && self.units[t].is_alive() {
                 self.apply_emp(t);
             }
         }
     }
 
-    /// Resolve a telling blow's **hit location** on `t` (which already lost `wound`
-    /// Integrity): roll over the chassis + *active*-implant coverage (additive — more chrome
-    /// = bigger target). A flesh slice does nothing more (the wound already landed); a chrome
-    /// slice chews that implant's HP. **No RNG is drawn when the target carries no chrome**,
-    /// so flesh-and-bone fights stay bit-for-bit as before.
-    fn apply_hit_location(&mut self, t: usize, wound: f32) {
+    /// **Hit-location chrome soak** for a blow that got past general armor with `dmg` left:
+    /// roll over the chassis + *active*-implant coverage (additive — more chrome = bigger
+    /// target). A flesh slice passes `dmg` straight through to Integrity; a **chrome slice
+    /// absorbs** it (ablative — up to that implant's remaining HP), chewing the implant and
+    /// returning only the **overflow** to the flesh. **No RNG is drawn when the target
+    /// carries no chrome**, so flesh-and-bone fights stay bit-for-bit as before.
+    fn absorb_at_location(&mut self, t: usize, dmg: f32) -> f32 {
+        if dmg <= 0.0 {
+            return dmg;
+        }
         let live: Vec<usize> = (0..self.units[t].implants.len())
             .filter(|&k| self.units[t].implant_condition(k) != Condition::Destroyed)
             .collect();
         if live.is_empty() {
-            return;
+            return dmg; // no chrome — straight to the flesh, no roll
         }
         let chassis = self.units[t].chassis.coverage();
         let total =
             chassis + live.iter().map(|&k| self.units[t].implants[k].spec.coverage).sum::<i32>();
         let roll = (self.rng.next_u64() % total.max(1) as u64) as i32; // 0..total
         if roll < chassis {
-            return; // struck flesh
+            return dmg; // struck flesh
         }
         let mut acc = chassis;
         for k in live {
             acc += self.units[t].implants[k].spec.coverage;
             if roll < acc {
-                self.damage_implant(t, k, wound);
-                return;
+                return self.chrome_soak(t, k, dmg);
             }
         }
+        dmg
     }
 
-    /// Chew `wound` HP off implant `k` of unit `t`, stepping its [`Condition`] as durability
-    /// falls — **Degraded** under half (its benefit halves), **Destroyed** at zero (terminal,
-    /// benefit gone, no salvage). Physical wreckage fires **no liability** (§3.1 — wear is
-    /// not a breach); it surfaces a `Mangled` event.
-    fn damage_implant(&mut self, t: usize, k: usize, wound: f32) {
+    /// Implant `k` of unit `t` **soaks** a blow of `dmg`: it absorbs up to its remaining HP
+    /// (sparing the flesh that much), stepping its [`Condition`] as durability falls —
+    /// **Degraded** under half (benefit halves), **Destroyed** at zero (terminal, no
+    /// salvage). Physical wreckage fires **no liability** (§3.1 — wear is not a breach), and
+    /// surfaces a `Mangled` event. Returns the **overflow** that still reaches Integrity.
+    fn chrome_soak(&mut self, t: usize, k: usize, dmg: f32) -> f32 {
         let name = self.units[t].implants[k].spec.name;
         let max = self.units[t].implants[k].spec.max_hp;
-        self.units[t].implants[k].hp = (self.units[t].implants[k].hp - wound).max(0.0);
         let hp = self.units[t].implants[k].hp;
-        let destroyed = hp <= 0.0;
+        let soak = dmg.min(hp);
+        let left = hp - soak;
+        self.units[t].implants[k].hp = left;
+        let destroyed = left <= 0.0;
         if destroyed {
             let _ = self.units[t].transition(k, Condition::Destroyed);
-        } else if hp < 0.5 * max && self.units[t].implant_condition(k) == Condition::Online {
+        } else if left < 0.5 * max && self.units[t].implant_condition(k) == Condition::Online {
             let _ = self.units[t].transition(k, Condition::Degraded);
         }
         self.emit(CombatEvent::Mangled { unit: self.units[t].id, implant: name, destroyed });
+        dmg - soak // overflow to the flesh
     }
 
     /// The living units an attack strikes (§7G). `Single` is just the target;
@@ -2662,21 +2669,24 @@ mod tests {
     }
 
     #[test]
-    fn a_physical_hit_can_chew_through_cyberware() {
-        // Hit location: a telling blow can land on chrome and wear it down by its HP, all
-        // the way to Destroyed (which drops the deck's hack — physical destruction, no hack).
-        let mut tgt = unit(1, Team::B, 0); // Augmented chassis, coverage 22
+    fn chrome_soaks_a_hit_until_it_is_chewed_through() {
+        // Hit location: a blow that lands on chrome is **absorbed** by it (ablative) — the
+        // implant's HP takes it, sparing the flesh — until it's worn to Destroyed (which
+        // drops the deck's hack), after which overflow reaches Integrity.
+        let mut tgt = unit(1, Team::B, 0); // Augmented chassis, coverage 22; Integrity 30
         tgt.install(Implant::cyberdeck()); // coverage 2, HP 18 → total coverage 24
         assert!(tgt.hack().is_some());
-        let atk = unit(0, Team::A, 0); // default melee 10, Internal → ~10 wound a hit
+        let atk = unit(0, Team::A, 0); // default melee 10, Internal → ~10 a hit
         // Evasion 0 auto-hits (no to-hit draw); each attack spends one location roll. A roll
         // of 22 lands in the deck's slice [22,24).
         let mut b = Battle::with_rng(vec![atk, tgt], ScriptedRng::new([22, 22]));
         b.resolve_attack(0, 1);
         assert_eq!(b.units[1].implant_condition(0), Condition::Degraded); // 18 → 8 HP (<50%)
+        assert_eq!(b.units[1].integrity(), 30.0); // the deck soaked all 10 — flesh untouched
         b.resolve_attack(0, 1);
         assert_eq!(b.units[1].implant_condition(0), Condition::Destroyed); // 8 → 0 HP
         assert!(b.units[1].hack().is_none()); // the deck is wrecked
+        assert_eq!(b.units[1].integrity(), 28.0); // 8 soaked, 2 overflowed to the flesh
     }
 
     #[test]
