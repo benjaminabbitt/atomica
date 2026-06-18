@@ -69,6 +69,77 @@ impl CombatEvent {
     }
 }
 
+/// A typed structured-log field value — so a formatter renders JSON numbers / bools
+/// unquoted and text quoted, without the sim knowing any logging backend.
+#[derive(Clone, Debug, PartialEq)]
+pub enum FieldValue {
+    Int(i64),
+    Float(f64),
+    Bool(bool),
+    Text(String),
+}
+
+impl FieldValue {
+    /// Render as a JSON scalar (numbers / bools bare, text quoted + escaped).
+    fn json(&self) -> String {
+        match self {
+            FieldValue::Int(n) => n.to_string(),
+            FieldValue::Float(x) => x.to_string(),
+            FieldValue::Bool(b) => b.to_string(),
+            FieldValue::Text(s) => format!("\"{}\"", s.replace('\\', "\\\\").replace('"', "\\\"")),
+        }
+    }
+
+    /// Render for logfmt (`key=value`) — text is quoted only when it needs to be.
+    fn logfmt(&self) -> String {
+        match self {
+            FieldValue::Int(n) => n.to_string(),
+            FieldValue::Float(x) => x.to_string(),
+            FieldValue::Bool(b) => b.to_string(),
+            FieldValue::Text(s) if s.contains([' ', '=', '"']) => self.json(),
+            FieldValue::Text(s) => s.clone(),
+        }
+    }
+}
+
+impl CombatEvent {
+    /// The event's **structured fields** — typed key/values a logger can serialize
+    /// (the heart of "structured logging": the same record renders as text, logfmt, or
+    /// JSON without the sim depending on any backend).
+    pub fn fields(&self) -> Vec<(&'static str, FieldValue)> {
+        use FieldValue::*;
+        let id = |u: &UnitId| Int(u.0 as i64);
+        let hex = |h: &Hex| Text(format!("{},{}", h.q, h.r));
+        match self {
+            CombatEvent::Moved { unit, from, to } => {
+                vec![("unit", id(unit)), ("from", hex(from)), ("to", hex(to))]
+            }
+            CombatEvent::Attacked { attacker, target, dtype, amount, killed } => vec![
+                ("attacker", id(attacker)),
+                ("target", id(target)),
+                ("dtype", Text(format!("{dtype:?}"))),
+                ("amount", Float(*amount as f64)),
+                ("killed", Bool(*killed)),
+            ],
+            CombatEvent::Hacked { attacker, target, success, crit, margin } => vec![
+                ("attacker", id(attacker)),
+                ("target", id(target)),
+                ("success", Bool(*success)),
+                ("crit", Bool(*crit)),
+                ("margin", Int(*margin as i64)),
+            ],
+            CombatEvent::Breached { target, vector } => {
+                vec![("target", id(target)), ("vector", Text(vector.as_str().to_string()))]
+            }
+            CombatEvent::Spread { from, to, family } => {
+                vec![("from", id(from)), ("to", id(to)), ("family", Text(family.to_string()))]
+            }
+            CombatEvent::Died { unit } => vec![("unit", id(unit))],
+            CombatEvent::Ended { outcome } => vec![("outcome", Text(format!("{outcome:?}")))],
+        }
+    }
+}
+
 impl fmt::Display for CombatEvent {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
@@ -111,6 +182,27 @@ pub struct Record {
     pub event: CombatEvent,
 }
 
+impl Record {
+    /// One **logfmt** line: `tick=N event=kind k=v …` — the structured-log text format.
+    pub fn logfmt(&self) -> String {
+        let mut s = format!("tick={} event={}", self.tick, self.event.kind());
+        for (k, v) in self.event.fields() {
+            s.push_str(&format!(" {k}={}", v.logfmt()));
+        }
+        s
+    }
+
+    /// One **JSON** object: `{"tick":N,"event":"kind","k":v,…}` — machine-readable.
+    pub fn json(&self) -> String {
+        let mut s = format!("{{\"tick\":{},\"event\":\"{}\"", self.tick, self.event.kind());
+        for (k, v) in self.event.fields() {
+            s.push_str(&format!(",\"{k}\":{}", v.json()));
+        }
+        s.push('}');
+        s
+    }
+}
+
 impl fmt::Display for Record {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "t{:<3} {}", self.tick, self.event)
@@ -147,5 +239,41 @@ impl EventLog {
         if self.enabled {
             self.records.push(Record { tick, event });
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{DamageType, UnitId};
+
+    fn rec() -> Record {
+        Record {
+            tick: 3,
+            event: CombatEvent::Attacked {
+                attacker: UnitId(0),
+                target: UnitId(1),
+                dtype: DamageType::Piercing,
+                amount: 12.5,
+                killed: true,
+            },
+        }
+    }
+
+    #[test]
+    fn renders_text_logfmt_and_json() {
+        let r = rec();
+        // Human Display.
+        assert_eq!(r.to_string(), "t3   #0 hit #1 for 12.5 Piercing (killed)");
+        // logfmt: numbers / bools bare, dtype text bare (no spaces).
+        assert_eq!(
+            r.logfmt(),
+            "tick=3 event=attacked attacker=0 target=1 dtype=Piercing amount=12.5 killed=true"
+        );
+        // JSON: numbers / bools unquoted, text quoted.
+        assert_eq!(
+            r.json(),
+            r#"{"tick":3,"event":"attacked","attacker":0,"target":1,"dtype":"Piercing","amount":12.5,"killed":true}"#
+        );
     }
 }

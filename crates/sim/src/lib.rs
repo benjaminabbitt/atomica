@@ -46,7 +46,7 @@ pub use chargen::{
     Override, Priority, Reaction, Realized, Remove, Stat, Tag, Vector, Wear,
 };
 pub use corruption::Corruption;
-pub use event::{BreachVector, CombatEvent, EventLog, Record};
+pub use event::{BreachVector, CombatEvent, EventLog, FieldValue, Record};
 pub use hack::{hack_rating, Hack, HackResult};
 pub use hex::Hex;
 pub use implant::{Contribution, Implant, Pan};

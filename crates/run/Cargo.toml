@@ -7,3 +7,8 @@ repository.workspace = true
 
 [dependencies]
 atomica-sim = { workspace = true }
+
+# A headless runner: play a battle and stream the structured combat log.
+[[bin]]
+name = "atomica-cli"
+path = "src/main.rs"
