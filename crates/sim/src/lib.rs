@@ -474,6 +474,12 @@ impl Unit {
             .max_by(|a, b| a.damage.partial_cmp(&b.damage).unwrap_or(std::cmp::Ordering::Equal))
     }
 
+    /// The longest reach in the loadout — a skirmisher's **standoff range** (the distance
+    /// a [`MovementProfile::Kite`] unit tries to hold). `1` if unarmed.
+    fn max_weapon_range(&self) -> i32 {
+        self.weapons().iter().map(|w| w.range).max().unwrap_or(1)
+    }
+
     /// The best weapon usable at hex-distance `dist` — the highest-damage grant whose
     /// **range band** covers `dist`, or `None` if the target is out of every band (§10.5).
     pub fn weapon_at(&self, dist: i32) -> Option<Attack> {
@@ -1149,10 +1155,20 @@ impl<R: RandomSource> Battle<R> {
                 Some(e) => self.close_step(i, self.units[e].pos, false),
                 None => here,
             },
+            // Skirmish: hold the weapon's standoff range — *close* when out of range
+            // (no fleeing to a stalemate), *back off* when crowded (bounded → cornered),
+            // *hold and fire* at the sweet spot. The proper kite, not "flee to infinity".
             MovementProfile::Kite => match self.nearest_enemy(i) {
                 Some(e) => {
                     let ep = self.units[e].pos;
-                    candidates().max_by_key(|h| (h.distance(ep), -burn(h), -h.q, -h.r)).unwrap_or(here)
+                    let opt = self.units[i].max_weapon_range();
+                    match here.distance(ep) {
+                        d if d > opt => self.close_step(i, ep, false),
+                        d if d < opt => candidates()
+                            .max_by_key(|h| (h.distance(ep), -burn(h), -h.q, -h.r))
+                            .unwrap_or(here),
+                        _ => here,
+                    }
                 }
                 None => here,
             },
@@ -1174,8 +1190,11 @@ impl<R: RandomSource> Battle<R> {
     fn close_step(&self, i: usize, goal: Hex, flank: bool) -> Hex {
         let here = self.units[i].pos;
         let open = |h: Hex| self.terrain.passable(h) && !self.occupied_by_other(i, h);
-        let burn = |h: Hex| self.terrain.hazard(h).is_some() as i32;
+        let burn = |h: Hex| self.terrain.hazard(h).is_some() as i32; // 1 ⇒ avoid
+        let cover = |h: Hex| -self.terrain.cover_tn(h); // negative ⇒ prefer more cover
         let lateral = |h: Hex| if flank { -(h.r - goal.r).abs() } else { 0 };
+        // Tiebreak among equally-progressing steps: dodge hazards, then take cover, then
+        // the flank bias, then a stable positional key. Progress (path/grid) always wins.
         let neighbours = || here.neighbors().into_iter().filter(|h| open(*h));
         if self.terrain.bounds().is_some() {
             // BFS hop-distance from the goal over traversable hexes: the step is the
@@ -1185,13 +1204,13 @@ impl<R: RandomSource> Battle<R> {
             neighbours()
                 .filter_map(|h| flow.get(&h).map(|d| (h, *d)))
                 .filter(|(_, d)| *d < here_d) // only a step that genuinely closes
-                .min_by_key(|(h, d)| (*d, burn(*h), lateral(*h), h.q, h.r))
+                .min_by_key(|(h, d)| (*d, burn(*h), cover(*h), lateral(*h), h.q, h.r))
                 .map_or(here, |(h, _)| h)
         } else {
             // Open plane: greedy single-hex toward the goal (`once(here)` wins ties).
             std::iter::once(here)
                 .chain(neighbours())
-                .min_by_key(|h| (h.distance(goal), burn(*h), lateral(*h), h.q, h.r))
+                .min_by_key(|h| (h.distance(goal), burn(*h), cover(*h), lateral(*h), h.q, h.r))
                 .unwrap_or(here)
         }
     }
@@ -2687,12 +2706,26 @@ mod tests {
         let b = Battle::new(vec![holder, enemy], 1);
         assert_eq!(b.movement_step(0, 1), Hex::new(0, 0));
 
-        // Kite: step to keep distance from the nearest enemy.
-        let kiter = unit(0, Team::A, 3).with_movement(MovementProfile::Kite);
-        let foe = unit(1, Team::B, 4); // adjacent (distance 1)
+        // Kite (skirmish): a ranged unit crowded inside its standoff range backs off to
+        // reopen it. (A melee-range kiter would instead hold — nothing to reopen.)
+        let mut gun = Attack::melee(5.0);
+        gun.range = 3; // standoff range 3
+        let kiter = unit(0, Team::A, 3).with_movement(MovementProfile::Kite).with_attack(gun);
+        let foe = unit(1, Team::B, 4); // adjacent (distance 1 < standoff)
         let b2 = Battle::new(vec![kiter, foe], 1);
         let step = b2.movement_step(0, 1);
-        assert!(step.distance(Hex::new(4, 0)) > 1); // backed off
+        assert!(step.distance(Hex::new(4, 0)) > 1); // backed off to reopen the gap
+    }
+
+    #[test]
+    fn a_skirmisher_closes_when_out_of_range() {
+        // The other half of skirmish: too far to shoot ⇒ advance into range, don't idle.
+        let mut gun = Attack::melee(5.0);
+        gun.range = 3;
+        let kiter = unit(0, Team::A, 0).with_movement(MovementProfile::Kite).with_attack(gun);
+        let foe = unit(1, Team::B, 6); // distance 6 > standoff 3
+        let b = Battle::new(vec![kiter, foe], 1);
+        assert!(b.movement_step(0, 1).distance(Hex::new(6, 0)) < 6); // closed the gap
     }
 
     #[test]
@@ -2750,7 +2783,11 @@ mod tests {
 
     #[test]
     fn a_bounded_board_corners_a_kiter() {
-        let kiter = || unit(0, Team::A, 0).with_movement(MovementProfile::Kite); // corner (0,0)
+        let kiter = || {
+            let mut gun = Attack::melee(5.0);
+            gun.range = 3; // a skirmisher wanting standoff 3, crowded at distance 1
+            unit(0, Team::A, 0).with_movement(MovementProfile::Kite).with_attack(gun) // corner (0,0)
+        };
         let foe = || unit(1, Team::B, 1); // adjacent at (1,0)
         // Open plane: the kiter flees to a greater gap — uncatchable by an equal-speed chase.
         let open = Battle::new(vec![kiter(), foe()], 1);

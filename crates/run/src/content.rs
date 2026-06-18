@@ -9,13 +9,20 @@
 //! triggers — so a run exercises the engine broadly. The **scenarios** ([`gauntlet`] /
 //! [`street_war`] / [`last_stand`]) vary the **objective** too (Eliminate vs Survive).
 //!
+//! Each encounter is fought on an authored **board** ([`atomica_sim::Terrain`]) — a bounded
+//! arena with blockers (route around), cover (harder to hit), and hazards (burn whoever
+//! stands there). Bounds corner the kiters; the maps give the skirmish/cover AI something
+//! to use. The deploy edges (player column 0, enemy column 6) stay clear; terrain lives in
+//! the middle.
+//!
 //! Roster/enemy templates carry a placeholder id `0` and `Team::A`; [`deploy`](crate)
 //! reassigns both at battle start, so only the stat line / loadout here matters.
 
 use crate::{Encounter, GamePlan, RunPlan};
 use atomica_sim::{
-    ArmorClass, Attack, Chassis, DamageType, DeathTrigger, Footprint, Implant, MovementProfile,
-    ObjectiveKind, PenTier, Skill, Team, TargetingProfile, Unit, EquipmentTags,
+    ArmorClass, Attack, Chassis, DamageType, DeathTrigger, Footprint, Hex, Implant,
+    MovementProfile, ObjectiveKind, PenTier, Skill, Team, TargetingProfile, Terrain, Tile, Unit,
+    EquipmentTags,
 };
 
 fn weapon(damage: f32, dtype: DamageType, pen: PenTier, range: i32) -> Attack {
@@ -107,10 +114,9 @@ pub fn bulwark(name: &str) -> Unit {
 }
 
 /// A **marksman** — a glass-cannon sharpshooter. A smartlinked long rifle (IFF, so it
-/// won't tag a teammate in its lane) that picks the **back line** and **holds at standoff
-/// range** (it stops closing the instant range-5 reaches); deadly at distance, clumsy and
-/// fragile if something closes (low HP, AWKWARD). It *advances* rather than kites — two
-/// mutual kiters would just flee each other to the tick cap.
+/// won't tag a teammate in its lane) that picks the **back line** and **skirmishes** to its
+/// range-5 standoff: closes when out of range, backs off when crowded, fires from the sweet
+/// spot. Deadly at distance, clumsy and fragile if something closes (low HP, AWKWARD).
 pub fn marksman(name: &str) -> Unit {
     let rifle = smart(awkward(weapon(9.0, DamageType::Piercing, PenTier::Contact, 5)));
     body(name, 56.0, 6.0)
@@ -118,6 +124,7 @@ pub fn marksman(name: &str) -> Unit {
         .with_evasion(15.0)
         .with_attack(rifle)
         .with_targeting(TargetingProfile::Backline)
+        .with_movement(MovementProfile::Kite)
 }
 
 /// A **sapper** — an EMP shock-trooper, the anti-chrome answer. A short-range pulse that
@@ -188,17 +195,17 @@ fn brute(name: &str) -> Unit {
         .with_attack(weapon(5.0, DamageType::Piercing, PenTier::Contact, 2))
 }
 
-/// A **sniper** — a long-range nest that **holds position** and picks off the squad's
-/// **biggest threat** from range 6, so the squad eats fire on the approach. Fragile up
-/// close (AWKWARD, low HP): rush it down. (It Holds rather than kites — the board is
-/// unbounded, so a fleeing shooter would never be cornered.)
+/// A **sniper** — a long-range **skirmisher** that keeps its range-6 standoff (backs off
+/// when crowded, but now gets **cornered against the board edge**) and picks off the
+/// squad's **biggest threat**, so the squad eats fire on the approach. Fragile up close
+/// (AWKWARD, low HP): rush it into a wall and gut it.
 fn sniper(name: &str) -> Unit {
     body(name, 58.0, 6.0)
         .with_skill(Skill::Gunnery, 5)
         .with_evasion(13.0)
         .with_attack(awkward(weapon(7.0, DamageType::Piercing, PenTier::Contact, 6)))
         .with_targeting(TargetingProfile::HighestThreat)
-        .with_movement(MovementProfile::Hold)
+        .with_movement(MovementProfile::Kite)
 }
 
 /// A **grenadier** — lobs a **blast** (radius 1, no IFF). The AoE punishes a clustered
@@ -223,9 +230,9 @@ fn swarmer(name: &str) -> Unit {
         .with_movement(MovementProfile::Swarm)
 }
 
-/// A **breaker** — an enemy netrunner with a cyberdeck: jacked in at the back (Holds), it
-/// **hacks the squad's chrome** (the runner's deck — the sapper has none to lose). A
-/// mirror of the player's runner, and its own deck is a breach target right back.
+/// A **breaker** — an enemy netrunner with a cyberdeck: it **hacks the squad's chrome**
+/// (the runner's deck — the sapper has none to lose) while **skirmishing** at its sidearm's
+/// range. A mirror of the player's runner, and its own deck is a breach target right back.
 fn breaker(name: &str) -> Unit {
     let mut u = body(name, 56.0, 6.0)
         .with_skill(Skill::Hacking, 6)
@@ -233,7 +240,7 @@ fn breaker(name: &str) -> Unit {
         .with_evasion(13.0)
         .with_attack(weapon(4.0, DamageType::Piercing, PenTier::External, 3))
         .with_targeting(TargetingProfile::HighestThreat)
-        .with_movement(MovementProfile::Hold);
+        .with_movement(MovementProfile::Kite);
     u.install(Implant::cyberdeck());
     u
 }
@@ -255,6 +262,76 @@ fn bomber(name: &str) -> Unit {
         })
 }
 
+// -- Boards -----------------------------------------------------------------------
+//
+// Maps are sized so the deploy columns fit: the player lands on column 0 (rows top-down),
+// the enemy on column 6, on an 8×6 arena (cols 0..=7, rows 0..=5). Terrain lives in the
+// **middle** columns (1..=5) — the deploy edges stay clear ground.
+
+/// A blank bounded arena sized for deployment (cols 0..=7, rows 0..=5).
+fn arena() -> Terrain {
+    Terrain::arena(8, 6)
+}
+
+/// Stamp `Blocked` walls (impassable, route around) at the given `(q, r)` hexes.
+fn walls(t: Terrain, hexes: &[(i32, i32)]) -> Terrain {
+    t.fill(hexes.iter().map(|&(q, r)| Hex::new(q, r)), Tile::Blocked)
+}
+
+/// Stamp `Cover(tn)` (harder to hit its occupant) at the given hexes.
+fn cover(t: Terrain, tn: i32, hexes: &[(i32, i32)]) -> Terrain {
+    t.fill(hexes.iter().map(|&(q, r)| Hex::new(q, r)), Tile::Cover(tn))
+}
+
+/// Stamp a `Hazard` field (Internal damage each tick — the AI steps around it) at the hexes.
+fn hazard(t: Terrain, damage: f32, hexes: &[(i32, i32)]) -> Terrain {
+    let tile = Tile::Hazard { damage, dtype: DamageType::Piercing, pen: PenTier::Internal };
+    t.fill(hexes.iter().map(|&(q, r)| Hex::new(q, r)), tile)
+}
+
+/// **Alley** — scattered crates (cover) to fight over; a soft, open brawl map.
+fn alley() -> Terrain {
+    cover(arena(), 2, &[(3, 1), (3, 4), (4, 2), (2, 3)])
+}
+
+/// **Checkpoint** — a wall across column 3 with a single **gate** at row 2 (pathing
+/// funnels through it), cover flanking the gate.
+fn checkpoint() -> Terrain {
+    let t = walls(arena(), &[(3, 0), (3, 1), (3, 3), (3, 4), (3, 5)]);
+    cover(t, 3, &[(2, 2), (4, 2)])
+}
+
+/// **Quarantine** — a toxic spill burning the center; fighting flows around it.
+fn quarantine() -> Terrain {
+    let t = hazard(arena(), 6.0, &[(3, 2), (3, 3), (4, 2), (4, 3)]);
+    cover(t, 2, &[(2, 1), (5, 4)])
+}
+
+/// **Open ground** with a little hard cover — room for a swarm to close.
+fn yard() -> Terrain {
+    let t = walls(arena(), &[(3, 2), (4, 3)]);
+    cover(t, 2, &[(2, 1), (2, 4), (5, 2)])
+}
+
+/// **Firing lanes** — cover staggered down both sides so the snipers nest and the squad
+/// has something to advance behind.
+fn firing_lanes() -> Terrain {
+    cover(arena(), 3, &[(5, 1), (5, 4), (4, 2), (2, 1), (2, 4), (3, 3)])
+}
+
+/// **Server room** — racks (walls) carving two lanes, cover at the mouths.
+fn server_room() -> Terrain {
+    let t = walls(arena(), &[(3, 1), (4, 1), (3, 4), (4, 4)]);
+    cover(t, 3, &[(2, 2), (5, 3)])
+}
+
+/// **Rooftop** — cover ringing the player's hold point (col 1) with a hazard strip on the
+/// approach to channel the assault.
+fn rooftop() -> Terrain {
+    let t = cover(arena(), 3, &[(1, 1), (1, 3), (2, 2)]);
+    hazard(t, 5.0, &[(4, 1), (4, 2), (4, 4)])
+}
+
 // -- Plans ------------------------------------------------------------------------
 
 /// The **gauntlet** — a three-encounter run of escalating threats (no R&R within).
@@ -265,15 +342,18 @@ pub fn gauntlet() -> RunPlan {
             Encounter::new(
                 "Alley Ambush",
                 vec![mook("Thug-1"), mook("Thug-2"), mook("Thug-3"), mook("Thug-4")],
-            ),
+            )
+            .on(alley()),
             Encounter::new(
                 "Corp Checkpoint",
                 vec![enforcer("Enforcer"), mook("Guard-1"), mook("Guard-2"), mook("Guard-3")],
-            ),
+            )
+            .on(checkpoint()),
             Encounter::new(
                 "Lockdown Zone",
                 vec![brute("Heavy"), enforcer("Warden"), mook("Orderly")],
-            ),
+            )
+            .on(quarantine()),
         ],
     )
 }
@@ -296,17 +376,20 @@ pub fn street_war() -> RunPlan {
                     bomber("Boomer"),
                     bomber("Crash"),
                 ],
-            ),
+            )
+            .on(yard()),
             // Ranged pressure: a sniper picking the heavies, a grenadier punishing clusters.
             Encounter::new(
                 "Crossfire",
                 vec![sniper("Longshot"), grenadier("Lobber"), mook("Gun-1"), mook("Gun-2")],
-            ),
+            )
+            .on(firing_lanes()),
             // The netrunning mirror — the breaker hacks your deck while the wall holds.
             Encounter::new(
                 "Net Duel",
                 vec![breaker("Daemon"), enforcer("Warden"), brute("Slab"), mook("Goon")],
-            ),
+            )
+            .on(server_room()),
         ],
     )
 }
@@ -327,6 +410,7 @@ pub fn last_stand() -> RunPlan {
                 mook("Trooper"),
             ],
         )
+        .on(rooftop())
         .with_objective(ObjectiveKind::Survive(8))],
     )
 }

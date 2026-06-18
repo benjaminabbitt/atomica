@@ -24,8 +24,8 @@
 //! later layers on top of this.)
 
 use atomica_sim::{
-    Battle, Goal, Hex, ObjectiveKind, ObjectiveStatus, Objectives, Outcome, Record, Team, Unit,
-    UnitId,
+    Battle, Goal, Hex, ObjectiveKind, ObjectiveStatus, Objectives, Outcome, Record, Team, Terrain,
+    Unit, UnitId,
 };
 
 pub mod content;
@@ -44,17 +44,31 @@ pub struct Encounter {
     /// What it takes to pass (eliminate / survive / reach / hold). The encounter
     /// is passed only if this stays **satisfied** (not Failed) at the end.
     pub objective: ObjectiveKind,
+    /// The **board** it's fought on — bounds + blockers/cover/hazards. Default is the
+    /// open, unbounded plane; author a map with [`Encounter::on`].
+    pub board: Terrain,
 }
 
 impl Encounter {
-    /// An **elimination** encounter (wipe the enemy) — the default objective.
+    /// An **elimination** encounter (wipe the enemy) — the default objective, open board.
     pub fn new(name: impl Into<String>, enemies: Vec<Unit>) -> Self {
-        Self { name: name.into(), enemies, objective: ObjectiveKind::Eliminate }
+        Self {
+            name: name.into(),
+            enemies,
+            objective: ObjectiveKind::Eliminate,
+            board: Terrain::default(),
+        }
     }
 
     /// Set a non-default objective (survive / reach / hold).
     pub fn with_objective(mut self, objective: ObjectiveKind) -> Self {
         self.objective = objective;
+        self
+    }
+
+    /// Fight this encounter on a [`Terrain`] map (bounds + terrain features).
+    pub fn on(mut self, board: Terrain) -> Self {
+        self.board = board;
         self
     }
 }
@@ -247,7 +261,9 @@ impl Run {
         }
         let seed = self.seed ^ (self.index as u64).wrapping_mul(0x9E37_79B9_7F4A_7C15);
         let objectives = Objectives::new(vec![Goal::new(encounter.objective.build(), 0, 0)]);
-        let battle = Battle::new(units, seed).with_objectives(objectives);
+        let battle = Battle::new(units, seed)
+            .with_objectives(objectives)
+            .with_terrain(encounter.board.clone());
         if self.log {
             battle.with_log()
         } else {
