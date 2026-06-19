@@ -57,7 +57,7 @@ pub use objective::{
     Reach, Survive, TimeAttack, WinFight, PLAYER,
 };
 pub use rng::{RandomSource, ScriptedRng, SplitMix64};
-pub use roll::{resolve_contest, Contest, RollOutcome};
+pub use roll::{resolve_check, resolve_contest, resolve_opposed, Contest, Opposed, RollOutcome};
 pub use skills::{Chassis, Skill, Skills};
 pub use terrain::{Bounds, Terrain, Tile};
 pub use status::{
