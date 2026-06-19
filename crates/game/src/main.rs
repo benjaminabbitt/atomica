@@ -31,6 +31,7 @@ fn demo_battle() -> Battle {
             .with_initiative(init)
             .with_attack(Attack {
                 damage: dmg,
+                speed: if range > 1 { 3 } else { 1 },
                 dtype,
                 pen,
                 skill: if range > 1 { Skill::Gunnery } else { Skill::Melee },

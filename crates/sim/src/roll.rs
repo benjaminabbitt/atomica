@@ -40,17 +40,13 @@ pub fn resolve_check<R: RandomSource + ?Sized>(rng: &mut R, target: i32) -> Roll
     RollOutcome { dice, total: dice, margin: target - dice, success, crit, fumble }
 }
 
-/// 3d6 spans `3..=18`; `MIN + MAX = 21` is the pivot that converts a roll-*high* contest to
-/// the odds-identical roll-*under* target — the bridge for static-TN (non-opposed) checks.
-const DICE_PIVOT: i32 = 21;
-
-/// Resolve a **roll-under** skill-vs-resist contest: `rating` (a skill / virulence / status
-/// power) tries to overcome a static `resist` TN (Firewall / Immunity / task difficulty — a
-/// passive threshold, *not* an active defender; opposed defenses go through [`resolve_opposed`]).
-/// Odds-identical to the old `3d6 + rating ≥ resist`, recast roll-under so the whole engine
-/// speaks one dice language; `margin` is the roll-under degree of success.
+/// Resolve a **roll-under** skill check whose opposition is folded in as a **modifier** (the
+/// GURPS pattern — no static TN): roll `3d6 ≤ rating − resist`, where `rating` is the actor's
+/// effective skill (~10) and `resist` is the target's Firewall / Immunity / security rating as
+/// a flat **penalty** (a few points), *not* a number to beat. `margin` is the degree of
+/// success. (Active, two-sided defenses still go through [`resolve_opposed`].)
 pub fn resolve_versus<R: RandomSource + ?Sized>(rng: &mut R, rating: i32, resist: i32) -> RollOutcome {
-    resolve_check(rng, DICE_PIVOT + rating - resist)
+    resolve_check(rng, rating - resist)
 }
 
 /// The result of an [`resolve_opposed`] attack-vs-defense exchange.
@@ -114,15 +110,15 @@ mod tests {
     }
 
     #[test]
-    fn versus_recasts_a_skill_vs_resist_contest_roll_under() {
-        // rating 4 vs resist 10 ⇒ target 21 + 4 − 10 = 15; 3d6 = 12 makes it by 3.
-        let mut rng = ScriptedRng::from_d6([4, 4, 4]);
-        let o = resolve_versus(&mut rng, 4, 10);
+    fn versus_folds_resist_in_as_a_modifier() {
+        // rating 14, resist 4 ⇒ target 14 − 4 = 10; 3d6 = 7 makes it by 3.
+        let mut rng = ScriptedRng::from_d6([3, 2, 2]);
+        let o = resolve_versus(&mut rng, 14, 4);
         assert_eq!(o.margin, 3);
         assert!(o.success);
         // A stiffer resist drops the target below the same roll → a miss.
-        let mut rng = ScriptedRng::from_d6([4, 4, 4]);
-        assert!(!resolve_versus(&mut rng, 4, 20).success); // target 5, 12 > 5
+        let mut rng = ScriptedRng::from_d6([3, 2, 2]);
+        assert!(!resolve_versus(&mut rng, 14, 10).success); // target 4, 7 > 4
     }
 
     #[test]

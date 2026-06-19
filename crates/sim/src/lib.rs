@@ -237,6 +237,11 @@ impl std::fmt::Debug for EquipmentTags {
 #[derive(Clone, Copy, Debug)]
 pub struct Attack {
     pub damage: f32,
+    /// The attack's **Speed** (`docs/stats.md`) — a peer of `damage`: how fast the blow
+    /// arrives. A high-velocity round (Speed ~3–4) is far harder to dodge than a swung blade
+    /// (Speed ~1), so Speed is a flat **penalty to the defender's Evade**; it may also feed
+    /// penetration. Melee/thrown are slow (Dodge stays potent); guns are fast.
+    pub speed: i32,
     pub dtype: DamageType,
     pub pen: PenTier,
     /// The **skill** that governs the to-hit roll (`design-delta §394`) — a weapon's
@@ -272,6 +277,7 @@ impl Attack {
     pub fn melee(damage: f32) -> Self {
         Self {
             damage,
+            speed: 1, // a swung blade is slow — Dodge is potent against it
             dtype: DamageType::Piercing,
             pen: PenTier::Internal,
             skill: Skill::Melee,
@@ -1419,18 +1425,22 @@ impl<R: RandomSource> Battle<R> {
     /// Breach vulnerability.
     fn resolve_attack_with(&mut self, attacker: usize, target: usize, atk: Attack) {
         let atk_id = self.units[attacker].id;
-        // To-hit — the **opposed roll-under** core (`docs/stats.md`): the attacker rolls to
-        // hit, `3d6 ≤ (weapon skill)×2 + accuracy − range − cover`, and the target rolls an
-        // active **Evade**, `3d6 ≤ Dex + evade-tier` (a secondary save — defense is *not* on the
-        // attack's ×2 scale, so a dodge is the exception, not the rule). The blow lands only if
-        // the attacker connects **and** the defender fails to dodge. Range = `ranged` (grows with distance)
-        // + `awkward` (bites up close); cover is the hex's bonus — both shrink the to-hit
-        // target. An **undefended** target (Evade ≤ 0) with a clear shot is auto-hit (no RNG;
-        // dice only matter once the target can dodge or the shot is hard).
+        // To-hit — the **opposed roll-under** core, pure GURPS (`docs/stats.md`): the attacker
+        // rolls `3d6 ≤ weapon skill + accuracy − range − cover` (weapon skill = governing
+        // attribute + tier, ~10-14), and the target rolls an active **Evade**, `3d6 ≤ Dex +
+        // evade-tier`. Evade is just a Dex skill — but it *defaults to untrained* (−4), so a
+        // non-dodger sits at `Dex − 4` (a secondary save) while an acrobat climbs. No doubling,
+        // no base: the skill *is* the target. The blow lands only if the attacker connects
+        // **and** the defender fails to dodge. Range = `ranged` (grows with distance) + `awkward`
+        // (bites up close); cover is the hex's bonus — both shrink the to-hit target. An
+        // **undefended** target (Evade ≤ 0) with a clear shot is auto-hit (no RNG; dice only
+        // matter once the target can dodge or the shot is hard).
         let dist = self.reach(attacker, target);
         let penalty = atk.tags.to_hit_penalty(dist) + self.terrain.cover_tn(self.units[target].pos);
-        let atk_target = self.units[attacker].effective_skill(atk.skill) * 2 + atk.accuracy - penalty;
-        let evade = self.units[target].evasion();
+        let atk_target =
+            self.units[attacker].effective_skill(atk.skill) + atk.accuracy - penalty;
+        // A fast attack is far harder to dodge than a slow one — the weapon's Speed docks Evade.
+        let evade = self.units[target].evasion() - atk.speed;
         let landed = if evade <= 0 {
             penalty <= 0 || resolve_check(&mut self.rng, atk_target).success
         } else {
@@ -1792,13 +1802,16 @@ impl<R: RandomSource> Battle<R> {
         if self.units[target].link() <= 0 {
             return HackResult::NoSurface;
         }
-        // The connection runs at the weaker endpoint's bandwidth (the channel);
-        // the rating averages the attacker's Hacking with it. Firewall is the TN.
+        // The connection runs at the weaker endpoint's bandwidth (the channel); the rating
+        // averages the attacker's **effective Hacking** (Intellect + tier, GURPS-scaled) with
+        // it. Firewall is the target's **security rating** — folded in as a flat penalty on the
+        // roll (`docs/stats.md`: a modifier, not a TN), so a darker target (lower channel) is
+        // harder to hack and a stiffer Firewall harder still.
         let channel = self.units[attacker].digital_band().min(self.units[target].digital_band());
-        let rating = hack_rating(self.units[attacker].skill(Skill::Hacking), channel)
+        let rating = hack_rating(self.units[attacker].effective_skill(Skill::Hacking), channel)
             + self.units[attacker].mesh_synergy(); // meshed PAN throughput (§5)
-        let tn = self.units[target].firewall();
-        let outcome = resolve_versus(&mut self.rng, rating, tn);
+        let firewall = self.units[target].firewall();
+        let outcome = resolve_versus(&mut self.rng, rating, firewall);
         self.emit(CombatEvent::Hacked {
             attacker: self.units[attacker].id,
             target: self.units[target].id,
@@ -1921,11 +1934,13 @@ mod tests {
     fn runner(id: u32, team: Team, q: i32, range: i32) -> Unit {
         let mut u = unit(id, team, q);
         u.character.base_mut().link = 3.0;
+        u.character.base_mut().intellect = 10.0; // GURPS-scale Intellect ⇒ effective Hacking = 10 + tier
         u.grant_hack(Hack::new(range, StatusSpec::lockware(), 1, 5));
         u
     }
 
-    /// A unit with a hackable digital surface: Link > 0 and a Firewall TN.
+    /// A unit with a hackable digital surface: Link > 0 and a Firewall security rating
+    /// (now a flat penalty on a hacker's roll, `docs/stats.md` — not a TN).
     fn networked(id: u32, team: Team, q: i32, firewall: i32) -> Unit {
         let mut u = unit(id, team, q);
         u.character.base_mut().link = 2.0;
@@ -2039,9 +2054,9 @@ mod tests {
     #[test]
     fn injected_scripted_rng_forces_poison_to_fire() {
         let mut u = unit(0, Team::A, 0);
-        u.character.base_mut().immunity = 5.0; // low resist TN
+        u.character.base_mut().immunity = 5.0; // a −5 resist penalty
         u.add_status(StatusSpec::poison(), 5, 1);
-        // 3d6 = 6, + poison power 3 + 1 stack = 10 ≥ TN 5 ⇒ fires.
+        // versus: target = (power 10 + 1 stack) − Immunity 5 = 6; 3d6 = 6 makes it ⇒ fires.
         let mut b = Battle::with_rng(vec![u], ScriptedRng::from_d6([2, 2, 2]));
         let before = b.units[0].character.integrity;
         b.status_phase();
@@ -2062,20 +2077,24 @@ mod tests {
 
     #[test]
     fn unit_contest_uses_its_skill() {
-        let u = unit(0, Team::A, 0); // Augmented: Melee tier 1, Body 0 ⇒ effective 1
-        // Roll-under versus: target = 21 + effective(1) − tn(12) = 10; 3d6 = 9 makes it by 1.
-        let mut rng = ScriptedRng::from_d6([3, 3, 3]);
-        let o = u.contest(Skill::Melee, 0, 12, &mut rng);
+        let mut u = unit(0, Team::A, 0);
+        u.character.base_mut().body = 12.0;
+        u.skills.set(Skill::Melee, 0); // competent ⇒ effective Melee 12
+        // resolve_versus (resist as a modifier): target = effective 12 − resist 4 = 8; 3d6 = 7.
+        let mut rng = ScriptedRng::from_d6([3, 2, 2]);
+        let o = u.contest(Skill::Melee, 0, 4, &mut rng);
         assert_eq!(o.margin, 1);
         assert!(o.success);
     }
 
     #[test]
     fn raising_a_skill_flips_a_contest() {
-        let mut u = unit(0, Team::A, 0); // Melee tier 1 ⇒ target 10
-        let before = u.contest(Skill::Melee, 0, 12, &mut ScriptedRng::from_d6([4, 4, 3])); // 11 > 10 ⇒ miss
-        u.skills.raise(Skill::Melee, 3); // tier 4 ⇒ target 13
-        let after = u.contest(Skill::Melee, 0, 12, &mut ScriptedRng::from_d6([4, 4, 3])); // 11 ≤ 13 ⇒ hit
+        let mut u = unit(0, Team::A, 0);
+        u.character.base_mut().body = 12.0;
+        u.skills.set(Skill::Melee, 0); // effective 12 ⇒ target 12 − resist 4 = 8
+        let before = u.contest(Skill::Melee, 0, 4, &mut ScriptedRng::from_d6([4, 3, 3])); // 10 > 8 ⇒ miss
+        u.skills.raise(Skill::Melee, 4); // elite ⇒ effective 16 ⇒ target 12
+        let after = u.contest(Skill::Melee, 0, 4, &mut ScriptedRng::from_d6([4, 3, 3])); // 10 ≤ 12 ⇒ hit
         assert!(!before.success && after.success);
     }
 
@@ -2332,10 +2351,10 @@ mod tests {
         atk.skills.set(Skill::Hacking, 4);
         let mut tgt = networked(1, Team::B, 0, 0);
         tgt.character.base_mut().link = 2.0;
-        let mut b = Battle::with_rng(vec![atk, tgt], ScriptedRng::from_d6([4, 4, 4])); // 12
+        let mut b = Battle::with_rng(vec![atk, tgt], ScriptedRng::from_d6([1, 2, 2])); // 5
         let HackResult::Rolled { outcome, .. } = b.resolve_hack(0, 1) else { panic!() };
-        // Roll-under: target = 21 + rating(3) − Firewall(0) = 24; dice 12 ⇒ margin 12.
-        assert_eq!(outcome.margin, 12);
+        // channel min(6,2)=2 → rating avg(eff Hacking 14, 2)=8; target 8 − fw 0, dice 5 ⇒ margin 3.
+        assert_eq!(outcome.margin, 3);
     }
 
     #[test]
@@ -2346,9 +2365,9 @@ mod tests {
         atk.skills.set(Skill::Hacking, 4);
         let mut tgt = networked(1, Team::B, 0, 0);
         tgt.character.base_mut().link = 6.0;
-        let mut b = Battle::with_rng(vec![atk, tgt], ScriptedRng::from_d6([4, 4, 4])); // 12
+        let mut b = Battle::with_rng(vec![atk, tgt], ScriptedRng::from_d6([1, 2, 2])); // 5
         let HackResult::Rolled { outcome, .. } = b.resolve_hack(0, 1) else { panic!() };
-        assert_eq!(outcome.margin, 12); // channel min(2, 6) = 2 → rating 3, same target 24
+        assert_eq!(outcome.margin, 3); // channel min(2,6)=2 → rating avg(14,2)=8, same target 8
     }
 
     #[test]
@@ -2361,14 +2380,14 @@ mod tests {
             atk.skills.set(Skill::Hacking, 6);
             let mut tgt = networked(1, Team::B, 0, 0);
             tgt.character.base_mut().link = target_link as f32;
-            let mut b = Battle::with_rng(vec![atk, tgt], ScriptedRng::from_d6([4, 4, 4])); // 12
+            let mut b = Battle::with_rng(vec![atk, tgt], ScriptedRng::from_d6([1, 2, 2])); // 5
             let HackResult::Rolled { outcome, .. } = b.resolve_hack(0, 1) else { panic!() };
             outcome.margin
         };
-        // Fat channel (Link 6): avg(6, 6) = 6 → target 27, margin 15. Dark (Link 1): avg(6, 1) = 3.
+        // eff Hacking 16. Fat channel (Link 6): avg(16,6)=11 → target 11, margin 6. Dark (Link 1): avg(16,1)=8.
         assert!(margin_vs(6) > margin_vs(1));
-        assert_eq!(margin_vs(6), 15); // 21 + 6 − 0 − 12
-        assert_eq!(margin_vs(1), 12); // 21 + 3 − 0 − 12
+        assert_eq!(margin_vs(6), 6); // target 11 − dice 5
+        assert_eq!(margin_vs(1), 3); // target 8 − dice 5
     }
 
     #[test]
@@ -2378,27 +2397,27 @@ mod tests {
         let mut atk = runner(0, Team::A, 0, 1);
         atk.character.base_mut().link = 4.0;
         atk.skills.set(Skill::Hacking, 6);
-        let mut tgt = networked(1, Team::B, 0, 12);
+        let mut tgt = networked(1, Team::B, 0, 4);
         tgt.character.base_mut().link = 4.0;
-        let mut b = Battle::with_rng(vec![atk, tgt], ScriptedRng::from_d6([4, 4, 4])); // 12
+        let mut b = Battle::with_rng(vec![atk, tgt], ScriptedRng::from_d6([1, 2, 2])); // 5
         let HackResult::Rolled { outcome, .. } = b.resolve_hack(0, 1) else { panic!() };
-        // channel min(4, 4) = 4; rating avg(6, 4) = 5; target = 21 + 5 − Firewall 12 = 14, dice 12.
-        assert_eq!(outcome.margin, 2);
+        // channel min(4,4)=4; rating avg(eff Hacking 16, 4)=10; Firewall 4 subtracted in full ⇒ target 6, dice 5.
+        assert_eq!(outcome.margin, 1);
         assert!(outcome.success);
     }
 
     #[test]
     fn margin_scales_the_landed_stacks() {
         let mut atk = runner(0, Team::A, 0, 1);
-        atk.character.base_mut().link = 4.0;
-        atk.skills.set(Skill::Hacking, 6); // channel min(4, 4) = 4 → rating avg(6, 4) = 5
-        let mut tgt = networked(1, Team::B, 0, 2);
-        tgt.character.base_mut().link = 4.0;
-        // target = 21 + rating 5 − Firewall 2 = 24; dice 12 ⇒ margin 12 → 1 + 12/3 = 5 stacks.
-        let mut b = Battle::with_rng(vec![atk, tgt], ScriptedRng::from_d6([4, 4, 4]));
+        atk.character.base_mut().link = 8.0;
+        atk.skills.set(Skill::Hacking, 6); // eff Hacking 16; channel min(8,8)=8 → rating avg(16,8)=12
+        let mut tgt = networked(1, Team::B, 0, 0);
+        tgt.character.base_mut().link = 8.0;
+        // target = rating 12 − Firewall 0 = 12; dice 5 ⇒ margin 7 → 1 + 7/3 = 3 stacks.
+        let mut b = Battle::with_rng(vec![atk, tgt], ScriptedRng::from_d6([1, 2, 2]));
         assert!(b.resolve_hack(0, 1).landed());
         assert_eq!(b.units[1].statuses()[0].0, "Lockware");
-        assert_eq!(b.units[1].statuses()[0].1, 5);
+        assert_eq!(b.units[1].statuses()[0].1, 3);
     }
 
     #[test]
@@ -2406,11 +2425,11 @@ mod tests {
         let mut atk = runner(0, Team::A, 0, 4); // antenna range 4
         atk.character.base_mut().link = 4.0;
         atk.skills.set(Skill::Hacking, 4);
-        let mut near = networked(1, Team::B, 2, 2); // distance 2 ≤ range 4
+        let mut near = networked(1, Team::B, 2, 0); // distance 2 ≤ range 4
         near.character.base_mut().link = 4.0;
-        let mut far = networked(2, Team::B, 9, 2); // out of range
+        let mut far = networked(2, Team::B, 9, 0); // out of range
         far.character.base_mut().link = 4.0;
-        let mut b = Battle::with_rng(vec![atk, near, far], ScriptedRng::from_d6([4, 4, 4]));
+        let mut b = Battle::with_rng(vec![atk, near, far], ScriptedRng::from_d6([2, 2, 2]));
         b.digital_phase();
         assert!(!b.units[1].statuses().is_empty()); // near got hacked
         assert!(b.units[2].statuses().is_empty()); // far one untouched (out of range)
@@ -2845,10 +2864,11 @@ mod tests {
         // Overdose is multi-effect: the self-DoT is degrade (margin), the Crash is
         // crit-gated — so a solid, non-crit hit lands only the DoT.
         let mut atk = runner(0, Team::A, 0, 4);
-        atk.skills.set(Skill::Hacking, 6);
+        atk.character.base_mut().link = 8.0;
+        atk.skills.set(Skill::Hacking, 6); // eff Hacking 16; channel 8 → rating 12
         let mut tgt = unit(1, Team::B, 1);
-        tgt.character.base_mut().link = 4.0;
-        tgt.character.base_mut().firewall = 4.0; // big margin, no crit
+        tgt.character.base_mut().link = 8.0;
+        tgt.character.base_mut().firewall = 0.0; // target 12; dice 9 ⇒ margin 3, no crit
         tgt.install(Implant::combat_stim());
         let mut b = Battle::with_rng(vec![atk, tgt], ScriptedRng::from_d6([3, 3, 3]));
         b.resolve_hack(0, 1);
@@ -2909,12 +2929,13 @@ mod tests {
     #[test]
     fn a_marginal_hack_just_disables_the_implant() {
         // Margin 0 success → the §6 floor: disable only, no liability fired.
-        let mut atk = runner(0, Team::A, 0, 4); // Link 3
-        atk.skills.set(Skill::Hacking, 4);
+        let mut atk = runner(0, Team::A, 0, 4);
+        atk.character.base_mut().link = 4.0;
+        atk.skills.set(Skill::Hacking, 4); // eff Hacking 14; channel 4 → rating 9
         let mut tgt = unit(1, Team::B, 1);
-        tgt.character.base_mut().link = 2.0;
+        tgt.character.base_mut().link = 4.0;
         tgt.install(Implant::reflex_booster()); // Seizure liability (stun)
-        tgt.character.base_mut().firewall = 12.0; // channel min(3,2)=2 → rating avg(4,2)=3; dice 9 → 12 = TN, margin 0
+        tgt.character.base_mut().firewall = 0.0; // target = rating 9; dice 9 ⇒ margin 0
         let mut b = Battle::with_rng(vec![atk, tgt], ScriptedRng::from_d6([3, 3, 3]));
         assert!(b.resolve_hack(0, 1).landed());
         assert_eq!(b.units[1].implant_condition(0), Condition::Offline); // disabled
@@ -2924,17 +2945,18 @@ mod tests {
     #[test]
     fn a_solid_hack_disables_and_fires_the_degrade_liability() {
         // Strong margin → disable + the degrade-class hack-effect, margin-scaled.
-        let mut atk = runner(0, Team::A, 0, 4); // Link 3
-        atk.skills.set(Skill::Hacking, 6);
+        let mut atk = runner(0, Team::A, 0, 4);
+        atk.character.base_mut().link = 8.0;
+        atk.skills.set(Skill::Hacking, 6); // eff Hacking 16; channel 8 → rating 12
         let mut tgt = unit(1, Team::B, 1);
-        tgt.character.base_mut().link = 4.0;
+        tgt.character.base_mut().link = 8.0;
         tgt.install(Implant::combat_stim()); // digital; Bleed (degrade, non-stun) fires
-        tgt.character.base_mut().firewall = 4.0; // channel min(3,4)=3 → rating avg(6,3)=4; target 21+4−4=21, dice 12 → margin 9
-        let mut b = Battle::with_rng(vec![atk, tgt], ScriptedRng::from_d6([4, 4, 4]));
+        tgt.character.base_mut().firewall = 0.0; // target = rating 12; dice 6 → margin 6
+        let mut b = Battle::with_rng(vec![atk, tgt], ScriptedRng::from_d6([2, 2, 2]));
         b.resolve_hack(0, 1);
         assert_eq!(b.units[1].implant_condition(0), Condition::Offline);
         assert_eq!(b.units[1].statuses()[0].0, "Bleed"); // degrade liability fired
-        assert_eq!(b.units[1].statuses()[0].1, 3); // margin 9 / 3
+        assert_eq!(b.units[1].statuses()[0].1, 2); // margin 6 / 3
     }
 
     #[test]
@@ -2972,8 +2994,8 @@ mod tests {
         tgt.skills.set(Skill::Hacking, 4);
         tgt.install(Implant::cyberdeck()); // grants the hack + Link 5
         assert!(tgt.hack().is_some());
-        tgt.character.base_mut().firewall = 4.0;
-        let mut b = Battle::with_rng(vec![atk, tgt], ScriptedRng::from_d6([3, 3, 3]));
+        // rating 9 vs the cyberdeck's own Firewall 2 ⇒ target 7; 3d6 = 6 lands.
+        let mut b = Battle::with_rng(vec![atk, tgt], ScriptedRng::from_d6([2, 2, 2]));
         b.resolve_hack(0, 1);
         assert!(b.units[1].hack().is_none()); // deck bricked → no hacking back
         assert_eq!(b.units[1].implant_condition(0), Condition::Offline);
@@ -2998,22 +3020,23 @@ mod tests {
         let mut atk = runner(0, Team::A, 0, 4);
         atk.character.base_mut().link = 4.0;
         atk.skills.set(Skill::Hacking, 4); // rating avg(4, 4) = 4
-        let mut tgt = networked(1, Team::B, 1, 14); // base Firewall 14
+        let mut tgt = networked(1, Team::B, 1, 6); // base Firewall 6 (a −6 penalty)
         tgt.character.base_mut().link = 4.0;
-        // Debuff Firewall by 4 → effective 10; the loop reads firewall() through the gen.
+        // Debuff Firewall by 4 → effective 2; the loop reads firewall() through the gen.
         tgt.apply_modifier(Decorator::gear(Tag::Debuff, vec![Factor::add(Stat::Firewall, -4.0)]));
-        // 3d6 = 8, + rating 4 = 12: misses base 14, but beats the debuffed 10.
-        let mut b = Battle::with_rng(vec![atk, tgt], ScriptedRng::from_d6([3, 3, 2]));
+        // rating 9; debuffed target = 9 − 2 = 7; 3d6 = 5 lands (base fw 6 ⇒ target 3 would miss).
+        let mut b = Battle::with_rng(vec![atk, tgt], ScriptedRng::from_d6([1, 2, 2]));
         assert!(b.resolve_hack(0, 1).landed());
     }
 
     #[test]
     fn an_installed_deck_lets_a_unit_hack_in_the_digital_phase() {
         let mut atk = unit(0, Team::A, 0);
+        atk.character.base_mut().intellect = 10.0; // GURPS Intellect ⇒ eff Hacking 14
         atk.skills.set(Skill::Hacking, 4);
         atk.install(Implant::cyberdeck()); // grants hack + Link 5
-        let tgt = networked(1, Team::B, 1, 9); // soft target, in deck range 6
-        let mut b = Battle::with_rng(vec![atk, tgt], ScriptedRng::from_d6([4, 4, 4]));
+        let tgt = networked(1, Team::B, 1, 0); // soft target, in deck range 6
+        let mut b = Battle::with_rng(vec![atk, tgt], ScriptedRng::from_d6([2, 2, 2]));
         b.digital_phase();
         assert!(!b.units[1].statuses().is_empty()); // hacked via the installed deck
     }
@@ -3138,11 +3161,11 @@ mod tests {
     fn effective_skill_is_attribute_plus_tier() {
         // Skills are tiers on the governing attribute: effective = attribute + tier.
         let mut u = unit(0, Team::A, 0);
-        u.character.base_mut().dexterity = 5.0;
-        u.skills.set(Skill::Gunnery, SkillTier::Expert.modifier()); // +1
-        assert_eq!(u.effective_skill(Skill::Gunnery), 6); // Dex 5 + expert 1
-        u.skills.set(Skill::Gunnery, SkillTier::Untrained.modifier()); // −3
-        assert_eq!(u.effective_skill(Skill::Gunnery), 2); // Dex 5 − 3
+        u.character.base_mut().dexterity = 10.0;
+        u.skills.set(Skill::Gunnery, SkillTier::Expert.modifier()); // +2
+        assert_eq!(u.effective_skill(Skill::Gunnery), 12); // Dex 10 + expert 2
+        u.skills.set(Skill::Gunnery, SkillTier::Untrained.modifier()); // −4
+        assert_eq!(u.effective_skill(Skill::Gunnery), 6); // Dex 10 − 4
     }
 
     #[test]
@@ -3374,6 +3397,7 @@ mod tests {
     fn gun(damage: f32, min_range: i32, range: i32) -> Attack {
         Attack {
             damage,
+            speed: 3, // a fast round
             dtype: DamageType::Piercing,
             pen: PenTier::Internal,
             skill: Skill::Gunnery,

@@ -182,7 +182,7 @@ impl StatusSpec {
             timing: Timing::TickStart,
             decay: Decay::Duration,
             stacking: Stacking::Refresh,
-            behavior: Behavior::Stochastic { power: 3 },
+            behavior: Behavior::Stochastic { power: 10 }, // GURPS-scaled affliction potency
             targeting: Targeting::Enemy,
             resist: Resist::Immunity,
         }

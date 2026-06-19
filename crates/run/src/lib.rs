@@ -441,6 +441,7 @@ mod tests {
             .with_initiative(initiative)
             .with_attack(Attack {
                 damage,
+                speed: 1, // a slow melee swing
                 dtype: DamageType::Piercing,
                 pen: PenTier::Internal,
                 skill: Skill::Melee,

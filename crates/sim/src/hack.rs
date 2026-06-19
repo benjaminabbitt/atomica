@@ -122,18 +122,18 @@ mod tests {
 
     #[test]
     fn margin_scales_the_stacks() {
-        // Roll-under versus: target = 21 + rating − firewall = 15; 3d6 = 12 ⇒ margin 3.
-        let mut rng = ScriptedRng::from_d6([4, 4, 4]);
-        let o = resolve_versus(&mut rng, 4, 10);
+        // Versus (resist as a modifier): target = rating 14 − firewall 4 = 10; 3d6 = 7 ⇒ margin 3.
+        let mut rng = ScriptedRng::from_d6([3, 2, 2]);
+        let o = resolve_versus(&mut rng, 14, 4);
         assert_eq!(o.margin, 3);
         assert_eq!(hack().stacks_for(&o), 2); // base 1 + 3/3
     }
 
     #[test]
     fn deeper_margin_lands_more() {
-        // Lower dice ⇒ deeper margin under the same target 15; 3d6 = 5 ⇒ margin 10.
+        // Lower dice ⇒ deeper margin under target 15 (rating 15, no firewall); 3d6 = 5 ⇒ margin 10.
         let mut rng = ScriptedRng::from_d6([1, 2, 2]);
-        let o = resolve_versus(&mut rng, 4, 10);
+        let o = resolve_versus(&mut rng, 15, 0);
         assert_eq!(o.margin, 10);
         assert_eq!(hack().stacks_for(&o), 1 + 3); // base 1 + 10/3
     }

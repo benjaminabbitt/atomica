@@ -1446,7 +1446,7 @@ mod tests {
 
     #[test]
     fn a_stochastic_gate_fires_only_on_a_passing_roll() {
-        let mut c = Character::new(BaseLine { firewall: 15.0, max_integrity: 30.0, ..Default::default() });
+        let mut c = Character::new(BaseLine { firewall: 4.0, max_integrity: 30.0, ..Default::default() });
         c.install(
             Decorator::status(Tag::Debuff, 1, Expiration::Duration(3), Wear::ByDuration)
                 .with_hook(
@@ -1457,9 +1457,9 @@ mod tests {
                         can_kill: true,
                     },
                 )
-                .with_gate(0, Resist::Firewall),
+                .with_gate(10, Resist::Firewall),
         );
-        // Roll-under versus: target = 21 + (power 0 + 1 stack) − Firewall 15 = 7.
+        // versus (Firewall as a −penalty): target = (power 10 + 1 stack) − Firewall 4 = 7.
         // A high roll (3d6 = 12 > 7) misses → gated out, no reaction.
         let r = c.dispatch(Event::TickStart, 1, &mut crate::ScriptedRng::from_d6([4, 4, 4]));
         assert!(r.is_empty());

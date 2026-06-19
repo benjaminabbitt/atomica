@@ -54,8 +54,10 @@ impl Skill {
     }
 }
 
-/// A skill **proficiency tier** (`docs/stats.md`): a modifier on the governing attribute.
-/// `competent` = your raw stat; training shifts ±; `untrained` is a steep −3.
+/// A skill **proficiency tier** (`docs/stats.md`): a modifier on the governing attribute, on
+/// the GURPS default-to-master spread. `competent` = your raw attribute; `untrained` is the
+/// −4 *default* every unset skill falls back to (so e.g. an untrained dodge is `Dex − 4` — a
+/// genuine but secondary save), and mastery climbs to +4.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum SkillTier {
     Untrained,
@@ -67,23 +69,31 @@ pub enum SkillTier {
 }
 
 impl SkillTier {
-    /// The modifier this tier adds to the governing attribute (−3 … +2).
+    /// The modifier this tier adds to the governing attribute (−4 … +4, GURPS-scaled).
     pub fn modifier(self) -> i32 {
         match self {
-            SkillTier::Untrained => -3,
-            SkillTier::Exposed => -2,
-            SkillTier::Beginner => -1,
+            SkillTier::Untrained => -4,
+            SkillTier::Exposed => -3,
+            SkillTier::Beginner => -2,
             SkillTier::Competent => 0,
-            SkillTier::Expert => 1,
-            SkillTier::Elite => 2,
+            SkillTier::Expert => 2,
+            SkillTier::Elite => 4,
         }
     }
 }
 
-/// A unit's skill levels (one per [`Skill`]).
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+/// A unit's skill tiers (one per [`Skill`]) — each the modifier on the governing attribute.
+/// Every skill **defaults to [`SkillTier::Untrained`]** (−4, the GURPS default); training
+/// raises specific ones from there.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Skills {
     levels: [i32; Skill::COUNT],
+}
+
+impl Default for Skills {
+    fn default() -> Self {
+        Self { levels: [SkillTier::Untrained.modifier(); Skill::COUNT] }
+    }
 }
 
 impl Skills {
@@ -167,10 +177,10 @@ mod tests {
 
     #[test]
     fn skill_tiers_run_untrained_to_elite() {
-        assert_eq!(SkillTier::Untrained.modifier(), -3);
-        assert_eq!(SkillTier::Competent.modifier(), 0); // competent = your raw stat
-        assert_eq!(SkillTier::Elite.modifier(), 2);
-        // ...and they're a monotone ladder.
+        assert_eq!(SkillTier::Untrained.modifier(), -4); // the GURPS default
+        assert_eq!(SkillTier::Competent.modifier(), 0); // competent = your raw attribute
+        assert_eq!(SkillTier::Elite.modifier(), 4);
+        // ...and they're a monotone ladder across the ±4 spread.
         let ladder: Vec<i32> = [
             SkillTier::Untrained,
             SkillTier::Exposed,
@@ -181,7 +191,7 @@ mod tests {
         ]
         .map(SkillTier::modifier)
         .to_vec();
-        assert_eq!(ladder, vec![-3, -2, -1, 0, 1, 2]);
+        assert_eq!(ladder, vec![-4, -3, -2, 0, 2, 4]);
     }
 
     #[test]
@@ -198,7 +208,7 @@ mod tests {
     fn chassis_baseline_is_low_and_native() {
         let flesh = Chassis::Flesh.baseline_skills();
         assert_eq!(flesh.level(Skill::Melee), 2); // native, low
-        assert_eq!(flesh.level(Skill::Hacking), 0); // not its domain
+        assert_eq!(flesh.level(Skill::Hacking), -4); // not its domain ⇒ untrained default
         assert_eq!(Chassis::Machine.baseline_skills().level(Skill::Gunnery), 2);
     }
 
