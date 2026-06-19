@@ -19,7 +19,7 @@ parallel). *Skills attack, stats defend* (§13) — so the offense is a **skill*
 
 | Name | Field | Type | Role | Status |
 |---|---|---|---|---|
-| **Link** | `unit.link` | int◆ | **Three jobs:** ① reachability **gate** both ways (`0` ⇒ immune target / offline attacker); ② **latency → digital initiative** (your own Link orders the digital pass; high = sooner); ③ the **connection channel** (a hack's bandwidth is the *weaker* endpoint's Link, `min`). The exposure dial. | ✅ (gate/init/channel); 🔭 exposure (worm-catch) |
+| **Link** | `unit.link` | int◆ | **Four jobs:** ① reachability **gate** both ways (`0` ⇒ immune target / offline attacker); ② **latency → digital initiative** (your own Link orders the digital pass; high = sooner); ③ the **connection channel** (a hack's bandwidth is the *weaker* endpoint's Link, `min`); ④ **antenna range** (`Unit::hack_reach` — a loud, high-Link runner projects far; a dark one barely reaches). The exposure dial. | ✅ (gate/init/channel/range); 🔭 exposure (worm-catch) |
 | **Firewall** | `unit.firewall` | int | The **digital defense** — rolls an *active defense* against a hack (opposed, [`stats.md`](stats.md) §4); also the resist for digital status gates (Crash/Lag/Lockware via `Resist::Firewall`, §5). **Link-blind** on defense. | ✅ |
 | **Hacking** | `unit.skills[Hacking]` | tier | The **offensive skill** (a tier on Intellect, `stats.md` §3). No defensive net-skill exists — you buy Firewall (the stat), not a skill. | ✅ |
 | *Immunity* | `unit.immunity` | int | The **bio** parallel (the Virus resist penalty) — separate track, not digital. | ✅ |

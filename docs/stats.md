@@ -152,7 +152,7 @@ target number** ◆ ([`resolve_versus`](../crates/sim/src/roll.rs)):
 | **Evasion** | `Dexterity + Evade-tier` | the active-defense roll (§4) |
 | **Firewall** | `Intellect` + implants | digital **active defense** — rolls back against a hack (opposed, §4); ≤ 0 = undefended |
 | **Immunity** | (bio track) | contagion resist penalty (§5) |
-| **Link** | implants (cyberdeck…) | reachability gate · digital initiative · hack channel ([`netrunning.md`](netrunning.md)) |
+| **Link** | implants (cyberdeck…) | reachability gate · digital initiative · hack channel · **antenna range** ([`netrunning.md`](netrunning.md)) |
 | **Initiative** | `Dexterity` + gear | physical activation order |
 | **Integrity / Barrier / Plating** | Body + armor | the HP pools ([`combat.md`](combat.md)) — *not* modifiers; clamped pools |
 

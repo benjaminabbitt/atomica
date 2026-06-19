@@ -546,6 +546,13 @@ impl Unit {
     pub fn link(&self) -> i32 {
         self.realized().link()
     }
+    /// **Antenna reach** for hacking — the hexes a hack carries across (`netrunning.md`).
+    /// **Link governs range**: a loud, high-Link runner projects far; a dark one barely
+    /// reaches. (Link's fourth job, alongside the reachability gate, the channel, and digital
+    /// initiative.) `0` ⇒ no presence to reach with.
+    fn hack_reach(&self) -> i32 {
+        self.link().max(0)
+    }
     /// Effective **Firewall** (the digital TN, §13).
     pub fn firewall(&self) -> i32 {
         self.realized().firewall()
@@ -1825,10 +1832,8 @@ impl<R: RandomSource> Battle<R> {
             if i == target || ally.team != t.team || !ally.is_alive() {
                 continue;
             }
-            if let Some(h) = ally.hack() {
-                if ally.link() > 0 && ally.pos.distance(t.pos) <= h.range {
-                    d = d.max(ally.effective_skill(Skill::Hacking));
-                }
+            if ally.hack().is_some() && ally.link() > 0 && ally.pos.distance(t.pos) <= ally.hack_reach() {
+                d = d.max(ally.effective_skill(Skill::Hacking));
             }
         }
         d
@@ -1972,7 +1977,7 @@ impl<R: RandomSource> Battle<R> {
     /// range — the hack's target selection.
     fn nearest_hackable_enemy(&self, i: usize) -> Option<usize> {
         let me = &self.units[i];
-        let range = me.hack().map_or(0, |h| h.range);
+        let range = me.hack_reach(); // Link governs antenna reach (`netrunning.md`)
         // **Objective-aware** (`netrunning.md`): a runner prioritizes cracking a hackable enemy
         // sitting on an objective focus hex (a Datamine **node**) over poking the nearest grunt
         // — so the dive actually drives toward the prize. Falls back to nearest otherwise.

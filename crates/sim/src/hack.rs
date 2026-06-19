@@ -55,7 +55,9 @@ pub fn hack_rating(hacking: i32, channel: i32) -> i32 {
 /// *how far*. The `payload`'s own 9-axis spec governs how it behaves once it lands.
 #[derive(Clone, Copy, Debug)]
 pub struct Hack {
-    /// Antenna reach in hexes the hack carries across (§7F beam / proximity).
+    /// *Legacy* nominal antenna reach. **Superseded:** the effective reach is now
+    /// [`Unit::hack_reach`](crate::Unit) — i.e. the unit's **Link** governs range
+    /// (`netrunning.md`). Retained on the deck spec for now; no longer read by resolution.
     pub range: i32,
     /// The status landed on success — a tripped hack-effect or deployed program.
     pub payload: StatusSpec,
