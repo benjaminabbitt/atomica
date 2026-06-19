@@ -20,7 +20,7 @@ parallel). *Skills attack, stats defend* (§13) — so the offense is a **skill*
 | Name | Field | Type | Role | Status |
 |---|---|---|---|---|
 | **Link** | `unit.link` | int◆ | **Three jobs:** ① reachability **gate** both ways (`0` ⇒ immune target / offline attacker); ② **latency → digital initiative** (your own Link orders the digital pass; high = sooner); ③ the **connection channel** (a hack's bandwidth is the *weaker* endpoint's Link, `min`). The exposure dial. | ✅ (gate/init/channel); 🔭 exposure (worm-catch) |
-| **Firewall** | `unit.firewall` | int | The **digital resist** — folded into every digital contest as a flat **penalty** on the hacker's roll (a few points, *not* a TN — [`stats.md`](stats.md) §5); hacks + the digital statuses Crash/Lag/Lockware via `Resist::Firewall`. **Link-blind** on defense. | ✅ |
+| **Firewall** | `unit.firewall` | int | The **digital defense** — rolls an *active defense* against a hack (opposed, [`stats.md`](stats.md) §4); also the resist for digital status gates (Crash/Lag/Lockware via `Resist::Firewall`, §5). **Link-blind** on defense. | ✅ |
 | **Hacking** | `unit.skills[Hacking]` | tier | The **offensive skill** (a tier on Intellect, `stats.md` §3). No defensive net-skill exists — you buy Firewall (the stat), not a skill. | ✅ |
 | *Immunity* | `unit.immunity` | int | The **bio** parallel (the Virus resist penalty) — separate track, not digital. | ✅ |
 
@@ -42,7 +42,9 @@ The core resolution — built in [`crates/sim/src/hack.rs`](../crates/sim/src/ha
 + `Battle::resolve_hack`:
 
 ```text
-2d10 ≤ avg(effective Hacking, channel) − Firewall      channel = min(Link_a, Link_t)
+runner:    2d10 ≤ avg(effective Hacking, channel)     channel = min(Link_a, Link_t)
+Firewall:  2d10 ≤ Firewall                            (active defense; ≤ 0 = undefended)
+breach lands = runner succeeds AND Firewall fails
 ```
 
 - **The connection channel ◆.** A hack runs over the link *between* the two
@@ -52,22 +54,26 @@ The core resolution — built in [`crates/sim/src/hack.rs`](../crates/sim/src/ha
   floored: `(hacking + channel) / 2`
   (`hack_rating`). Skill and channel each carry half the weight — a master runner
   on a thin pipe is dragged down but not gutted.
-- **Skill attacks, the stat defends.** The target's **Firewall** is a flat
-  **penalty** on the roll (a few points), in full — **Link-blind on defense.** The target's Link enters the *attack* (the
-  channel), never the wall, so a **darker target is harder to hack** (thin
-  channel) while a **juicy high-Link target is easier** (its exposure literally
-  widens the attacker's pipe). *(The earlier `min(Link, Firewall)` softened the
-  wall for low-Link units — backwards — and was dropped.)*
+- **Skill attacks, the stat defends — as an opposed roll** ◆ (`stats.md` §4, the
+  same shape as combat). The target's **Firewall** rolls an *active defense*: the
+  breach lands only if the runner connects **and** the Firewall fails its own
+  roll, so a stiffer wall **defends more often** (not "subtracts more"). An
+  **undefended** surface (Firewall ≤ 0) skips the defense roll. **Link-blind on
+  defense** — the target's Link enters the *attack* (the channel), never the wall,
+  so a **darker target is harder to hack** (thin channel) while a **juicy high-Link
+  target is easier** (its exposure widens the attacker's pipe).
 - **Equipment arms the roll through the stats, not a separate term** ◆ — a
   cyberdeck raises **Link**, a skill-chip raises **Hacking**, a Firewall implant
   raises **Firewall**. There is no separate roll term — the stats *are* the contest
-  (`resolve_versus(rating, Firewall)`).
+  (`resolve_opposed(rating, Firewall)`).
 - **Hard reachability gates** (§7D/§7F): zero-Link **target** ⇒ `NoSurface`
   (immune); zero-Link **attacker** ⇒ `Offline`. The locked immunity cliff —
   distinct from "Link affecting the math."
-- **Margin = degree of success.** `2d10 ≤ rating − Firewall` succeeds; a natural
-  **2–3 crits**, a natural **19–20 fumbles** ([`stats.md`](stats.md) §1). The margin scales the payload: `stacks = base + margin / MARGIN_PER_STACK
-  + crit` (placeholder `MARGIN_PER_STACK = 3`).
+- **Margin = degree of success.** The breach lands when the runner rolls under
+  rating **and** the Firewall fails; a natural **2–3 crits**, a natural **19–20
+  fumbles** the runner's leg ([`stats.md`](stats.md) §1). The runner's margin scales
+  the payload: `stacks = base + margin / MARGIN_PER_STACK + crit` (placeholder
+  `MARGIN_PER_STACK = 3`).
 
 **Emergent identity ◆ — netrunners are glass cannons.** Skill is the *consistent*
 buy (half-weight, can't be denied); **Link is situational** — your bandwidth only
@@ -159,7 +165,7 @@ loadout**, not classes.
 
 | Counter | What | Status |
 |---|---|---|
-| **Firewall** | the digital resist penalty — raise it with implants | ✅ |
+| **Firewall** | the digital defense roll — raise it with implants | ✅ |
 | **Go dark / zero Link** | total digital immunity, total digital isolation | ✅ (the gate) |
 | **Masking (low Link)** | smaller surface ⇒ harder to hack / lower worm-catch, less throughput | 🔭 (link-effect) |
 | **White-hat mender** | cleanse Worm; restore Firewall / Link | 🔭 |
@@ -175,21 +181,25 @@ Spike / Leech — loadout choices that shape the Link number and its exposure. �
 
 **`Link` is `i32` ✅** — bandwidth tiers, migrated from `f32`.
 
-**The even-odds anchor ◆.** The core is **2d10 roll-under** ([`stats.md`](stats.md)
-§1), ~even around target **10–11**. Firewall folds in as a **penalty**
-(`2d10 ≤ rating − Firewall`), so the matched contest is:
+**The anchor ◆.** The hack is an **opposed roll** (§2, `stats.md` §4). The runner's
+leg is **2d10 roll-under** its rating (~even at **10–11**); the Firewall rolls its
+own **defense** at `2d10 ≤ Firewall`. The breach lands when the runner connects
+**and** the wall fails:
 
 ```text
-rating − Firewall ≈ 11        rating = avg(effective Hacking, channel)
+P(breach) = P(2d10 ≤ rating) × P(2d10 > Firewall)     rating = avg(effective Hacking, channel)
 ```
 
-A runner whose rating clears the wall by ~11 cracks it on a coin-flip; every point
-of Firewall buys a point of the runner's target back.
+So Firewall is a **probabilistic defense**: every point raises the chance it repels
+the breach, but it can't make the target *unhittable* (the runner's own leg caps it
+near the 2d10 ceiling). A pro runner (rating ~9–10) lands **~30%** through a modest
+wall — viable, not free.
 
-**First-cut bands ◆ (TBD), on the 2d10 modifier scale:**
+**First-cut bands ◆ (TBD), on the 2d10 scale:**
 
-- **Firewall** (the penalty) — unprotected **0** · modest **4** · standard **6** ·
-  hardened **8+** (a few points, not a TN).
+- **Firewall** (defense roll — its chance to repel) — unprotected **0** (none) ·
+  modest **4** (≈10%) · standard **6** (≈16%) · hardened **8** (≈26%) · bulwark
+  **10+** (≈45%+).
 - **effective Hacking** (Intellect + tier) — chip floor ~**10** · competent ~**12**
   · pro ~**14** · master ~**16**.
 - **Link** (tiers) — 0 dark · 1–2 low · 3–4 mid · 5–6 high.
@@ -217,8 +227,7 @@ be brought against it: against a **dark** target (Link 1) even a master is held 
 **disables** the implant. The two outcomes that *matter* are gated: the
 **magnified liability** needs a strong **margin**, and the **knockout** (the stun
 class) needs a **crit** (cyberware §6). So even when a hack lands, the severe
-results are rare, and meaningful targets sit at/above the even-odds line (rating −
-Firewall ≈ 11).
+results are rare, and a stiff Firewall repels a real fraction of breaches outright.
 Netrunning rewards the **invested specialist against an exposed target**, not the
 dabbler — soft mooks are easy to poke but shallow (the depth-gate above).
 

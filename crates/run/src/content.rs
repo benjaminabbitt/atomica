@@ -203,7 +203,7 @@ fn enforcer(name: &str) -> Unit {
         // Evade untrained: Dex 10 − 4 ⇒ Evasion 6
         .with_attack(weapon(5.0, DamageType::Bludgeoning, PenTier::Contact, 1));
     u.character.base_mut().link = 4.0; // a networked surface to hack at
-    u.character.base_mut().firewall = 4.0; // a modest security rating — a −4 penalty to hackers
+    u.character.base_mut().firewall = 6.0; // hardened: rolls an active defense vs hackers (stats.md §4)
     u.install(Implant::subdermal_plating()); // physical — bulwark's problem, not the runner's
     u.install(Implant::reflex_booster()); // digital smartware — the runner's breach target
     u

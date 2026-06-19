@@ -112,15 +112,19 @@ land = attacker succeeds AND defender fails
 - **Undefended ⇒ auto-hit.** If the target's (Speed-adjusted) Evade ≤ 0 and the
   shot is clear, the blow lands with no roll — trivial exchanges stay
   deterministic; the dice only matter once the target can actually dodge.
+- **Hacking is opposed too** ◆ — a netrunner's breach has the same shape: the
+  runner rolls `2d10 ≤ avg(effective Hacking, channel)` and the target's
+  **Firewall** rolls an *active defense*; the breach lands only if the runner
+  connects **and** the Firewall fails. An **undefended** surface (Firewall ≤ 0)
+  needs no defense roll. See [`netrunning.md`](netrunning.md).
 
 ---
 
 ## 5. Static contests — the resist *modifier* ✅
 
-Not every contest has an active defender. A hack, a contagion jump, a poison tick
-resolve against a **passive threshold** — and that threshold is folded in as a
-**modifier (a flat penalty), not a target number** ◆
-([`resolve_versus`](../crates/sim/src/roll.rs)):
+A **contagion jump** or a **poison tick** has no active defender — it resolves
+against a **passive threshold**, folded in as a **modifier (a flat penalty), not a
+target number** ◆ ([`resolve_versus`](../crates/sim/src/roll.rs)):
 
 ```text
 2d10 ≤ rating − resist
@@ -132,13 +136,12 @@ resolve against a **passive threshold** — and that threshold is folded in as a
   target. This is the GURPS skill-check pattern: *roll under your skill, penalized
   by the difficulty.*
 - **No static TN anywhere** — the same `2d10 ≤ target` core; the defense is just a
-  term inside `target`.
-- Used by: **hacking** (`rating = avg(effective Hacking, channel)`, `resist =
-  Firewall`, [`netrunning.md`](netrunning.md)); **contagion** spread
-  (`rating = virulence`, `resist = Immunity/Firewall`, [`corruption.md`](corruption.md));
-  the status **stochastic gate** (`rating = power + stacks`, `resist = the status's
-  Resist`). Afflictions/contagions are authored on the same ~10 scale so the
-  penalty bites meaningfully.
+  term inside `target`. (Hacking, which *does* have an active defender, is an
+  opposed roll instead — §4.)
+- Used by: **contagion** spread (`rating = virulence`, `resist = Immunity`,
+  [`corruption.md`](corruption.md)) and the status **stochastic gate**
+  (`rating = power + stacks`, `resist = the status's Resist`). Afflictions/contagions
+  are authored on the same ~10 scale so the penalty bites meaningfully.
 
 ---
 
@@ -147,7 +150,7 @@ resolve against a **passive threshold** — and that threshold is folded in as a
 | Stat | From | Role |
 |---|---|---|
 | **Evasion** | `Dexterity + Evade-tier` | the active-defense roll (§4) |
-| **Firewall** | `Intellect` + implants | digital **resist penalty** (§5) — a few points, not a TN |
+| **Firewall** | `Intellect` + implants | digital **active defense** — rolls back against a hack (opposed, §4); ≤ 0 = undefended |
 | **Immunity** | (bio track) | contagion resist penalty (§5) |
 | **Link** | implants (cyberdeck…) | reachability gate · digital initiative · hack channel ([`netrunning.md`](netrunning.md)) |
 | **Initiative** | `Dexterity` + gear | physical activation order |

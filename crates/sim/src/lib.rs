@@ -1804,14 +1804,24 @@ impl<R: RandomSource> Battle<R> {
         }
         // The connection runs at the weaker endpoint's bandwidth (the channel); the rating
         // averages the attacker's **effective Hacking** (Intellect + tier, GURPS-scaled) with
-        // it. Firewall is the target's **security rating** — folded in as a flat penalty on the
-        // roll (`docs/stats.md`: a modifier, not a TN), so a darker target (lower channel) is
-        // harder to hack and a stiffer Firewall harder still.
+        // it. The hack is an **opposed roll** (`docs/stats.md` §4, like combat): the runner
+        // rolls to crack while the target's **Firewall** rolls an active defense — the breach
+        // lands only if the runner connects **and** the Firewall fails to repel it. A darker
+        // target (lower channel) is harder to crack; a stiffer Firewall defends more often.
         let channel = self.units[attacker].digital_band().min(self.units[target].digital_band());
         let rating = hack_rating(self.units[attacker].effective_skill(Skill::Hacking), channel)
             + self.units[attacker].mesh_synergy(); // meshed PAN throughput (§5)
         let firewall = self.units[target].firewall();
-        let outcome = resolve_versus(&mut self.rng, rating, firewall);
+        // An **undefended** surface (Firewall ≤ 0) has no active defense — the runner just
+        // rolls to crack (like an undefended melee blow, §4). Otherwise the Firewall rolls back,
+        // and the breach lands only if the runner connects **and** the Firewall fails. The
+        // runner's roll carries the margin / crit that scale the payload either way.
+        let outcome = if firewall > 0 {
+            let opposed = resolve_opposed(&mut self.rng, rating, firewall);
+            RollOutcome { success: opposed.landed, ..opposed.attack }
+        } else {
+            resolve_check(&mut self.rng, rating)
+        };
         self.emit(CombatEvent::Hacked {
             attacker: self.units[attacker].id,
             target: self.units[target].id,
@@ -2393,19 +2403,26 @@ mod tests {
     }
 
     #[test]
-    fn firewall_is_the_full_target_number() {
-        // Defense is the Firewall wall in full — target Link feeds the channel, not the resist
-        // (if Link capped it at 4 the margin would be 10, not 2).
-        let mut atk = runner(0, Team::A, 0, 1);
-        atk.character.base_mut().link = 4.0;
-        atk.skills.set(Skill::Hacking, 6);
-        let mut tgt = networked(1, Team::B, 0, 4);
-        tgt.character.base_mut().link = 4.0;
-        let mut b = Battle::with_rng(vec![atk, tgt], ScriptedRng::from_d10([2, 3])); // 5
+    fn firewall_rolls_an_active_defense() {
+        // The hack is **opposed** (stats.md §4): the runner rolls to crack, the Firewall rolls
+        // back, and the breach lands only if the runner connects *and* the Firewall fails.
+        let setup = || {
+            let mut atk = runner(0, Team::A, 0, 1);
+            atk.character.base_mut().link = 4.0;
+            atk.skills.set(Skill::Hacking, 6); // eff Hacking 16; channel min(4,4)=4 ⇒ rating 10
+            let mut tgt = networked(1, Team::B, 0, 4); // Firewall 4
+            tgt.character.base_mut().link = 4.0;
+            (atk, tgt)
+        };
+        // Runner rolls 5 ≤ rating 10 (margin 5); Firewall 4 rolls 18 > 4 (fails) ⇒ breach lands.
+        let (atk, tgt) = setup();
+        let mut b = Battle::with_rng(vec![atk, tgt], ScriptedRng::from_d10([2, 3, 9, 9]));
         let HackResult::Rolled { outcome, .. } = b.resolve_hack(0, 1) else { panic!() };
-        // channel min(4,4)=4; rating avg(eff Hacking 16, 4)=10; Firewall 4 subtracted in full ⇒ target 6, dice 5.
-        assert_eq!(outcome.margin, 1);
-        assert!(outcome.success);
+        assert!(outcome.success && outcome.margin == 5);
+        // Same runner roll, but the Firewall makes its defense (rolls 3 ≤ 4) ⇒ repelled.
+        let (atk, tgt) = setup();
+        let mut b = Battle::with_rng(vec![atk, tgt], ScriptedRng::from_d10([2, 3, 1, 2]));
+        assert!(!b.resolve_hack(0, 1).landed());
     }
 
     #[test]
@@ -2491,7 +2508,7 @@ mod tests {
         tgt.install(Implant::combat_stim());
         tgt.install(Implant::reflex_booster());
         assert_eq!(tgt.pan, Pan::Meshed); // the default
-        let mut b = Battle::with_rng(vec![atk, tgt], ScriptedRng::from_d10([1, 2])); // 3 → crit
+        let mut b = Battle::with_rng(vec![atk, tgt], ScriptedRng::from_d10([1, 2, 9, 9])); // crit (3); Firewall 4 fails its defense (18)
         b.resolve_hack(0, 1);
         assert!((0..b.units[1].implants.len()).all(|i| b.units[1].implant_condition(i) == Condition::Offline));
     }
@@ -2507,7 +2524,7 @@ mod tests {
         tgt.pan = Pan::Segmented;
         tgt.install(Implant::combat_stim()); // idx 0 — the targeted (digital) slot
         tgt.install(Implant::reflex_booster()); // idx 1 — contained
-        let mut b = Battle::with_rng(vec![atk, tgt], ScriptedRng::from_d10([1, 2])); // 3 → crit
+        let mut b = Battle::with_rng(vec![atk, tgt], ScriptedRng::from_d10([1, 2, 9, 9])); // crit (3); Firewall 4 fails its defense (18)
         b.resolve_hack(0, 1);
         assert_eq!(b.units[1].implant_condition(0), Condition::Offline);
         assert_eq!(b.units[1].implant_condition(1), Condition::Online); // contained
@@ -2671,7 +2688,7 @@ mod tests {
             atk.install(Implant::reflex_booster()); // 2 active → meshed synergy +1
             let mut tgt = networked(1, Team::B, 0, 4);
             tgt.character.base_mut().link = 5.0;
-            let mut b = Battle::with_rng(vec![atk, tgt], ScriptedRng::from_d10([6, 6]));
+            let mut b = Battle::with_rng(vec![atk, tgt], ScriptedRng::from_d10([6, 6, 1, 1]));
             let HackResult::Rolled { outcome, .. } = b.resolve_hack(0, 1) else { panic!() };
             outcome.margin // mesh synergy lifts the rating → the roll-under target → the margin
         };
@@ -2970,7 +2987,7 @@ mod tests {
         tgt.character.base_mut().link = 3.0;
         tgt.character.base_mut().firewall = 12.0;
         tgt.install(Implant::reflex_booster()); // Seizure (stun)
-        let mut b = Battle::with_rng(vec![atk, tgt], ScriptedRng::from_d10([1, 2])); // nat 3 → crit
+        let mut b = Battle::with_rng(vec![atk, tgt], ScriptedRng::from_d10([1, 2, 9, 9])); // crit (3); Firewall 12 fails its defense (18)
         b.resolve_hack(0, 1);
         assert_eq!(b.units[1].implant_condition(0), Condition::Offline);
         assert!(b.units[1].is_stunned());
@@ -2996,8 +3013,8 @@ mod tests {
         tgt.skills.set(Skill::Hacking, 4);
         tgt.install(Implant::cyberdeck()); // grants the hack + Link 5
         assert!(tgt.hack().is_some());
-        // rating 9 vs the cyberdeck's own Firewall 2 ⇒ target 7; 2d10 = 6 lands.
-        let mut b = Battle::with_rng(vec![atk, tgt], ScriptedRng::from_d10([3, 3]));
+        // Opposed: runner rolls 6 ≤ rating 9 (margin 3); the deck's own Firewall 2 fails (18) ⇒ lands.
+        let mut b = Battle::with_rng(vec![atk, tgt], ScriptedRng::from_d10([3, 3, 9, 9]));
         b.resolve_hack(0, 1);
         assert!(b.units[1].hack().is_none()); // deck bricked → no hacking back
         assert_eq!(b.units[1].implant_condition(0), Condition::Offline);
@@ -3026,8 +3043,9 @@ mod tests {
         tgt.character.base_mut().link = 4.0;
         // Debuff Firewall by 4 → effective 2; the loop reads firewall() through the gen.
         tgt.apply_modifier(Decorator::gear(Tag::Debuff, vec![Factor::add(Stat::Firewall, -4.0)]));
-        // rating 9; debuffed target = 9 − 2 = 7; 2d10 = 5 lands (base fw 6 ⇒ target 3 would miss).
-        let mut b = Battle::with_rng(vec![atk, tgt], ScriptedRng::from_d10([2, 3]));
+        // Opposed: runner rolls 5 ≤ rating 9; the Firewall rolls 4 — vs base 6 that defends (4 ≤ 6),
+        // but debuffed to 2 it fails (4 > 2), so the debuff is exactly what lets the breach land.
+        let mut b = Battle::with_rng(vec![atk, tgt], ScriptedRng::from_d10([2, 3, 2, 2]));
         assert!(b.resolve_hack(0, 1).landed());
     }
 
