@@ -44,11 +44,11 @@ impl Magnitude {
     }
 }
 
-/// Axis: behavior — deterministic vs rolled each tick (the 3d6 contest, §13).
+/// Axis: behavior — deterministic vs rolled each tick (the 2d10 contest, §13).
 #[derive(Clone, Copy, Debug)]
 pub enum Behavior {
     Deterministic,
-    /// Rolled each tick: `3d6 + power (+ stacks)` vs the target's resist (the
+    /// Rolled each tick: `2d10 ≤ power (+ stacks) − resist` (the
     /// `resist` axis picks which stat is the TN). Fires on success.
     Stochastic { power: i32 },
 }
@@ -273,7 +273,7 @@ impl StatusSpec {
     /// `duration` seed its lifetime.
     ///
     /// What does *not* port here (still the loop's job): the `behavior` axis's
-    /// **stochastic** resist-roll (Poison gates on a 3d6-vs-resist roll that needs the
+    /// **stochastic** resist-roll (Poison gates on a 2d10-vs-resist roll that needs the
     /// RNG seam), `stacking` merge-on-reapply, and `targeting` — these enter when the
     /// live loop adopts the `Character` path.
     pub fn to_decorator(&self, stacks: u32, duration: u32) -> Decorator {

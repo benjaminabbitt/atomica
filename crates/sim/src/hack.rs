@@ -1,4 +1,4 @@
-//! Netrunning — the digital attack, resolved by the core **3d6 contest**.
+//! Netrunning — the digital attack, resolved by the core **2d10 roll-under**.
 //!
 //! A hack is one unit projecting onto the net against another. It runs over the
 //! **connection** between them, whose bandwidth is the **weaker endpoint's Link**
@@ -6,7 +6,7 @@
 //! channel:
 //!
 //! ```text
-//! 3d6 + avg(Hacking, min(Link_attacker, Link_target))   vs   Firewall
+//! 2d10 ≤ avg(Hacking, min(Link_attacker, Link_target)) − Firewall
 //! ```
 //!
 //! — skill and channel each pull half the weight (a master runner on a thin pipe
@@ -122,8 +122,8 @@ mod tests {
 
     #[test]
     fn margin_scales_the_stacks() {
-        // Versus (resist as a modifier): target = rating 14 − firewall 4 = 10; 3d6 = 7 ⇒ margin 3.
-        let mut rng = ScriptedRng::from_d6([3, 2, 2]);
+        // Versus (resist as a modifier): target = rating 14 − firewall 4 = 10; 2d10 = 7 ⇒ margin 3.
+        let mut rng = ScriptedRng::from_d10([3, 4]);
         let o = resolve_versus(&mut rng, 14, 4);
         assert_eq!(o.margin, 3);
         assert_eq!(hack().stacks_for(&o), 2); // base 1 + 3/3
@@ -131,8 +131,8 @@ mod tests {
 
     #[test]
     fn deeper_margin_lands_more() {
-        // Lower dice ⇒ deeper margin under target 15 (rating 15, no firewall); 3d6 = 5 ⇒ margin 10.
-        let mut rng = ScriptedRng::from_d6([1, 2, 2]);
+        // Lower dice ⇒ deeper margin under target 15 (rating 15, no firewall); 2d10 = 5 ⇒ margin 10.
+        let mut rng = ScriptedRng::from_d10([2, 3]);
         let o = resolve_versus(&mut rng, 15, 0);
         assert_eq!(o.margin, 10);
         assert_eq!(hack().stacks_for(&o), 1 + 3); // base 1 + 10/3
@@ -140,8 +140,8 @@ mod tests {
 
     #[test]
     fn a_whiff_lands_nothing() {
-        // target = 21 + 0 − 20 = 1; 3d6 = 6 misses (and isn't a 3–4 crit).
-        let mut rng = ScriptedRng::from_d6([2, 2, 2]);
+        // target = 21 + 0 − 20 = 1; 2d10 = 6 misses (and isn't a 2–3 crit).
+        let mut rng = ScriptedRng::from_d10([3, 3]);
         let o = resolve_versus(&mut rng, 0, 20);
         assert!(!o.success);
         assert_eq!(hack().stacks_for(&o), 0);
@@ -149,7 +149,7 @@ mod tests {
 
     #[test]
     fn a_crit_lands_despite_the_wall_and_adds_a_stack() {
-        let mut rng = ScriptedRng::from_d6([1, 1, 1]); // natural 3 → roll-under crit
+        let mut rng = ScriptedRng::from_d10([1, 2]); // natural 3 → roll-under crit
         let o = resolve_versus(&mut rng, 0, 99); // hopeless target, but a crit lands
         assert!(o.crit && o.success);
         assert_eq!(hack().stacks_for(&o), 1 + 1); // base + crit bump (margin floored at 0)

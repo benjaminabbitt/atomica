@@ -1,8 +1,8 @@
 //! Skills & chassis — the per-character roll-modifiers (`docs/stats.md`).
 //!
-//! **Skills are tiers *on* a governing attribute** (the rework): a unit's effective rating
-//! at a skill = `governing attribute + skill tier` (untrained −3 … elite +2; competent 0).
-//! The reworked roll is `3d6 ≤ (attribute + tier) × 2`. Every [`Chassis`] ships a low
+//! **Skills are tiers *on* a governing attribute**: a unit's effective rating at a skill =
+//! `governing attribute + skill tier` (untrained −4 … elite +4; competent 0). The core roll
+//! is `2d10 ≤ attribute + tier` — no doubling, no base. Every [`Chassis`] ships a low
 //! baseline; XP-growth and chips build from there.
 
 use crate::chargen::Stat;

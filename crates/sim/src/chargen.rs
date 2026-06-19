@@ -276,7 +276,7 @@ pub enum Resist {
 }
 
 /// A **stochastic gate** (the status `behavior` axis): each tick the decorator rolls
-/// `3d6 + power + stacks` vs the owner's [`Resist`] TN, and fires its hooks **only on
+/// `2d10 ≤ power + stacks − [`Resist`]` (resist as a penalty), and fires its hooks **only on
 /// success**. Absent ⇒ deterministic (always fires).
 #[derive(Clone, Copy, Debug)]
 pub struct Gate {
@@ -355,7 +355,7 @@ pub enum Vector {
 /// contagion is self-replicating. Cleansed by the same tag-ward as any corruption.
 #[derive(Clone, Copy, Debug)]
 pub struct Contagion {
-    /// The jump roll's attack rating (`3d6 + virulence` vs the resist TN).
+    /// The jump roll's attack rating (`2d10 ≤ virulence − resist`).
     pub virulence: i32,
     /// The victim stat that defends each jump (`Stat::Immunity` / `Stat::Firewall`).
     pub resist: Stat,
@@ -475,7 +475,7 @@ impl Decorator {
         self
     }
 
-    /// Builder: make the hooks **stochastic** — gated by a `3d6 + power` roll vs the
+    /// Builder: make the hooks **stochastic** — gated by a `2d10 ≤ power − resist` roll vs the
     /// owner's [`Resist`] each dispatch (Poison).
     pub fn with_gate(mut self, power: i32, resist: Resist) -> Self {
         self.gate = Some(Gate { power, resist });
@@ -957,7 +957,7 @@ impl Character {
             if !d.is_active() {
                 continue;
             }
-            // Stochastic gate (the status `behavior` axis): 3d6 + power + stacks vs the
+            // Stochastic gate (the status `behavior` axis): 2d10 ≤ power + stacks − resist; the
             // owner's resist TN; on failure the decorator's hooks don't fire this tick.
             if let Some(gate) = d.gate {
                 let tn = match gate.resist {
@@ -1460,12 +1460,12 @@ mod tests {
                 .with_gate(10, Resist::Firewall),
         );
         // versus (Firewall as a −penalty): target = (power 10 + 1 stack) − Firewall 4 = 7.
-        // A high roll (3d6 = 12 > 7) misses → gated out, no reaction.
-        let r = c.dispatch(Event::TickStart, 1, &mut crate::ScriptedRng::from_d6([4, 4, 4]));
+        // A high roll (2d10 = 12 > 7) misses → gated out, no reaction.
+        let r = c.dispatch(Event::TickStart, 1, &mut crate::ScriptedRng::from_d10([6, 6]));
         assert!(r.is_empty());
         assert_eq!(c.integrity, 30.0);
-        // A low roll (3d6 = 6 ≤ 7) passes → fires.
-        let r = c.dispatch(Event::TickStart, 2, &mut crate::ScriptedRng::from_d6([2, 2, 2]));
+        // A low roll (2d10 = 6 ≤ 7) passes → fires.
+        let r = c.dispatch(Event::TickStart, 2, &mut crate::ScriptedRng::from_d10([3, 3]));
         assert_eq!(r.len(), 1);
         assert_eq!(c.integrity, 25.0);
     }

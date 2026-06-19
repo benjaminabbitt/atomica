@@ -101,7 +101,7 @@ pub fn blade(name: &str) -> Unit {
         .with_body(12.0)
         .with_dexterity(11.0)
         .with_skill(Skill::Melee, 3) // master duelist ⇒ effective Melee 15
-        .with_skill(Skill::Evade, 0) // nimble, but no acrobat ⇒ Evasion 11 − 2 = 9
+        .with_skill(Skill::Evade, 1) // nimble, but no acrobat ⇒ Evasion 11 + 1 = 12
         .with_attack(weapon(14.0, DamageType::Slashing, PenTier::Internal, 1));
     u.install(Implant::skin_weave());
     u
