@@ -1068,6 +1068,15 @@ impl Character {
         pen: PenTier,
         can_kill: bool,
     ) {
+        let remaining = self.absorb_armor(amount, pen);
+        self.apply_integrity(tick, source, remaining, can_kill);
+    }
+
+    /// Soak `amount` through the **general armor** pools by penetration tier — Barrier
+    /// (External) then Plating (External / Contact) — and return what's left. (The attack
+    /// pipeline slips the **hit-location** roll in between this and
+    /// [`apply_integrity`](Self::apply_integrity); DoTs go straight through both.)
+    pub fn absorb_armor(&mut self, amount: f32, pen: PenTier) -> f32 {
         let mut remaining = amount;
         if matches!(pen, PenTier::External) {
             remaining = absorb(&mut self.barrier, remaining);
@@ -1075,6 +1084,13 @@ impl Character {
         if matches!(pen, PenTier::External | PenTier::Contact) {
             remaining = absorb(&mut self.plating, remaining);
         }
+        remaining
+    }
+
+    /// Apply `remaining` straight to **Integrity** (no armor left to soak): the kill /
+    /// softener floor and the damage-log entry. The tail of the pipeline once Barrier,
+    /// Plating, and any hit-location chrome have taken their share.
+    pub fn apply_integrity(&mut self, tick: u32, source: u32, remaining: f32, can_kill: bool) {
         if remaining <= 0.0 {
             return;
         }

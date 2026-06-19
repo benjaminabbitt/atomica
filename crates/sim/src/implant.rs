@@ -96,7 +96,7 @@ impl Implant {
             hack_effects: vec![StatusSpec::lockware()], // Lockout (placeholder)
             condition: Condition::Online,
             removable: true,
-            coverage: 2, // small, tucked-away electronics
+            coverage: 10, // small, tucked-away electronics
             max_hp: 18.0, // fragile
             tags: EquipmentTags::DIGITAL,
         }
@@ -114,7 +114,7 @@ impl Implant {
             hack_effects: vec![],
             condition: Condition::Online,
             removable: true,
-            coverage: 20, // armor: it *covers* the body, so it catches most blows...
+            coverage: 80, // armor: it *covers* the body, so it catches most blows...
             max_hp: 60.0, // ...and it's built to take them — high HP, wears down slowly
             tags: EquipmentTags::NONE,
         }
@@ -129,7 +129,7 @@ impl Implant {
             hack_effects: vec![StatusSpec::crash()], // Seizure
             condition: Condition::Online,
             removable: true,
-            coverage: 3, // spinal / limb wiring
+            coverage: 25, // spinal / limb wiring — a sizeable limb's worth
             max_hp: 24.0,
             tags: EquipmentTags::DIGITAL,
         }
@@ -145,7 +145,7 @@ impl Implant {
             hack_effects: vec![StatusSpec::breach()], // Breach (vuln)
             condition: Condition::Online,
             removable: true,
-            coverage: 2,
+            coverage: 10,
             max_hp: 20.0,
             tags: EquipmentTags::DIGITAL,
         }
@@ -162,7 +162,7 @@ impl Implant {
             hack_effects: vec![StatusSpec::bleed(), StatusSpec::crash()], // Overdose
             condition: Condition::Online,
             removable: true,
-            coverage: 2,
+            coverage: 10,
             max_hp: 16.0, // volatile
             tags: EquipmentTags::DIGITAL,
         }
@@ -178,7 +178,7 @@ impl Implant {
             hack_effects: vec![StatusSpec::bleed()], // Overload (Internal DoT)
             condition: Condition::Online,
             removable: true,
-            coverage: 3, // visceral
+            coverage: 20, // visceral
             max_hp: 28.0,
             tags: EquipmentTags::DIGITAL,
         }
