@@ -23,7 +23,7 @@
 //! those land.
 
 use crate::{
-    resolve_contest, ArmorClass, Contest, MovementProfile, PenTier, RandomSource, TargetingProfile,
+    resolve_versus, ArmorClass, MovementProfile, PenTier, RandomSource, TargetingProfile,
 };
 
 /// A decorator's stable handle. A [`Modifier`]'s `source` links back to the
@@ -68,7 +68,6 @@ pub enum Stat {
     Plating,
     Barrier,
     Damage,
-    Evasion,
     // -- Primary attributes (the stat/skill rework, `docs/stats.md`) -------------------
     // The four characteristics skills are tiers *on* (effective = attribute + skill-tier)
     // and the combat stats derive from. ~1-8, competent baseline 5.
@@ -544,9 +543,6 @@ pub struct BaseLine {
     pub plating: f32,
     pub barrier: f32,
     pub damage: f32,
-    /// **Evasion** — the physical to-hit TN (`design-delta §394` "stats defend"): an
-    /// attacker rolls `3d6 + weapon skill` against this (plus a gun's range penalty).
-    pub evasion: f32,
     /// **Primary attributes** (`docs/stats.md`) — Body / Dexterity / Intellect / Will.
     pub body: f32,
     pub dexterity: f32,
@@ -569,7 +565,6 @@ impl BaseLine {
             Stat::Plating => self.plating,
             Stat::Barrier => self.barrier,
             Stat::Damage => self.damage,
-            Stat::Evasion => self.evasion,
             Stat::Body => self.body,
             Stat::Dexterity => self.dexterity,
             Stat::Intellect => self.intellect,
@@ -628,9 +623,6 @@ impl Realized {
     }
     pub fn immunity(&self) -> i32 {
         self.stat(Stat::Immunity).round() as i32
-    }
-    pub fn evasion(&self) -> i32 {
-        self.stat(Stat::Evasion).round() as i32
     }
     /// The realized value of any [`Stat`] as an integer — the attribute lookup a skill's
     /// [`governs`](crate::Skill::governs) drives (effective rating = attribute + tier).
@@ -974,7 +966,7 @@ impl Character {
                     Resist::Immunity => imm,
                 };
                 let skill = gate.power + d.stacks as i32;
-                if !resolve_contest(rng, Contest::new(skill, 0, tn)).success {
+                if !resolve_versus(rng, skill, tn).success {
                     continue;
                 }
             }
@@ -1467,12 +1459,13 @@ mod tests {
                 )
                 .with_gate(0, Resist::Firewall),
         );
-        // fumble (3d6 = 3) vs Firewall 15 → gated out, no reaction.
-        let r = c.dispatch(Event::TickStart, 1, &mut crate::ScriptedRng::from_d6([1, 1, 1]));
+        // Roll-under versus: target = 21 + (power 0 + 1 stack) − Firewall 15 = 7.
+        // A high roll (3d6 = 12 > 7) misses → gated out, no reaction.
+        let r = c.dispatch(Event::TickStart, 1, &mut crate::ScriptedRng::from_d6([4, 4, 4]));
         assert!(r.is_empty());
         assert_eq!(c.integrity, 30.0);
-        // crit (3d6 = 18) → fires.
-        let r = c.dispatch(Event::TickStart, 2, &mut crate::ScriptedRng::from_d6([6, 6, 6]));
+        // A low roll (3d6 = 6 ≤ 7) passes → fires.
+        let r = c.dispatch(Event::TickStart, 2, &mut crate::ScriptedRng::from_d6([2, 2, 2]));
         assert_eq!(r.len(), 1);
         assert_eq!(c.integrity, 25.0);
     }

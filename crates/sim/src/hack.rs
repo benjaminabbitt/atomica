@@ -23,8 +23,8 @@
 //! Link's *other* job is **latency → digital initiative**: a unit's own Link sets
 //! when it acts on the net (high Link = sooner), independent of the channel.
 //!
-//! The roll lives in [`resolve_contest`](crate::resolve_contest); the channel /
-//! rating and payload application happen in
+//! The roll lives in [`resolve_versus`](crate::resolve_versus) (roll-under, Firewall as the
+//! resist TN); the channel / rating and payload application happen in
 //! [`Battle::resolve_hack`](crate::Battle::resolve_hack).
 
 use crate::{RollOutcome, StatusSpec};
@@ -106,7 +106,7 @@ impl HackResult {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{resolve_contest, Contest, ScriptedRng};
+    use crate::{resolve_versus, ScriptedRng};
 
     fn hack() -> Hack {
         Hack::new(2, StatusSpec::lockware(), 1, 5)
@@ -122,31 +122,35 @@ mod tests {
 
     #[test]
     fn margin_scales_the_stacks() {
-        let mut rng = ScriptedRng::from_d6([3, 3, 3]); // 3d6 = 9
-        let o = resolve_contest(&mut rng, Contest::new(4, 0, 10)); // 13 vs 10 → margin 3
+        // Roll-under versus: target = 21 + rating − firewall = 15; 3d6 = 12 ⇒ margin 3.
+        let mut rng = ScriptedRng::from_d6([4, 4, 4]);
+        let o = resolve_versus(&mut rng, 4, 10);
         assert_eq!(o.margin, 3);
         assert_eq!(hack().stacks_for(&o), 2); // base 1 + 3/3
     }
 
     #[test]
     fn deeper_margin_lands_more() {
-        let mut rng = ScriptedRng::from_d6([6, 6, 5]); // 3d6 = 17 (not a crit)
-        let o = resolve_contest(&mut rng, Contest::new(4, 0, 10)); // 21 vs 10 → margin 11
-        assert_eq!(hack().stacks_for(&o), 1 + 3); // base 1 + 11/3
+        // Lower dice ⇒ deeper margin under the same target 15; 3d6 = 5 ⇒ margin 10.
+        let mut rng = ScriptedRng::from_d6([1, 2, 2]);
+        let o = resolve_versus(&mut rng, 4, 10);
+        assert_eq!(o.margin, 10);
+        assert_eq!(hack().stacks_for(&o), 1 + 3); // base 1 + 10/3
     }
 
     #[test]
     fn a_whiff_lands_nothing() {
-        let mut rng = ScriptedRng::from_d6([2, 2, 2]); // 3d6 = 6
-        let o = resolve_contest(&mut rng, Contest::new(0, 0, 20)); // 6 vs 20 → fail
+        // target = 21 + 0 − 20 = 1; 3d6 = 6 misses (and isn't a 3–4 crit).
+        let mut rng = ScriptedRng::from_d6([2, 2, 2]);
+        let o = resolve_versus(&mut rng, 0, 20);
         assert!(!o.success);
         assert_eq!(hack().stacks_for(&o), 0);
     }
 
     #[test]
     fn a_crit_lands_despite_the_wall_and_adds_a_stack() {
-        let mut rng = ScriptedRng::from_d6([6, 6, 6]); // natural 18 → crit
-        let o = resolve_contest(&mut rng, Contest::new(0, 0, 99)); // negative margin
+        let mut rng = ScriptedRng::from_d6([1, 1, 1]); // natural 3 → roll-under crit
+        let o = resolve_versus(&mut rng, 0, 99); // hopeless target, but a crit lands
         assert!(o.crit && o.success);
         assert_eq!(hack().stacks_for(&o), 1 + 1); // base + crit bump (margin floored at 0)
     }

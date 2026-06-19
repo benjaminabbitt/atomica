@@ -57,7 +57,7 @@ pub use objective::{
     Reach, Survive, TimeAttack, WinFight, PLAYER,
 };
 pub use rng::{RandomSource, ScriptedRng, SplitMix64};
-pub use roll::{resolve_check, resolve_contest, resolve_opposed, Contest, Opposed, RollOutcome};
+pub use roll::{resolve_check, resolve_opposed, resolve_versus, Opposed, RollOutcome};
 pub use skills::{Chassis, Skill, SkillTier, Skills};
 pub use terrain::{Bounds, Terrain, Tile};
 pub use status::{
@@ -402,14 +402,29 @@ impl Unit {
     }
 
     /// Builder: set base **Evasion** (the physical to-hit TN, §7G).
-    pub fn with_evasion(mut self, evasion: f32) -> Self {
-        self.character.base_mut().evasion = evasion;
+    /// Builder: set a **primary attribute** (`docs/stats.md`). Skills are tiers on these and
+    /// the combat stats derive from them — e.g. Evasion = `(Dexterity + Evade-tier) × 2`.
+    pub fn with_body(mut self, body: f32) -> Self {
+        self.character.base_mut().body = body;
+        self
+    }
+    pub fn with_dexterity(mut self, dexterity: f32) -> Self {
+        self.character.base_mut().dexterity = dexterity;
+        self
+    }
+    pub fn with_intellect(mut self, intellect: f32) -> Self {
+        self.character.base_mut().intellect = intellect;
+        self
+    }
+    pub fn with_will(mut self, will: f32) -> Self {
+        self.character.base_mut().will = will;
         self
     }
 
-    /// Builder: set a combat **skill** rating (Melee / Gunnery / Hacking).
-    pub fn with_skill(mut self, skill: Skill, rating: i32) -> Self {
-        self.skills.set(skill, rating);
+    /// Builder: set a **skill tier** — the modifier on the governing attribute (untrained −3 …
+    /// elite +2; competent 0). Effective rating = governing attribute + this.
+    pub fn with_skill(mut self, skill: Skill, tier: i32) -> Self {
+        self.skills.set(skill, tier);
         self
     }
 
@@ -527,9 +542,11 @@ impl Unit {
     pub fn immunity(&self) -> i32 {
         self.realized().immunity()
     }
-    /// Effective **Evasion** (the physical to-hit TN, §7G) — base + composed modifiers.
+    /// Effective **Evasion** — the active-defense target a roll-under attack is opposed by
+    /// (`docs/stats.md`): **derived** as `(Dexterity + Evade-tier) × 2`, so agility and the
+    /// Evade skill set it and a plating's −Dex lowers it. Zero ⇒ undefended (can't dodge).
     pub fn evasion(&self) -> i32 {
-        self.realized().evasion()
+        self.effective_skill(Skill::Evade) * 2
     }
     /// Effective **Initiative** before status slows (see [`Unit::effective_initiative`]).
     pub fn initiative(&self) -> f32 {
@@ -613,7 +630,8 @@ impl Unit {
         self.realized().attribute(skill.governs()) + self.skills.level(skill)
     }
 
-    /// Make a contested roll with this unit's `skill` (+ `equipment`) vs `tn`.
+    /// Make a roll-under contest with this unit's **effective** `skill` (+ `equipment`) vs a
+    /// static `tn` (`docs/stats.md` — a passive threshold, not an opposed defender).
     pub fn contest<R: RandomSource>(
         &self,
         skill: Skill,
@@ -621,7 +639,7 @@ impl Unit {
         tn: i32,
         rng: &mut R,
     ) -> RollOutcome {
-        resolve_contest(rng, Contest::new(self.skill(skill), equipment, tn))
+        resolve_versus(rng, self.effective_skill(skill) + equipment, tn)
     }
 
     /// Apply a status, honoring its stacking axis — installs (or merges into) a
@@ -1399,24 +1417,25 @@ impl<R: RandomSource> Battle<R> {
     /// Breach vulnerability.
     fn resolve_attack_with(&mut self, attacker: usize, target: usize, atk: Attack) {
         let atk_id = self.units[attacker].id;
-        // To-hit (§7G, design-delta §394): roll `3d6 + weapon skill + accuracy` vs the
-        // target's Evasion plus the weapon's range penalties — `ranged` (grows with
-        // distance) and `awkward` (bites up close), discrete and additive. A
-        // **non-positive TN auto-hits** with no roll — so an undefended (Evasion 0) melee
-        // blow always lands and burns no RNG (the deterministic auto-hit pipeline; dice
-        // only matter once a defender can evade or the shot is hard).
+        // To-hit — the **opposed roll-under** core (`docs/stats.md`): the attacker rolls to
+        // hit, `3d6 ≤ (weapon skill)×2 + accuracy − range − cover`, and the target rolls an
+        // active **Evade**, `3d6 ≤ (Dex + evade-tier)×2`. The blow lands only if the attacker
+        // connects **and** the defender fails to dodge. Range = `ranged` (grows with distance)
+        // + `awkward` (bites up close); cover is the hex's bonus — both shrink the to-hit
+        // target. An **undefended** target (Evade ≤ 0) with a clear shot is auto-hit (no RNG;
+        // dice only matter once the target can dodge or the shot is hard).
         let dist = self.reach(attacker, target);
-        // Defense TN = the target's Evasion + the weapon's range penalty + any **cover**
-        // the target's hex grants (§7G positioning — a unit behind cover is harder to hit).
-        let tn = self.units[target].evasion()
-            + atk.tags.to_hit_penalty(dist)
-            + self.terrain.cover_tn(self.units[target].pos);
-        if tn > 0 {
-            let rating = self.units[attacker].skill(atk.skill) + atk.accuracy;
-            if !resolve_contest(&mut self.rng, Contest::new(rating, 0, tn)).success {
-                self.emit(CombatEvent::Missed { attacker: atk_id, target: self.units[target].id });
-                return; // whiff — the whole attack (incl. its AoE) misses
-            }
+        let penalty = atk.tags.to_hit_penalty(dist) + self.terrain.cover_tn(self.units[target].pos);
+        let atk_target = self.units[attacker].effective_skill(atk.skill) * 2 + atk.accuracy - penalty;
+        let evade = self.units[target].evasion();
+        let landed = if evade <= 0 {
+            penalty <= 0 || resolve_check(&mut self.rng, atk_target).success
+        } else {
+            resolve_opposed(&mut self.rng, atk_target, evade).landed
+        };
+        if !landed {
+            self.emit(CombatEvent::Missed { attacker: atk_id, target: self.units[target].id });
+            return; // whiff — the whole attack (incl. its AoE) misses
         }
         // Weapon base + the attacker's composed damage bonus (an implant combat-stim).
         let base = atk.damage + self.units[attacker].damage_bonus();
@@ -1582,7 +1601,7 @@ impl<R: RandomSource> Battle<R> {
                         }
                     }
                     let tn = self.resist_of(j, c.resist);
-                    if resolve_contest(&mut self.rng, Contest::new(c.virulence, 0, tn)).success {
+                    if resolve_versus(&mut self.rng, c.virulence, tn).success {
                         jumps.push((i, j, dec.clone()));
                     }
                 }
@@ -1776,7 +1795,7 @@ impl<R: RandomSource> Battle<R> {
         let rating = hack_rating(self.units[attacker].skill(Skill::Hacking), channel)
             + self.units[attacker].mesh_synergy(); // meshed PAN throughput (§5)
         let tn = self.units[target].firewall();
-        let outcome = resolve_contest(&mut self.rng, Contest::new(rating, 0, tn));
+        let outcome = resolve_versus(&mut self.rng, rating, tn);
         self.emit(CombatEvent::Hacked {
             attacker: self.units[attacker].id,
             target: self.units[target].id,
@@ -2040,19 +2059,20 @@ mod tests {
 
     #[test]
     fn unit_contest_uses_its_skill() {
-        let u = unit(0, Team::A, 0); // Augmented baseline Melee = 1
-        let mut rng = ScriptedRng::from_d6([4, 4, 3]); // 3d6 = 11
-        let o = u.contest(Skill::Melee, 0, 12, &mut rng); // 11 + 1 = 12 vs TN 12 ⇒ success
-        assert_eq!(o.total, 12);
+        let u = unit(0, Team::A, 0); // Augmented: Melee tier 1, Body 0 ⇒ effective 1
+        // Roll-under versus: target = 21 + effective(1) − tn(12) = 10; 3d6 = 9 makes it by 1.
+        let mut rng = ScriptedRng::from_d6([3, 3, 3]);
+        let o = u.contest(Skill::Melee, 0, 12, &mut rng);
+        assert_eq!(o.margin, 1);
         assert!(o.success);
     }
 
     #[test]
     fn raising_a_skill_flips_a_contest() {
-        let mut u = unit(0, Team::A, 0); // Melee 1
-        let before = u.contest(Skill::Melee, 0, 12, &mut ScriptedRng::from_d6([3, 3, 3])); // 9+1=10 < 12
-        u.skills.raise(Skill::Melee, 3); // → 4
-        let after = u.contest(Skill::Melee, 0, 12, &mut ScriptedRng::from_d6([3, 3, 3])); // 9+4=13 ≥ 12
+        let mut u = unit(0, Team::A, 0); // Melee tier 1 ⇒ target 10
+        let before = u.contest(Skill::Melee, 0, 12, &mut ScriptedRng::from_d6([4, 4, 3])); // 11 > 10 ⇒ miss
+        u.skills.raise(Skill::Melee, 3); // tier 4 ⇒ target 13
+        let after = u.contest(Skill::Melee, 0, 12, &mut ScriptedRng::from_d6([4, 4, 3])); // 11 ≤ 13 ⇒ hit
         assert!(!before.success && after.success);
     }
 
@@ -2311,7 +2331,8 @@ mod tests {
         tgt.character.base_mut().link = 2.0;
         let mut b = Battle::with_rng(vec![atk, tgt], ScriptedRng::from_d6([4, 4, 4])); // 12
         let HackResult::Rolled { outcome, .. } = b.resolve_hack(0, 1) else { panic!() };
-        assert_eq!(outcome.total, 12 + 3);
+        // Roll-under: target = 21 + rating(3) − Firewall(0) = 24; dice 12 ⇒ margin 12.
+        assert_eq!(outcome.margin, 12);
     }
 
     #[test]
@@ -2324,13 +2345,14 @@ mod tests {
         tgt.character.base_mut().link = 6.0;
         let mut b = Battle::with_rng(vec![atk, tgt], ScriptedRng::from_d6([4, 4, 4])); // 12
         let HackResult::Rolled { outcome, .. } = b.resolve_hack(0, 1) else { panic!() };
-        assert_eq!(outcome.total, 12 + 3); // channel min(2, 6) = 2
+        assert_eq!(outcome.margin, 12); // channel min(2, 6) = 2 → rating 3, same target 24
     }
 
     #[test]
     fn a_darker_target_is_harder_to_hack() {
-        // Same runner; only the target's Link (the channel) changes.
-        let total_vs = |target_link: i32| {
+        // Same runner; only the target's Link (the channel) changes. Higher rating lifts the
+        // roll-under target, so the same dice clear it by a wider margin.
+        let margin_vs = |target_link: i32| {
             let mut atk = runner(0, Team::A, 0, 1);
             atk.character.base_mut().link = 6.0;
             atk.skills.set(Skill::Hacking, 6);
@@ -2338,18 +2360,18 @@ mod tests {
             tgt.character.base_mut().link = target_link as f32;
             let mut b = Battle::with_rng(vec![atk, tgt], ScriptedRng::from_d6([4, 4, 4])); // 12
             let HackResult::Rolled { outcome, .. } = b.resolve_hack(0, 1) else { panic!() };
-            outcome.total
+            outcome.margin
         };
-        // Fat channel (Link 6): avg(6, 6) = 6. Dark (Link 1): avg(6, 1) = 3.
-        assert!(total_vs(6) > total_vs(1));
-        assert_eq!(total_vs(6), 12 + 6);
-        assert_eq!(total_vs(1), 12 + 3);
+        // Fat channel (Link 6): avg(6, 6) = 6 → target 27, margin 15. Dark (Link 1): avg(6, 1) = 3.
+        assert!(margin_vs(6) > margin_vs(1));
+        assert_eq!(margin_vs(6), 15); // 21 + 6 − 0 − 12
+        assert_eq!(margin_vs(1), 12); // 21 + 3 − 0 − 12
     }
 
     #[test]
     fn firewall_is_the_full_target_number() {
-        // Defense is the Firewall wall in full — target Link feeds the channel,
-        // not the TN (if Link capped the TN here it would be 4, not 12).
+        // Defense is the Firewall wall in full — target Link feeds the channel, not the resist
+        // (if Link capped it at 4 the margin would be 10, not 2).
         let mut atk = runner(0, Team::A, 0, 1);
         atk.character.base_mut().link = 4.0;
         atk.skills.set(Skill::Hacking, 6);
@@ -2357,9 +2379,8 @@ mod tests {
         tgt.character.base_mut().link = 4.0;
         let mut b = Battle::with_rng(vec![atk, tgt], ScriptedRng::from_d6([4, 4, 4])); // 12
         let HackResult::Rolled { outcome, .. } = b.resolve_hack(0, 1) else { panic!() };
-        // channel min(4, 4) = 4; rating avg(6, 4) = 5; total 17 vs full Firewall 12.
-        assert_eq!(outcome.total, 17);
-        assert_eq!(outcome.margin, 17 - 12);
+        // channel min(4, 4) = 4; rating avg(6, 4) = 5; target = 21 + 5 − Firewall 12 = 14, dice 12.
+        assert_eq!(outcome.margin, 2);
         assert!(outcome.success);
     }
 
@@ -2370,8 +2391,8 @@ mod tests {
         atk.skills.set(Skill::Hacking, 6); // channel min(4, 4) = 4 → rating avg(6, 4) = 5
         let mut tgt = networked(1, Team::B, 0, 2);
         tgt.character.base_mut().link = 4.0;
-        // 3d6 = 9, + rating 5 = 14 vs Firewall 2 → margin 12 → 1 + 12/3 = 5 stacks.
-        let mut b = Battle::with_rng(vec![atk, tgt], ScriptedRng::from_d6([3, 3, 3]));
+        // target = 21 + rating 5 − Firewall 2 = 24; dice 12 ⇒ margin 12 → 1 + 12/3 = 5 stacks.
+        let mut b = Battle::with_rng(vec![atk, tgt], ScriptedRng::from_d6([4, 4, 4]));
         assert!(b.resolve_hack(0, 1).landed());
         assert_eq!(b.units[1].statuses()[0].0, "Lockware");
         assert_eq!(b.units[1].statuses()[0].1, 5);
@@ -2446,7 +2467,7 @@ mod tests {
         tgt.install(Implant::combat_stim());
         tgt.install(Implant::reflex_booster());
         assert_eq!(tgt.pan, Pan::Meshed); // the default
-        let mut b = Battle::with_rng(vec![atk, tgt], ScriptedRng::from_d6([6, 6, 6])); // crit
+        let mut b = Battle::with_rng(vec![atk, tgt], ScriptedRng::from_d6([1, 1, 1])); // 3 → crit
         b.resolve_hack(0, 1);
         assert!((0..b.units[1].implants.len()).all(|i| b.units[1].implant_condition(i) == Condition::Offline));
     }
@@ -2462,7 +2483,7 @@ mod tests {
         tgt.pan = Pan::Segmented;
         tgt.install(Implant::combat_stim()); // idx 0 — the targeted (digital) slot
         tgt.install(Implant::reflex_booster()); // idx 1 — contained
-        let mut b = Battle::with_rng(vec![atk, tgt], ScriptedRng::from_d6([6, 6, 6])); // crit
+        let mut b = Battle::with_rng(vec![atk, tgt], ScriptedRng::from_d6([1, 1, 1])); // 3 → crit
         b.resolve_hack(0, 1);
         assert_eq!(b.units[1].implant_condition(0), Condition::Offline);
         assert_eq!(b.units[1].implant_condition(1), Condition::Online); // contained
@@ -2628,7 +2649,7 @@ mod tests {
             tgt.character.base_mut().link = 5.0;
             let mut b = Battle::with_rng(vec![atk, tgt], ScriptedRng::from_d6([4, 4, 4]));
             let HackResult::Rolled { outcome, .. } = b.resolve_hack(0, 1) else { panic!() };
-            outcome.total
+            outcome.margin // mesh synergy lifts the rating → the roll-under target → the margin
         };
         assert!(total_for(Pan::Meshed) > total_for(Pan::Segmented));
     }
@@ -2905,8 +2926,8 @@ mod tests {
         let mut tgt = unit(1, Team::B, 1);
         tgt.character.base_mut().link = 4.0;
         tgt.install(Implant::combat_stim()); // digital; Bleed (degrade, non-stun) fires
-        tgt.character.base_mut().firewall = 4.0; // channel min(3,4)=3 → rating avg(6,3)=4; dice 9 → 13 vs 4, margin 9
-        let mut b = Battle::with_rng(vec![atk, tgt], ScriptedRng::from_d6([3, 3, 3]));
+        tgt.character.base_mut().firewall = 4.0; // channel min(3,4)=3 → rating avg(6,3)=4; target 21+4−4=21, dice 12 → margin 9
+        let mut b = Battle::with_rng(vec![atk, tgt], ScriptedRng::from_d6([4, 4, 4]));
         b.resolve_hack(0, 1);
         assert_eq!(b.units[1].implant_condition(0), Condition::Offline);
         assert_eq!(b.units[1].statuses()[0].0, "Bleed"); // degrade liability fired
@@ -2922,7 +2943,7 @@ mod tests {
         tgt.character.base_mut().link = 3.0;
         tgt.character.base_mut().firewall = 12.0;
         tgt.install(Implant::reflex_booster()); // Seizure (stun)
-        let mut b = Battle::with_rng(vec![atk, tgt], ScriptedRng::from_d6([6, 6, 6])); // nat 18
+        let mut b = Battle::with_rng(vec![atk, tgt], ScriptedRng::from_d6([1, 1, 1])); // nat 3 → crit
         b.resolve_hack(0, 1);
         assert_eq!(b.units[1].implant_condition(0), Condition::Offline);
         assert!(b.units[1].is_stunned());
@@ -3188,16 +3209,19 @@ mod tests {
     }
 
     #[test]
-    fn cover_raises_the_to_hit_tn() {
-        // 3d6 = 12, +0 skill: clears bare Evasion 10, but not Evasion 10 + cover 4.
+    fn cover_lowers_the_to_hit_target() {
+        // Opposed roll-under: attacker rolls 13 vs to-hit target (Body 6 + Melee 2) × 2 = 16
+        // (open) — a hit; cover 4 drops the target to 12, so the same 13 now whiffs. The
+        // defender rolls 12 vs Evasion (Dex 4) × 2 = 8, failing to dodge both times, which
+        // isolates the cover effect.
         let make = |cover: bool| {
-            let attacker = unit(0, Team::A, 0).with_skill(Skill::Melee, 0);
-            let target = unit(1, Team::B, 1).with_evasion(10.0);
+            let attacker = unit(0, Team::A, 0).with_body(6.0).with_skill(Skill::Melee, 2);
+            let target = unit(1, Team::B, 1).with_dexterity(4.0);
             let mut terrain = Terrain::default();
             if cover {
                 terrain = terrain.set(Hex::new(1, 0), Tile::Cover(4));
             }
-            Battle::with_rng(vec![attacker, target], ScriptedRng::from_d6([4, 4, 4]))
+            Battle::with_rng(vec![attacker, target], ScriptedRng::from_d6([5, 4, 4, 4, 4, 4]))
                 .with_terrain(terrain)
                 .with_log()
         };
@@ -3372,13 +3396,15 @@ mod tests {
 
     #[test]
     fn evasion_lets_a_target_dodge() {
-        // A nimble target (high Evasion) vs a low-skill attacker: the to-hit roll can
-        // miss. Over many seeds, some land and some whiff — the dice now matter.
+        // A nimble target (Evasion derived from Dexterity) gets an opposed Evade roll: even a
+        // solid attacker is dodged some of the time. Over many seeds, some land and some whiff.
         let mut hits = 0;
         let mut misses = 0;
         for seed in 0..40 {
-            let atk = unit(0, Team::A, 0).with_skill(Skill::Melee, 2);
-            let tgt = unit(1, Team::B, 1).with_evasion(12.0);
+            let mut atk = unit(0, Team::A, 0).with_skill(Skill::Melee, 2);
+            atk.character.base_mut().body = 6.0; // effective Melee 8 ⇒ to-hit target 16 (usually connects)
+            let mut tgt = unit(1, Team::B, 1);
+            tgt.character.base_mut().dexterity = 5.0; // Evasion (5 + 0) × 2 = 10 ⇒ dodges ~half
             let mut b = Battle::new(vec![atk, tgt], seed).with_log();
             b.resolve_attack(0, 1);
             match b.events()[0].event.kind() {

@@ -11,48 +11,20 @@
 
 use crate::RandomSource;
 
-/// A contested check: the actor's `skill + equipment` vs. the defender's (or
-/// task's) Target Number.
-#[derive(Clone, Copy, Debug)]
-pub struct Contest {
-    pub skill: i32,
-    pub equipment: i32,
-    pub tn: i32,
-}
-
-impl Contest {
-    pub fn new(skill: i32, equipment: i32, tn: i32) -> Self {
-        Self { skill, equipment, tn }
-    }
-}
-
-/// The result of a [`resolve_contest`] roll.
+/// The result of a roll-under check ([`resolve_check`] / [`resolve_versus`] / a leg of
+/// [`resolve_opposed`]).
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub struct RollOutcome {
-    /// The raw 3d6 (`3..=18`), before modifiers — what crit / fumble key off.
+    /// The raw 3d6 (`3..=18`) — what crit / fumble key off, and what the target is compared to.
     pub dice: i32,
-    /// `3d6 + skill + equipment`.
+    /// The raw dice again (roll-under adds nothing to the dice) — kept for log symmetry.
     pub total: i32,
-    /// `total − TN`. Positive = succeeded by this much (the **degree of success**
-    /// that scales the effect); negative = failed by this much.
+    /// `target − dice`. Positive = made it by this much (the **degree of success** that scales
+    /// the effect); negative = failed by this much.
     pub margin: i32,
     pub success: bool,
     pub crit: bool,
     pub fumble: bool,
-}
-
-/// Resolve `3d6 + skill + equipment` vs. `tn`.
-///
-/// Defaults (design-delta §13): succeed on **≥ TN**; a natural **18** auto-succeeds
-/// (crit) and a natural **3** auto-fails (fumble), regardless of the modified total.
-pub fn resolve_contest<R: RandomSource + ?Sized>(rng: &mut R, c: Contest) -> RollOutcome {
-    let dice = rng.roll_3d6();
-    let total = dice + c.skill + c.equipment;
-    let margin = total - c.tn;
-    let crit = dice == 18;
-    let fumble = dice == 3;
-    let success = crit || (!fumble && total >= c.tn);
-    RollOutcome { dice, total, margin, success, crit, fumble }
 }
 
 /// Resolve a **roll-under** check: succeed on `3d6 ≤ target`. The reworked core
@@ -66,6 +38,19 @@ pub fn resolve_check<R: RandomSource + ?Sized>(rng: &mut R, target: i32) -> Roll
     let fumble = dice >= 17;
     let success = crit || (!fumble && dice <= target);
     RollOutcome { dice, total: dice, margin: target - dice, success, crit, fumble }
+}
+
+/// 3d6 spans `3..=18`; `MIN + MAX = 21` is the pivot that converts a roll-*high* contest to
+/// the odds-identical roll-*under* target — the bridge for static-TN (non-opposed) checks.
+const DICE_PIVOT: i32 = 21;
+
+/// Resolve a **roll-under** skill-vs-resist contest: `rating` (a skill / virulence / status
+/// power) tries to overcome a static `resist` TN (Firewall / Immunity / task difficulty — a
+/// passive threshold, *not* an active defender; opposed defenses go through [`resolve_opposed`]).
+/// Odds-identical to the old `3d6 + rating ≥ resist`, recast roll-under so the whole engine
+/// speaks one dice language; `margin` is the roll-under degree of success.
+pub fn resolve_versus<R: RandomSource + ?Sized>(rng: &mut R, rating: i32, resist: i32) -> RollOutcome {
+    resolve_check(rng, DICE_PIVOT + rating - resist)
 }
 
 /// The result of an [`resolve_opposed`] attack-vs-defense exchange.
@@ -97,53 +82,6 @@ mod tests {
     use crate::ScriptedRng;
 
     #[test]
-    fn natural_eighteen_crits_even_against_a_wall() {
-        let mut rng = ScriptedRng::from_d6([6, 6, 6]);
-        let o = resolve_contest(&mut rng, Contest::new(0, 0, 99));
-        assert_eq!(o.dice, 18);
-        assert!(o.crit && o.success);
-    }
-
-    #[test]
-    fn natural_three_fumbles_even_with_huge_mods() {
-        let mut rng = ScriptedRng::from_d6([1, 1, 1]);
-        let o = resolve_contest(&mut rng, Contest::new(50, 50, 1));
-        assert_eq!(o.dice, 3);
-        assert!(o.fumble && !o.success);
-    }
-
-    #[test]
-    fn margin_is_the_degree_of_success() {
-        // 3d6 = 9, +4 skill +2 equip = 15 vs TN 12 → margin +3, plain success.
-        let mut rng = ScriptedRng::from_d6([3, 3, 3]);
-        let o = resolve_contest(&mut rng, Contest::new(4, 2, 12));
-        assert_eq!(o.total, 15);
-        assert_eq!(o.margin, 3);
-        assert!(o.success && !o.crit && !o.fumble);
-    }
-
-    #[test]
-    fn ties_succeed() {
-        // 3d6 = 10, +2 = 12 vs TN 12 → margin 0, success (≥ TN).
-        let mut rng = ScriptedRng::from_d6([4, 3, 3]);
-        let o = resolve_contest(&mut rng, Contest::new(2, 0, 12));
-        assert_eq!(o.margin, 0);
-        assert!(o.success);
-    }
-
-    #[test]
-    fn skill_turns_a_loss_into_a_win() {
-        // Same dice (3d6 = 6); skill is what clears the TN.
-        let mut weak_rng = ScriptedRng::from_d6([2, 2, 2]);
-        let weak = resolve_contest(&mut weak_rng, Contest::new(0, 0, 12));
-        let mut skilled_rng = ScriptedRng::from_d6([2, 2, 2]);
-        let skilled = resolve_contest(&mut skilled_rng, Contest::new(6, 0, 12));
-        assert!(!weak.success && skilled.success);
-    }
-
-    // -- The reworked roll-under core --------------------------------------------------
-
-    #[test]
     fn roll_under_succeeds_at_or_below_target() {
         // 3d6 = 10 vs target 10 → made it exactly (margin 0).
         let mut rng = ScriptedRng::from_d6([4, 3, 3]);
@@ -173,6 +111,18 @@ mod tests {
         assert!(resolve_check(&mut rng, 0).crit);
         let mut rng = ScriptedRng::from_d6([6, 6, 5]); // 17
         assert!(resolve_check(&mut rng, 99).fumble);
+    }
+
+    #[test]
+    fn versus_recasts_a_skill_vs_resist_contest_roll_under() {
+        // rating 4 vs resist 10 ⇒ target 21 + 4 − 10 = 15; 3d6 = 12 makes it by 3.
+        let mut rng = ScriptedRng::from_d6([4, 4, 4]);
+        let o = resolve_versus(&mut rng, 4, 10);
+        assert_eq!(o.margin, 3);
+        assert!(o.success);
+        // A stiffer resist drops the target below the same roll → a miss.
+        let mut rng = ScriptedRng::from_d6([4, 4, 4]);
+        assert!(!resolve_versus(&mut rng, 4, 20).success); // target 5, 12 > 5
     }
 
     #[test]

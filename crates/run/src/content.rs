@@ -76,7 +76,15 @@ fn smart(mut a: Attack) -> Attack {
 }
 
 fn body(name: &str, hp: f32, init: f32) -> Unit {
-    Unit::new(0, name, Team::A, Chassis::Augmented).with_integrity(hp).with_initiative(init)
+    // Competent baseline across the four attributes (`docs/stats.md`); archetypes bump their
+    // signature stat and layer skill tiers on top. Evasion derives from Dexterity + Evade-tier.
+    Unit::new(0, name, Team::A, Chassis::Augmented)
+        .with_integrity(hp)
+        .with_initiative(init)
+        .with_body(5.0)
+        .with_dexterity(5.0)
+        .with_intellect(5.0)
+        .with_will(5.0)
 }
 
 // -- Player archetypes ------------------------------------------------------------
@@ -86,8 +94,10 @@ fn body(name: &str, hp: f32, init: f32) -> Unit {
 /// armor that soaks blows into its own HP (a buffer that wears through under fire).
 pub fn blade(name: &str) -> Unit {
     let mut u = body(name, 68.0, 7.0)
-        .with_skill(Skill::Melee, 8) // a duelist — lands the blade
-        .with_evasion(16.0) // nimble elite — slips most incoming
+        .with_body(6.0)
+        .with_dexterity(6.0)
+        .with_skill(Skill::Melee, 2) // elite duelist ⇒ effective Melee 8
+        .with_skill(Skill::Evade, 2) // nimble ⇒ Evasion (6 + 2) × 2 = 16, slips most incoming
         .with_attack(weapon(14.0, DamageType::Slashing, PenTier::Internal, 1));
     u.install(Implant::skin_weave());
     u
@@ -97,9 +107,11 @@ pub fn blade(name: &str) -> Unit {
 /// is also halved by Plate, so the runner leans on the breach, not the gun, vs armor.
 pub fn runner(name: &str) -> Unit {
     let mut u = body(name, 60.0, 6.0)
-        .with_skill(Skill::Gunnery, 6)
-        .with_skill(Skill::Hacking, 5)
-        .with_evasion(14.0)
+        .with_dexterity(6.0)
+        .with_intellect(6.0)
+        .with_skill(Skill::Gunnery, 1) // expert shot ⇒ effective 7
+        .with_skill(Skill::Hacking, 0) // competent runner ⇒ effective 6
+        .with_skill(Skill::Evade, 1) // Evasion (6 + 1) × 2 = 14
         .with_attack(awkward(weapon(8.0, DamageType::Piercing, PenTier::Contact, 4))); // a rifle — clumsy in a clinch
     u.install(Implant::cyberdeck());
     u
@@ -111,8 +123,9 @@ pub fn runner(name: &str) -> Unit {
 pub fn bulwark(name: &str) -> Unit {
     body(name, 94.0, 5.0)
         .with_armor(ArmorClass::Plate)
-        .with_skill(Skill::Melee, 6)
-        .with_evasion(11.0)
+        .with_body(6.0)
+        .with_skill(Skill::Melee, 0) // competent maul ⇒ effective 6
+        // heavy and slow: no Evade training, baseline Dex 5 ⇒ Evasion 10, easy to hit
         .with_attack(weapon(12.0, DamageType::Bludgeoning, PenTier::Contact, 1))
 }
 
@@ -123,8 +136,9 @@ pub fn bulwark(name: &str) -> Unit {
 pub fn marksman(name: &str) -> Unit {
     let rifle = smart(awkward(weapon(9.0, DamageType::Piercing, PenTier::Contact, 5)));
     body(name, 56.0, 6.0)
-        .with_skill(Skill::Gunnery, 7)
-        .with_evasion(15.0)
+        .with_dexterity(6.0)
+        .with_skill(Skill::Gunnery, 2) // elite sharpshooter ⇒ effective 8
+        .with_skill(Skill::Evade, 1) // Evasion (6 + 1) × 2 = 14
         .with_attack(rifle)
         .with_targeting(TargetingProfile::Backline)
         .with_movement(MovementProfile::Kite)
@@ -136,8 +150,9 @@ pub fn marksman(name: &str) -> Unit {
 pub fn sapper(name: &str) -> Unit {
     let shock = emp(weapon(6.0, DamageType::Bludgeoning, PenTier::Contact, 2));
     body(name, 66.0, 5.0)
-        .with_skill(Skill::Gunnery, 5)
-        .with_evasion(13.0)
+        .with_dexterity(6.0)
+        .with_skill(Skill::Gunnery, 0) // competent ⇒ effective 6
+        .with_skill(Skill::Evade, 0) // Evasion (6 + 0) × 2 = 12
         .with_attack(shock)
         .with_targeting(TargetingProfile::HighestThreat)
 }
@@ -167,8 +182,8 @@ pub fn full_squad() -> Vec<Unit> {
 fn mook(name: &str) -> Unit {
     body(name, 74.0, 5.0)
         .with_armor(ArmorClass::Mail)
-        .with_skill(Skill::Gunnery, 3)
-        .with_evasion(14.0)
+        .with_skill(Skill::Gunnery, -1) // a beginner shot ⇒ effective 4
+        // no Evade training: baseline Dex 5 ⇒ Evasion 10, the floor — easy to carve up
         .with_attack(weapon(4.0, DamageType::Piercing, PenTier::External, 2))
 }
 
@@ -178,8 +193,8 @@ fn mook(name: &str) -> Unit {
 fn enforcer(name: &str) -> Unit {
     let mut u = body(name, 104.0, 5.0)
         .with_armor(ArmorClass::Plate)
-        .with_skill(Skill::Melee, 5)
-        .with_evasion(12.0)
+        .with_skill(Skill::Melee, 0) // competent ⇒ effective 5
+        .with_skill(Skill::Evade, 1) // Evasion (5 + 1) × 2 = 12
         .with_attack(weapon(5.0, DamageType::Bludgeoning, PenTier::Contact, 1));
     u.character.base_mut().link = 4.0; // a networked surface to hack at
     u.character.base_mut().firewall = 6.0;
@@ -193,8 +208,8 @@ fn enforcer(name: &str) -> Unit {
 fn brute(name: &str) -> Unit {
     body(name, 94.0, 5.0)
         .with_armor(ArmorClass::Plate)
-        .with_skill(Skill::Gunnery, 3)
-        .with_evasion(13.0)
+        .with_skill(Skill::Gunnery, -1) // a beginner shot ⇒ effective 4
+        .with_skill(Skill::Evade, 1) // Evasion (5 + 1) × 2 = 12
         .with_attack(weapon(5.0, DamageType::Piercing, PenTier::Contact, 2))
 }
 
@@ -204,8 +219,9 @@ fn brute(name: &str) -> Unit {
 /// (AWKWARD, low HP): rush it into a wall and gut it.
 fn sniper(name: &str) -> Unit {
     body(name, 58.0, 6.0)
-        .with_skill(Skill::Gunnery, 5)
-        .with_evasion(13.0)
+        .with_dexterity(6.0)
+        .with_skill(Skill::Gunnery, 0) // competent marksman ⇒ effective 6
+        // Evasion (6 + 0) × 2 = 12; fragile up close
         .with_attack(awkward(weapon(7.0, DamageType::Piercing, PenTier::Contact, 6)))
         .with_targeting(TargetingProfile::HighestThreat)
         .with_movement(MovementProfile::Kite)
@@ -216,8 +232,8 @@ fn sniper(name: &str) -> Unit {
 fn grenadier(name: &str) -> Unit {
     body(name, 70.0, 4.0)
         .with_armor(ArmorClass::Mail)
-        .with_skill(Skill::Gunnery, 4)
-        .with_evasion(12.0)
+        .with_skill(Skill::Gunnery, -1) // a beginner shot ⇒ effective 4
+        .with_skill(Skill::Evade, 1) // Evasion (5 + 1) × 2 = 12
         .with_attack(blast(weapon(6.0, DamageType::Bludgeoning, PenTier::External, 3), 1))
 }
 
@@ -225,8 +241,9 @@ fn grenadier(name: &str) -> Unit {
 /// Integrity** target to finish the wounded. Trivial one-on-one; a threat in numbers.
 fn swarmer(name: &str) -> Unit {
     body(name, 40.0, 7.0)
-        .with_skill(Skill::Melee, 4)
-        .with_evasion(15.0)
+        .with_dexterity(6.0)
+        .with_skill(Skill::Melee, -1) // a beginner slash ⇒ effective 4
+        .with_skill(Skill::Evade, 1) // fast and slippery ⇒ Evasion (6 + 1) × 2 = 14
         .with_speed(2)
         .with_attack(weapon(5.0, DamageType::Slashing, PenTier::Internal, 1))
         .with_targeting(TargetingProfile::LowestIntegrity)
@@ -238,9 +255,10 @@ fn swarmer(name: &str) -> Unit {
 /// range. A mirror of the player's runner, and its own deck is a breach target right back.
 fn breaker(name: &str) -> Unit {
     let mut u = body(name, 56.0, 6.0)
-        .with_skill(Skill::Hacking, 6)
-        .with_skill(Skill::Gunnery, 4)
-        .with_evasion(13.0)
+        .with_intellect(6.0)
+        .with_skill(Skill::Hacking, 1) // expert runner ⇒ effective 7
+        .with_skill(Skill::Gunnery, -1) // a beginner sidearm ⇒ effective 4
+        .with_skill(Skill::Evade, 1) // Evasion (5 + 1) × 2 = 12
         .with_attack(weapon(4.0, DamageType::Piercing, PenTier::External, 3))
         .with_targeting(TargetingProfile::HighestThreat)
         .with_movement(MovementProfile::Kite);
@@ -253,8 +271,8 @@ fn breaker(name: &str) -> Unit {
 fn bomber(name: &str) -> Unit {
     body(name, 50.0, 4.0)
         .with_armor(ArmorClass::Mail)
-        .with_skill(Skill::Melee, 4)
-        .with_evasion(12.0)
+        .with_skill(Skill::Melee, -1) // a beginner strike ⇒ effective 4
+        .with_skill(Skill::Evade, 1) // Evasion (5 + 1) × 2 = 12
         .with_attack(weapon(4.0, DamageType::Bludgeoning, PenTier::Contact, 1))
         .with_movement(MovementProfile::Swarm)
         .with_on_death(DeathTrigger::Detonate {
