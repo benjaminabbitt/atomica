@@ -82,12 +82,15 @@ fn body(name: &str, hp: f32, init: f32) -> Unit {
 // -- Player archetypes ------------------------------------------------------------
 
 /// A **blade** — a fast melee bruiser. Slashing shreds the unarmored but glances off
-/// Plate (×0.5), so the blade wants soft targets.
+/// Plate (×0.5), so the blade wants soft targets. Runs **skin weave** — light subdermal
+/// armor that soaks blows into its own HP (a buffer that wears through under fire).
 pub fn blade(name: &str) -> Unit {
-    body(name, 68.0, 7.0)
+    let mut u = body(name, 68.0, 7.0)
         .with_skill(Skill::Melee, 8) // a duelist — lands the blade
         .with_evasion(16.0) // nimble elite — slips most incoming
-        .with_attack(weapon(14.0, DamageType::Slashing, PenTier::Internal, 1))
+        .with_attack(weapon(14.0, DamageType::Slashing, PenTier::Internal, 1));
+    u.install(Implant::skin_weave());
+    u
 }
 
 /// A **netrunner** — a ranged sidearm plus a cyberdeck (hacks enemy chrome). Piercing

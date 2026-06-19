@@ -120,6 +120,24 @@ impl Implant {
         }
     }
 
+    /// **Skin weave** — light subdermal armor woven through the dermis: a small +Plating.
+    /// **Inert physical** (no `DIGITAL` tag): EMP-/hack-proof, only physical wear. Like
+    /// plating it *covers the body* (a wide hit-location band), but it's thinner — a smaller
+    /// HP buffer that wears through sooner than dedicated plating.
+    pub fn skin_weave() -> Self {
+        Self {
+            name: "Skin Weave",
+            contribution: Contribution { plating: 3.0, ..Default::default() },
+            grant_hack: None,
+            hack_effects: vec![], // inert physical — no breach liability
+            condition: Condition::Online,
+            removable: true,
+            coverage: 120, // covers the whole skin — a wide band, just under dedicated plating
+            max_hp: 36.0, // thin: wears through sooner
+            tags: EquipmentTags::NONE,
+        }
+    }
+
     /// **Reflex booster** — +Physical Initiative. Breached ⇒ **Seizure** (Crash).
     pub fn reflex_booster() -> Self {
         Self {
@@ -224,6 +242,16 @@ mod tests {
     use super::*;
     use crate::chargen::{Event, Tag};
     use crate::{BaseLine, Character};
+
+    #[test]
+    fn skin_weave_is_inert_physical_armor() {
+        // Light armor chrome: a small Plating bump, and like plating it's inert physical —
+        // no digital surface for a hack / worm / EMP to trip.
+        assert!(!Implant::skin_weave().is_digital());
+        let mut c = Character::new(chassis());
+        c.install(Implant::skin_weave().to_decorator());
+        assert_eq!(c.realize().plating(), 3.0);
+    }
 
     /// A blank chassis whose innate Firewall (9) is the netrunning baseline, so a
     /// cyberdeck's +2 lands the unit at the even-odds wall (11).
