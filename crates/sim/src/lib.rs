@@ -58,7 +58,7 @@ pub use objective::{
 };
 pub use rng::{RandomSource, ScriptedRng, SplitMix64};
 pub use roll::{resolve_check, resolve_contest, resolve_opposed, Contest, Opposed, RollOutcome};
-pub use skills::{Chassis, Skill, Skills};
+pub use skills::{Chassis, Skill, SkillTier, Skills};
 pub use terrain::{Bounds, Terrain, Tile};
 pub use status::{
     Behavior, Decay, Effect, Magnitude, Resist, Stacking, StatusSpec, Targeting, Timing, Trigger,
@@ -589,6 +589,28 @@ impl Unit {
     /// This unit's level in `skill` — the bonus it brings to a contested roll (§13).
     pub fn skill(&self, skill: Skill) -> i32 {
         self.skills.level(skill)
+    }
+
+    /// **Primary attributes** (`docs/stats.md`) — base + composed modifiers (a plating's
+    /// −Dexterity folds in here). Skills are tiers *on* these.
+    pub fn body(&self) -> i32 {
+        self.realized().body()
+    }
+    pub fn dexterity(&self) -> i32 {
+        self.realized().dexterity()
+    }
+    pub fn intellect(&self) -> i32 {
+        self.realized().intellect()
+    }
+    pub fn will(&self) -> i32 {
+        self.realized().will()
+    }
+
+    /// This unit's **effective rating** at `skill` — `governing attribute + skill tier`
+    /// (`docs/stats.md`). The reworked roll-under combat target is this × 2; a lowered
+    /// attribute (plating −Dex) drags every skill it governs down with it.
+    pub fn effective_skill(&self, skill: Skill) -> i32 {
+        self.realized().attribute(skill.governs()) + self.skills.level(skill)
     }
 
     /// Make a contested roll with this unit's `skill` (+ `equipment`) vs `tn`.
@@ -3084,6 +3106,32 @@ mod tests {
         // remove the blocker (id 1) and it advances into the freed lane.
         let b2 = Battle::new(vec![unit(0, Team::A, 0), unit(2, Team::B, 2)], 1);
         assert_eq!(b2.movement_step(0, 1), Hex::new(1, 0));
+    }
+
+    // -- Stat/skill rework: attributes + tier skills ----------------------------------
+
+    #[test]
+    fn effective_skill_is_attribute_plus_tier() {
+        // Skills are tiers on the governing attribute: effective = attribute + tier.
+        let mut u = unit(0, Team::A, 0);
+        u.character.base_mut().dexterity = 5.0;
+        u.skills.set(Skill::Gunnery, SkillTier::Expert.modifier()); // +1
+        assert_eq!(u.effective_skill(Skill::Gunnery), 6); // Dex 5 + expert 1
+        u.skills.set(Skill::Gunnery, SkillTier::Untrained.modifier()); // −3
+        assert_eq!(u.effective_skill(Skill::Gunnery), 2); // Dex 5 − 3
+    }
+
+    #[test]
+    fn plating_reduces_dexterity_and_drags_dex_skills_with_it() {
+        // The armor tradeoff: heavy plating's −Dexterity lowers the attribute, which drags
+        // every Dex-governed skill (and, later, Evasion) down in one stroke.
+        let mut u = unit(0, Team::A, 0);
+        u.character.base_mut().dexterity = 6.0;
+        u.skills.set(Skill::Gunnery, SkillTier::Competent.modifier()); // 0
+        assert_eq!(u.effective_skill(Skill::Gunnery), 6);
+        u.character.install(Decorator::gear(Tag::Implant, vec![Factor::add(Stat::Dexterity, -2.0)]));
+        assert_eq!(u.dexterity(), 4); // 6 − 2 plating
+        assert_eq!(u.effective_skill(Skill::Gunnery), 4); // dragged down with Dex
     }
 
     // -- Terrain: bounds, pathing, cover, hazards -------------------------------------

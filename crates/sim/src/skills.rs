@@ -1,21 +1,83 @@
-//! Skills & chassis — the per-character roll-modifiers (design-delta §10).
+//! Skills & chassis — the per-character roll-modifiers (`docs/stats.md`).
 //!
-//! *Skills attack, stats defend* (§13): a skill is the additive bonus on a
-//! [`resolve_contest`](crate::resolve_contest) roll. Every [`Chassis`] ships a
-//! **low baseline** in its native skills; XP-growth and chips build from there.
+//! **Skills are tiers *on* a governing attribute** (the rework): a unit's effective rating
+//! at a skill = `governing attribute + skill tier` (untrained −3 … elite +2; competent 0).
+//! The reworked roll is `3d6 ≤ (attribute + tier) × 2`. Every [`Chassis`] ships a low
+//! baseline; XP-growth and chips build from there.
 
-/// A skill domain. The relevant one modifies a contested roll.
+use crate::chargen::Stat;
+
+/// A skill domain. Each is **governed by a primary attribute** ([`Skill::governs`]); the
+/// effective rating is that attribute plus the unit's tier in the skill.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Skill {
+    /// Hand-to-hand (Body).
     Melee,
+    /// Ranged firearms (Dexterity).
     Gunnery,
+    /// Netrunning (Intellect).
     Hacking,
+    /// Field medicine (Intellect).
     Medical,
+    /// **Active defense** — the opposed dodge roll (Dexterity).
+    Evade,
+    /// Moving unseen (Dexterity).
+    Stealth,
+    /// Heavy / support weapons (Body).
+    Heavy,
+    /// Gadgets, repair, demolitions (Intellect).
+    Tech,
 }
 
 impl Skill {
-    pub const ALL: [Skill; 4] = [Skill::Melee, Skill::Gunnery, Skill::Hacking, Skill::Medical];
+    pub const ALL: [Skill; 8] = [
+        Skill::Melee,
+        Skill::Gunnery,
+        Skill::Hacking,
+        Skill::Medical,
+        Skill::Evade,
+        Skill::Stealth,
+        Skill::Heavy,
+        Skill::Tech,
+    ];
     pub const COUNT: usize = Self::ALL.len();
+
+    /// The **governing primary attribute** (`docs/stats.md`). Effective rating at this skill
+    /// = this attribute + the unit's tier in it — so a high attribute lifts all its skills,
+    /// and (e.g.) plating's −Dexterity drags every Dex skill down with it.
+    pub fn governs(self) -> Stat {
+        match self {
+            Skill::Melee | Skill::Heavy => Stat::Body,
+            Skill::Gunnery | Skill::Stealth | Skill::Evade => Stat::Dexterity,
+            Skill::Hacking | Skill::Medical | Skill::Tech => Stat::Intellect,
+        }
+    }
+}
+
+/// A skill **proficiency tier** (`docs/stats.md`): a modifier on the governing attribute.
+/// `competent` = your raw stat; training shifts ±; `untrained` is a steep −3.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum SkillTier {
+    Untrained,
+    Exposed,
+    Beginner,
+    Competent,
+    Expert,
+    Elite,
+}
+
+impl SkillTier {
+    /// The modifier this tier adds to the governing attribute (−3 … +2).
+    pub fn modifier(self) -> i32 {
+        match self {
+            SkillTier::Untrained => -3,
+            SkillTier::Exposed => -2,
+            SkillTier::Beginner => -1,
+            SkillTier::Competent => 0,
+            SkillTier::Expert => 1,
+            SkillTier::Elite => 2,
+        }
+    }
 }
 
 /// A unit's skill levels (one per [`Skill`]).
@@ -41,6 +103,13 @@ impl Skills {
     /// Builder-style set, for inline construction.
     pub fn with(mut self, s: Skill, level: i32) -> Self {
         self.levels[s as usize] = level;
+        self
+    }
+
+    /// Builder: set a skill to a named proficiency [`SkillTier`] (the rework — the stored
+    /// value is the tier modifier on the governing attribute).
+    pub fn with_tier(mut self, s: Skill, tier: SkillTier) -> Self {
+        self.levels[s as usize] = tier.modifier();
         self
     }
 
@@ -95,6 +164,35 @@ impl Chassis {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn skill_tiers_run_untrained_to_elite() {
+        assert_eq!(SkillTier::Untrained.modifier(), -3);
+        assert_eq!(SkillTier::Competent.modifier(), 0); // competent = your raw stat
+        assert_eq!(SkillTier::Elite.modifier(), 2);
+        // ...and they're a monotone ladder.
+        let ladder: Vec<i32> = [
+            SkillTier::Untrained,
+            SkillTier::Exposed,
+            SkillTier::Beginner,
+            SkillTier::Competent,
+            SkillTier::Expert,
+            SkillTier::Elite,
+        ]
+        .map(SkillTier::modifier)
+        .to_vec();
+        assert_eq!(ladder, vec![-3, -2, -1, 0, 1, 2]);
+    }
+
+    #[test]
+    fn each_skill_is_governed_by_an_attribute() {
+        assert_eq!(Skill::Melee.governs(), Stat::Body);
+        assert_eq!(Skill::Heavy.governs(), Stat::Body);
+        assert_eq!(Skill::Gunnery.governs(), Stat::Dexterity);
+        assert_eq!(Skill::Evade.governs(), Stat::Dexterity); // the opposed-defense skill
+        assert_eq!(Skill::Hacking.governs(), Stat::Intellect);
+        assert_eq!(Skill::Tech.governs(), Stat::Intellect);
+    }
 
     #[test]
     fn chassis_baseline_is_low_and_native() {

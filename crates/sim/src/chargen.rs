@@ -69,6 +69,18 @@ pub enum Stat {
     Barrier,
     Damage,
     Evasion,
+    // -- Primary attributes (the stat/skill rework, `docs/stats.md`) -------------------
+    // The four characteristics skills are tiers *on* (effective = attribute + skill-tier)
+    // and the combat stats derive from. ~1-8, competent baseline 5.
+    /// Physical power & toughness — governs Melee/Heavy, feeds Integrity & damage.
+    Body,
+    /// Agility & coordination — governs Gunnery/Stealth/Evade, feeds Evasion & Initiative.
+    /// **Reduced by heavy plating** (the armor tradeoff).
+    Dexterity,
+    /// Wits & training — governs Hacking/Medical/Tech, feeds Firewall.
+    Intellect,
+    /// Resolve & nerve — governs morale / spoof-resist (when that lands).
+    Will,
 }
 
 /// How a [`Factor`] combines with its peers — the **bucket** model (§2). `Add` and
@@ -535,6 +547,11 @@ pub struct BaseLine {
     /// **Evasion** — the physical to-hit TN (`design-delta §394` "stats defend"): an
     /// attacker rolls `3d6 + weapon skill` against this (plus a gun's range penalty).
     pub evasion: f32,
+    /// **Primary attributes** (`docs/stats.md`) — Body / Dexterity / Intellect / Will.
+    pub body: f32,
+    pub dexterity: f32,
+    pub intellect: f32,
+    pub will: f32,
     pub targeting: TargetingProfile,
     pub movement: MovementProfile,
     /// Innate armor class for the mitigation matrix — gear overrides it (last-wins).
@@ -553,6 +570,10 @@ impl BaseLine {
             Stat::Barrier => self.barrier,
             Stat::Damage => self.damage,
             Stat::Evasion => self.evasion,
+            Stat::Body => self.body,
+            Stat::Dexterity => self.dexterity,
+            Stat::Intellect => self.intellect,
+            Stat::Will => self.will,
         }
     }
 }
@@ -610,6 +631,26 @@ impl Realized {
     }
     pub fn evasion(&self) -> i32 {
         self.stat(Stat::Evasion).round() as i32
+    }
+    /// The realized value of any [`Stat`] as an integer — the attribute lookup a skill's
+    /// [`governs`](crate::Skill::governs) drives (effective rating = attribute + tier).
+    pub fn attribute(&self, stat: Stat) -> i32 {
+        self.stat(stat).round() as i32
+    }
+
+    /// **Primary attributes** (`docs/stats.md`) — base + composed modifiers (e.g. plating's
+    /// −Dexterity). Skills are tiers *on* these; the combat stats derive from them.
+    pub fn body(&self) -> i32 {
+        self.stat(Stat::Body).round() as i32
+    }
+    pub fn dexterity(&self) -> i32 {
+        self.stat(Stat::Dexterity).round() as i32
+    }
+    pub fn intellect(&self) -> i32 {
+        self.stat(Stat::Intellect).round() as i32
+    }
+    pub fn will(&self) -> i32 {
+        self.stat(Stat::Will).round() as i32
     }
     pub fn initiative(&self) -> f32 {
         self.stat(Stat::Initiative)
