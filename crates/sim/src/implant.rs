@@ -114,8 +114,8 @@ impl Implant {
             hack_effects: vec![],
             condition: Condition::Online,
             removable: true,
-            coverage: 6, // bulky — covers a lot of the silhouette
-            max_hp: 40.0, // and it's armor: tough
+            coverage: 20, // armor: it *covers* the body, so it catches most blows...
+            max_hp: 60.0, // ...and it's built to take them — high HP, wears down slowly
             tags: EquipmentTags::NONE,
         }
     }
