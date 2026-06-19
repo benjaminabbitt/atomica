@@ -52,10 +52,11 @@ the action phase) tries to **jump** every active contagion to fresh victims:
    - `Proximity(n)` — *biological*: any unit within `n` hexes (a plague needs contact).
    - `Net` — *digital*: any unit with a live surface (`Link > 0`), **distance-independent**
      (a worm doesn't care where you stand).
-2. **Contest** ◆ — a `3d6 + virulence` roll vs the victim's **resist** stat as TN
-   (Immunity for a plague, Firewall for a worm). A hardened immune system / wall
-   beats a weak strain; a virulent one takes hold. (`resolve_contest`, the same
-   `3d6` mechanic as hacks.)
+2. **Contest** ◆ — a roll-under check, `2d10 ≤ virulence − resist`, where the
+   victim's **resist** stat (Immunity for a plague, Firewall for a worm) folds in
+   as a flat **penalty** ([`stats.md`](stats.md) §5). A hardened immune system /
+   wall beats a weak strain; a virulent one takes hold. (`resolve_versus`, the same
+   modifier mechanic as hacks.)
 3. **Land** — on a win the **whole decorator copies itself** onto the victim
    (`install` re-stamps a fresh `GenId`): the contagion is **self-replicating**,
    and the new carrier spreads it onward next round.

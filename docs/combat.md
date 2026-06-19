@@ -33,7 +33,7 @@ In [`crates/sim`](../crates/sim/src/lib.rs) today:
 - **Digital pass**: Link-ordered hacks (see [`netrunning.md`](netrunning.md)).
 - **Terrain board** ([`terrain`](../crates/sim/src/terrain.rs)) — a per-encounter map:
   **soft-zone** bounds (friction past the edge, no hard wall), **blockers** (BFS-pathed
-  around), **cover** (+to-hit TN), **hazards** (per-tick burn). Open/unbounded by default.
+  around), **cover** (a to-hit penalty), **hazards** (per-tick burn). Open/unbounded by default.
 - **Tactical AI** — skirmish (standoff-range) movement, cover-seeking / hazard-dodging,
   and **objective-seeking** (nearest-N%-of-squad flow onto the point, fanning across a
   Search's spots) — see §3.8–9.
@@ -58,9 +58,13 @@ The designed round:
      before it acts);
    - **move** — up to the unit's **move** stat toward its **movement profile**'s
      goal, pathing only through **free** hexes (boxed-in ⇒ no move);
-   - **act** — pick a target via the **targeting profile**, **roll to-hit**
-     (`3d6 + weapon skill + accuracy` vs the target's **Evasion** + weapon range
-     penalties (**ranged** far / **awkward** close); an undefended melee blow auto-hits, §7G), and on a hit resolve the
+   - **act** — pick a target via the **targeting profile**, then resolve an
+     **opposed roll** ([`stats.md`](stats.md) §4): the attacker rolls to hit
+     (`2d10 ≤ effective weapon skill + accuracy − range/cover penalties`) and the
+     target rolls an active **Evade** (`2d10 ≤ Evasion − the weapon's Speed`); the
+     blow lands only if the attacker **succeeds and the defender fails**. An
+     undefended target (Evade ≤ 0) with a clear shot auto-hits (§7G). On a hit,
+     resolve the
      attack over its **footprint** (single / blast / beam, **friendly fire on** for
      physical), then `penetration → defense → magnitude → apply → on-hit statuses → death`.
 3. **Cleanup** — decay / duration ticks; elimination check; **death triggers**.
@@ -77,10 +81,11 @@ The designed round:
 | **Occupancy / pathing / boxed-in** (§10.5a) | occupied hexes block; no free hex ⇒ no move | **free-hex stepping + boxed-in** (greedy, no A*) | ✅ |
 | **Woven initiative** (§7C/§10.3) | one interleaved physical+digital order | **one woven order** (Initiative + Link on one track) | ✅ |
 | **AoE footprints + friendly fire** (§7G) | blast (radius) · beam (line/width); physical hits allies | **`Blast`/`Beam` wired, friendly fire on** | ✅ (width = 1) |
-| **To-hit roll** (§7G, design-delta §394) | `3d6 + weapon skill` vs **Evasion**; undefended melee auto-hits | **`Stat::Evasion` TN; `resolve_attack_with` rolls (TN ≤ 0 ⇒ auto-hit, no RNG)** | ✅ |
+| **To-hit roll** ([`stats.md`](stats.md) §4) | **opposed** `2d10 ≤ skill` (attacker) vs `2d10 ≤ Evade` (defender); undefended ⇒ auto-hit | **`resolve_opposed`: attacker `effective(skill)+acc−pen` vs defender `Evasion − Speed`; Evade ≤ 0 ⇒ auto-hit, no RNG** | ✅ |
+| **Speed → Dodge penalty** ([`stats.md`](stats.md) §4) | a fast attack is harder to dodge; `Attack.speed` docks Evade | **`Attack.speed` (melee ~1, gun ~3) subtracted from the defender's Evasion** | ✅ |
 | **Weapon skills / roles** (§10.5) | a weapon's role picks its skill (blade → Melee, gun → Gunnery) | **`Attack.skill` (Melee/Gunnery) + `accuracy` mod** | ✅ |
 | **Ranged penalty** (§7G) | all projectile weapons get **harder with distance** | **`EquipmentTags::RANGED` rule (in `to_hit_penalty`): 0 (≤2) / -2 (3–4) / -4 (≥5)** | ✅ |
-| **Awkward weapons** (§7G) | rifles / polearms / heavy weapons are clumsy **up close**; handy weapons & hacking exempt | **`EquipmentTags::AWKWARD` rule (in `to_hit_penalty`): +2 TN adjacent, +4 same-hex (≈never), 0 at range ≥ 2; discrete from `RANGED` (a rifle is both)** | ✅ |
+| **Awkward weapons** (§7G) | rifles / polearms / heavy weapons are clumsy **up close**; handy weapons & hacking exempt | **`EquipmentTags::AWKWARD` rule (in `to_hit_penalty`): +2 penalty adjacent, +4 same-hex (≈never), 0 at range ≥ 2; discrete from `RANGED` (a rifle is both)** | ✅ |
 | **Range bands / reach** (§10.5) | gun bands · polearm reach | **`min_range..=range` band** (`usable_at`) | ✅ |
 | **Multiple weapons / selection** | per-target weapon choice | **`Capability::Weapon` grants + `weapon_at` (best in band)** | ✅ |
 | **Smartgun / IFF targeting** (§7F) | smart-linked weapon spares allies in its line of fire | **`Attack.smart` — IFF filters the attacker's team out of the footprint** (`smartlinked()`) | ✅ |
@@ -122,9 +127,13 @@ Sequenced so each phase is shippable and test-first, hardest-leverage first:
    / `digital_phase` are now test-only. A high-Link runner hacks before a sluggish
    bruiser swings.
 5. **Weapons, reach & to-hit ✅** — each weapon has a **role** (`Attack.skill`:
-   Melee / Gunnery) and rolls **to-hit** (`3d6 + skill + accuracy` vs the target's
-   `Stat::Evasion`); an **undefended** melee blow (TN ≤ 0) auto-hits with no roll, so
-   trivial exchanges stay deterministic. Two **discrete** weapon tags bump the TN by
+   Melee / Gunnery) and resolves an **opposed** roll ([`stats.md`](stats.md) §4):
+   the attacker `2d10 ≤ effective(skill) + accuracy − penalties` vs the defender's
+   active **Evade** (`2d10 ≤ Evasion − Speed`). The weapon's **Speed** (a stat on
+   `Attack`, peer of `damage`) is the **Dodge penalty** — a slow swing (Speed ~1)
+   leaves Dodge potent, a fast round (Speed ~3) barely lets the target dodge. An
+   **undefended** target (Evade ≤ 0) auto-hits with no roll, so trivial exchanges
+   stay deterministic. Two **discrete** weapon tags shrink the attacker's target by
    distance (`EquipmentTags`, summed): **`RANGED`** — every projectile weapon is harder the
    farther the shot (`0` ≤2, `-2` at 3–4, `-4` at ≥5); and **`AWKWARD`** — a long /
    unwieldy weapon (rifle, polearm, heavy) is **clumsy up close** (`+2` adjacent, `+4`
@@ -164,7 +173,7 @@ Sequenced so each phase is shippable and test-first, hardest-leverage first:
      (Interior blockers are hard; only the map edge is soft.)
    - **Blockers** (`Tile::Blocked`) — impassable walls movement **routes around** (a BFS
      flow field, `close_step`/`flow_field`; the open default keeps the greedy step).
-   - **Cover** (`Tile::Cover(tn)`) — its occupant is **harder to hit** (+TN in the to-hit
+   - **Cover** (`Tile::Cover(tn)`) — its occupant is **harder to hit** (a penalty in the to-hit
      roll, §5) — and **hazards** (`Tile::Hazard`) — burn whoever stands there each tick
      (`terrain_phase`, a `Damaged{cause:"hazard"}` event).
 9. **Tactical movement & objective-seeking AI ✅** — the profiles (§3.1) made smarter for
