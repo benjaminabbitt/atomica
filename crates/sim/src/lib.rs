@@ -543,10 +543,12 @@ impl Unit {
         self.realized().immunity()
     }
     /// Effective **Evasion** — the active-defense target a roll-under attack is opposed by
-    /// (`docs/stats.md`): **derived** as `(Dexterity + Evade-tier) × 2`, so agility and the
-    /// Evade skill set it and a plating's −Dex lowers it. Zero ⇒ undefended (can't dodge).
+    /// (`docs/stats.md`): **derived** as `Dexterity + Evade-tier` (a *secondary* save, NOT on
+    /// the attack's ×2 scale — defense is the harder roll, so solid attacks mostly land and a
+    /// dodge is the exception). Agility and the Evade skill set it, a plating's −Dex lowers it;
+    /// zero ⇒ undefended (can't dodge).
     pub fn evasion(&self) -> i32 {
-        self.effective_skill(Skill::Evade) * 2
+        self.effective_skill(Skill::Evade)
     }
     /// Effective **Initiative** before status slows (see [`Unit::effective_initiative`]).
     pub fn initiative(&self) -> f32 {
@@ -1419,8 +1421,9 @@ impl<R: RandomSource> Battle<R> {
         let atk_id = self.units[attacker].id;
         // To-hit — the **opposed roll-under** core (`docs/stats.md`): the attacker rolls to
         // hit, `3d6 ≤ (weapon skill)×2 + accuracy − range − cover`, and the target rolls an
-        // active **Evade**, `3d6 ≤ (Dex + evade-tier)×2`. The blow lands only if the attacker
-        // connects **and** the defender fails to dodge. Range = `ranged` (grows with distance)
+        // active **Evade**, `3d6 ≤ Dex + evade-tier` (a secondary save — defense is *not* on the
+        // attack's ×2 scale, so a dodge is the exception, not the rule). The blow lands only if
+        // the attacker connects **and** the defender fails to dodge. Range = `ranged` (grows with distance)
         // + `awkward` (bites up close); cover is the hex's bonus — both shrink the to-hit
         // target. An **undefended** target (Evade ≤ 0) with a clear shot is auto-hit (no RNG;
         // dice only matter once the target can dodge or the shot is hard).
@@ -3403,8 +3406,8 @@ mod tests {
         for seed in 0..40 {
             let mut atk = unit(0, Team::A, 0).with_skill(Skill::Melee, 2);
             atk.character.base_mut().body = 6.0; // effective Melee 8 ⇒ to-hit target 16 (usually connects)
-            let mut tgt = unit(1, Team::B, 1);
-            tgt.character.base_mut().dexterity = 5.0; // Evasion (5 + 0) × 2 = 10 ⇒ dodges ~half
+            let mut tgt = unit(1, Team::B, 1).with_skill(Skill::Evade, 2);
+            tgt.character.base_mut().dexterity = 6.0; // Evasion 6 + 2 = 8 ⇒ dodges ~a quarter
             let mut b = Battle::new(vec![atk, tgt], seed).with_log();
             b.resolve_attack(0, 1);
             match b.events()[0].event.kind() {

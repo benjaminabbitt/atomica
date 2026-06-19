@@ -182,8 +182,8 @@ pub fn full_squad() -> Vec<Unit> {
 fn mook(name: &str) -> Unit {
     body(name, 74.0, 5.0)
         .with_armor(ArmorClass::Mail)
-        .with_skill(Skill::Gunnery, -1) // a beginner shot ⇒ effective 4
-        // no Evade training: baseline Dex 5 ⇒ Evasion 10, the floor — easy to carve up
+        .with_skill(Skill::Gunnery, 0) // competent ⇒ effective 5
+        // no Evade training: baseline Dex 5 ⇒ Evasion 5, the floor — easy to carve up
         .with_attack(weapon(4.0, DamageType::Piercing, PenTier::External, 2))
 }
 
@@ -193,8 +193,9 @@ fn mook(name: &str) -> Unit {
 fn enforcer(name: &str) -> Unit {
     let mut u = body(name, 104.0, 5.0)
         .with_armor(ArmorClass::Plate)
-        .with_skill(Skill::Melee, 0) // competent ⇒ effective 5
-        .with_skill(Skill::Evade, 1) // Evasion (5 + 1) × 2 = 12
+        .with_body(6.0)
+        .with_skill(Skill::Melee, 1) // a hardened veteran ⇒ effective 7
+        .with_skill(Skill::Evade, 1) // Evasion 5 + 1 = 6
         .with_attack(weapon(5.0, DamageType::Bludgeoning, PenTier::Contact, 1));
     u.character.base_mut().link = 4.0; // a networked surface to hack at
     u.character.base_mut().firewall = 6.0;
@@ -208,8 +209,8 @@ fn enforcer(name: &str) -> Unit {
 fn brute(name: &str) -> Unit {
     body(name, 94.0, 5.0)
         .with_armor(ArmorClass::Plate)
-        .with_skill(Skill::Gunnery, -1) // a beginner shot ⇒ effective 4
-        .with_skill(Skill::Evade, 1) // Evasion (5 + 1) × 2 = 12
+        .with_skill(Skill::Gunnery, 0) // competent ⇒ effective 5
+        .with_skill(Skill::Evade, 1) // Evasion 5 + 1 = 6
         .with_attack(weapon(5.0, DamageType::Piercing, PenTier::Contact, 2))
 }
 
@@ -220,8 +221,8 @@ fn brute(name: &str) -> Unit {
 fn sniper(name: &str) -> Unit {
     body(name, 58.0, 6.0)
         .with_dexterity(6.0)
-        .with_skill(Skill::Gunnery, 0) // competent marksman ⇒ effective 6
-        // Evasion (6 + 0) × 2 = 12; fragile up close
+        .with_skill(Skill::Gunnery, 1) // a real marksman threat ⇒ effective 7
+        // Evasion 6 + 0 = 6; fragile up close
         .with_attack(awkward(weapon(7.0, DamageType::Piercing, PenTier::Contact, 6)))
         .with_targeting(TargetingProfile::HighestThreat)
         .with_movement(MovementProfile::Kite)
@@ -232,8 +233,8 @@ fn sniper(name: &str) -> Unit {
 fn grenadier(name: &str) -> Unit {
     body(name, 70.0, 4.0)
         .with_armor(ArmorClass::Mail)
-        .with_skill(Skill::Gunnery, -1) // a beginner shot ⇒ effective 4
-        .with_skill(Skill::Evade, 1) // Evasion (5 + 1) × 2 = 12
+        .with_skill(Skill::Gunnery, 0) // competent ⇒ effective 5
+        .with_skill(Skill::Evade, 1) // Evasion 5 + 1 = 6
         .with_attack(blast(weapon(6.0, DamageType::Bludgeoning, PenTier::External, 3), 1))
 }
 
@@ -242,8 +243,8 @@ fn grenadier(name: &str) -> Unit {
 fn swarmer(name: &str) -> Unit {
     body(name, 40.0, 7.0)
         .with_dexterity(6.0)
-        .with_skill(Skill::Melee, -1) // a beginner slash ⇒ effective 4
-        .with_skill(Skill::Evade, 1) // fast and slippery ⇒ Evasion (6 + 1) × 2 = 14
+        .with_skill(Skill::Melee, 0) // competent ⇒ effective 6
+        .with_skill(Skill::Evade, 1) // fast and slippery ⇒ Evasion 6 + 1 = 7
         .with_speed(2)
         .with_attack(weapon(5.0, DamageType::Slashing, PenTier::Internal, 1))
         .with_targeting(TargetingProfile::LowestIntegrity)
@@ -257,8 +258,8 @@ fn breaker(name: &str) -> Unit {
     let mut u = body(name, 56.0, 6.0)
         .with_intellect(6.0)
         .with_skill(Skill::Hacking, 1) // expert runner ⇒ effective 7
-        .with_skill(Skill::Gunnery, -1) // a beginner sidearm ⇒ effective 4
-        .with_skill(Skill::Evade, 1) // Evasion (5 + 1) × 2 = 12
+        .with_skill(Skill::Gunnery, 0) // competent sidearm ⇒ effective 5
+        .with_skill(Skill::Evade, 1) // Evasion 5 + 1 = 6
         .with_attack(weapon(4.0, DamageType::Piercing, PenTier::External, 3))
         .with_targeting(TargetingProfile::HighestThreat)
         .with_movement(MovementProfile::Kite);
@@ -271,8 +272,8 @@ fn breaker(name: &str) -> Unit {
 fn bomber(name: &str) -> Unit {
     body(name, 50.0, 4.0)
         .with_armor(ArmorClass::Mail)
-        .with_skill(Skill::Melee, -1) // a beginner strike ⇒ effective 4
-        .with_skill(Skill::Evade, 1) // Evasion (5 + 1) × 2 = 12
+        .with_skill(Skill::Melee, 0) // competent ⇒ effective 5
+        .with_skill(Skill::Evade, 1) // Evasion 5 + 1 = 6
         .with_attack(weapon(4.0, DamageType::Bludgeoning, PenTier::Contact, 1))
         .with_movement(MovementProfile::Swarm)
         .with_on_death(DeathTrigger::Detonate {
@@ -570,7 +571,9 @@ mod tests {
         for u in &roster {
             assert!(!u.weapons().is_empty(), "{} should be armed", u.name);
             let ev = u.evasion();
-            assert!((10..=16).contains(&ev), "{} evasion {ev} out of band", u.name);
+            // Evasion = Dexterity + Evade-tier (the secondary-save scale, no ×2): a sane band
+            // is roughly the competent attribute ± a tier of training.
+            assert!((4..=9).contains(&ev), "{} evasion {ev} out of band", u.name);
         }
     }
 
