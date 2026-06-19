@@ -114,8 +114,8 @@ impl Implant {
             hack_effects: vec![],
             condition: Condition::Online,
             removable: true,
-            coverage: 80, // armor: it *covers* the body, so it catches most blows...
-            max_hp: 60.0, // ...and it's built to take them — high HP, wears down slowly
+            coverage: 150, // armor *covers* the body — it catches most blows (the widest band)
+            max_hp: 60.0, // a deep buffer that wears slowly
             tags: EquipmentTags::NONE,
         }
     }
