@@ -245,9 +245,11 @@ impl Run {
             events,
         };
 
-        // Pass the encounter only if the army survived **and** the objective held
-        // (not Failed). Otherwise the run ends — a wipe *or* a failed mission.
-        if self.roster.is_empty() || !objective.is_satisfied() {
+        // Pass the encounter only if the army survived, the objective didn't **fail**, and the
+        // fight wasn't a **draw**. Clearing the field early still wins a positional objective
+        // (Winner(A) with a Pending objective), but a stalemate / tick-cap **draw** — e.g. a
+        // Datamine node neither cracked nor destroyed — is *not* a win: the mission wasn't done.
+        if self.roster.is_empty() || !objective.is_satisfied() || outcome == Outcome::Draw {
             self.outcome = RunOutcome::Lost;
         } else {
             self.index += 1;

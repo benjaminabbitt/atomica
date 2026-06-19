@@ -480,6 +480,12 @@ impl Unit {
         self.set_weapon(w);
     }
 
+    /// Strip the weapon loadout — an **unarmed** unit (a data node / objective prop) that never
+    /// attacks. Every unit ships a default melee; a terminal shouldn't fight back.
+    pub fn disarm(&mut self) {
+        self.character.remove_where(Tag::Weapon);
+    }
+
     /// Builder: set the on-death trigger (§10.9).
     pub fn with_on_death(mut self, trigger: DeathTrigger) -> Self {
         self.on_death = trigger;
@@ -810,6 +816,12 @@ const KNOCKOUT_STUN: u32 = 2;
 /// **a crit (nat-18) and nothing else** clears it. Lower it to widen the gate to a
 /// "decisive margin" tier (then `margin ≥ this` also knocks out). Placeholder (TBD).
 const KNOCKOUT_MARGIN: i32 = i32::MAX;
+
+/// **Overheat** payload (`netrunning.md`): every landed hack cooks the target with an Internal
+/// DoT for `OVERHEAT_DURATION` ticks, `OVERHEAT_BASE` stacks + one per [`hack::margin_stacks`]
+/// of the breach margin — so a deeper crack burns hotter. This is netrunning's damage. (TBD.)
+const OVERHEAT_DURATION: u32 = 3;
+const OVERHEAT_BASE: u32 = 1;
 
 /// Does `outcome` clear the knockout gate — a crit, or a margin at/above the decisive
 /// `tier`? (§6: "any hack-effect that stuns is crit-gated; everything else scales with
@@ -1229,11 +1241,23 @@ impl<R: RandomSource> Battle<R> {
     /// `id` as the deterministic tiebreak.
     fn select_target(&self, i: usize) -> Option<usize> {
         let me = &self.units[i];
+        // Don't **weapon**-target the **data node** — an *unarmed* enemy sitting on one of our
+        // objective focus hexes — we mean to *hack* it, not slag it (`netrunning.md`). Both
+        // conditions matter: an *armed* enemy contesting a Hold/Capture point is still shot
+        // normally, and a stray unarmed unit off-objective isn't spared.
+        let foci = self
+            .objectives
+            .foci(&self.units, self.tick, self.fight_over())
+            .map(|(h, _)| h)
+            .unwrap_or_default();
+        let foci = &foci;
         let enemies = || {
-            self.units
-                .iter()
-                .enumerate()
-                .filter(move |(j, u)| *j != i && u.is_alive() && u.team == me.team.enemy())
+            self.units.iter().enumerate().filter(move |(j, u)| {
+                *j != i
+                    && u.is_alive()
+                    && u.team == me.team.enemy()
+                    && !(foci.contains(&u.pos) && u.weapon_at_any().is_none())
+            })
         };
         let by_f32 = |key: fn(&Unit) -> f32, want_max: bool| {
             enemies()
@@ -1785,12 +1809,37 @@ impl<R: RandomSource> Battle<R> {
         }
     }
 
-    /// Resolve a netrunning hack from `attacker` onto `target` (§7F, §10.8): roll
-    /// `2d10 ≤ avg(Hacking, channel) − Firewall` (Firewall as a penalty, §13),
-    /// where the **channel** is the weaker endpoint's Link bandwidth (`min`). The
-    /// target's Link feeds the channel, not the wall, so a darker target is harder
-    /// to hack; defense is the Firewall alone. Zero Link stays the hard
-    /// reachability gate. Lands the hack's payload (margin-scaled) on success.
+    /// The best **net defense** available to `target`'s side (`netrunning.md` §2) — the value
+    /// a hack is opposed by. It's the highest of: the target's passive **Firewall**; its own
+    /// **Hacking**, if the target is itself a runner (it parries code with code); and the
+    /// **Hacking of any allied netrunner covering it** — a living ally with a deck (Link > 0)
+    /// whose antenna reach spans the target, so a runner can actively defend a **node it
+    /// controls**. `≤ 0` ⇒ an undefended surface (no active defense, no defender roll).
+    fn net_defense(&self, target: usize) -> i32 {
+        let t = &self.units[target];
+        let mut d = t.firewall();
+        if t.hack().is_some() {
+            d = d.max(t.effective_skill(Skill::Hacking));
+        }
+        for (i, ally) in self.units.iter().enumerate() {
+            if i == target || ally.team != t.team || !ally.is_alive() {
+                continue;
+            }
+            if let Some(h) = ally.hack() {
+                if ally.link() > 0 && ally.pos.distance(t.pos) <= h.range {
+                    d = d.max(ally.effective_skill(Skill::Hacking));
+                }
+            }
+        }
+        d
+    }
+
+    /// Resolve a netrunning hack from `attacker` onto `target` (§7F, §10.8): an **opposed**
+    /// roll — the runner rolls `2d10 ≤ avg(effective Hacking, channel)` and the target's
+    /// **net defense** ([`Battle::net_defense`]) rolls back; the breach lands only if the
+    /// runner connects **and** the defense fails. The **channel** is the weaker endpoint's
+    /// Link bandwidth (`min`), so a darker target is harder to crack. Zero Link stays the
+    /// hard reachability gate. Lands the hack's payload (margin-scaled) on success.
     pub fn resolve_hack(&mut self, attacker: usize, target: usize) -> HackResult {
         let Some(hack) = self.units[attacker].hack() else {
             return HackResult::NoHack;
@@ -1811,13 +1860,17 @@ impl<R: RandomSource> Battle<R> {
         let channel = self.units[attacker].digital_band().min(self.units[target].digital_band());
         let rating = hack_rating(self.units[attacker].effective_skill(Skill::Hacking), channel)
             + self.units[attacker].mesh_synergy(); // meshed PAN throughput (§5)
-        let firewall = self.units[target].firewall();
-        // An **undefended** surface (Firewall ≤ 0) has no active defense — the runner just
-        // rolls to crack (like an undefended melee blow, §4). Otherwise the Firewall rolls back,
-        // and the breach lands only if the runner connects **and** the Firewall fails. The
-        // runner's roll carries the margin / crit that scale the payload either way.
-        let outcome = if firewall > 0 {
-            let opposed = resolve_opposed(&mut self.rng, rating, firewall);
+        // **Active net defense** (`netrunning.md` §2): the breach is opposed by whichever
+        // defense is **favorable** — the target's passive Firewall, its own Hacking if it is a
+        // runner, or the Hacking of an **allied netrunner covering it** (so a runner defends a
+        // node it controls). See [`Battle::net_defense`].
+        let defense = self.net_defense(target);
+        // An **undefended** surface (defense ≤ 0) has no active defense — the runner just rolls
+        // to crack (like an undefended melee blow, §4). Otherwise the defense rolls back, and
+        // the breach lands only if the runner connects **and** the defense fails. The runner's
+        // roll carries the margin / crit that scale the payload either way.
+        let outcome = if defense > 0 {
+            let opposed = resolve_opposed(&mut self.rng, rating, defense);
             RollOutcome { success: opposed.landed, ..opposed.attack }
         } else {
             resolve_check(&mut self.rng, rating)
@@ -1831,6 +1884,12 @@ impl<R: RandomSource> Battle<R> {
         });
         let stacks =
             if outcome.success { self.apply_breach(target, &outcome, hack) } else { 0 };
+        if outcome.success {
+            // Forcing the system **overheats** the chrome — netrunning's damage layer, an
+            // Internal DoT whose bite scales with the breach margin (`netrunning.md`).
+            let burn = OVERHEAT_BASE + hack::margin_stacks(outcome.margin);
+            self.units[target].add_status(StatusSpec::overheat(), OVERHEAT_DURATION, burn);
+        }
         HackResult::Rolled { outcome, stacks }
     }
 
@@ -1914,6 +1973,14 @@ impl<R: RandomSource> Battle<R> {
     fn nearest_hackable_enemy(&self, i: usize) -> Option<usize> {
         let me = &self.units[i];
         let range = me.hack().map_or(0, |h| h.range);
+        // **Objective-aware** (`netrunning.md`): a runner prioritizes cracking a hackable enemy
+        // sitting on an objective focus hex (a Datamine **node**) over poking the nearest grunt
+        // — so the dive actually drives toward the prize. Falls back to nearest otherwise.
+        let foci = self
+            .objectives
+            .foci(&self.units, self.tick, self.fight_over())
+            .map(|(hexes, _)| hexes)
+            .unwrap_or_default();
         self.units
             .iter()
             .enumerate()
@@ -1924,7 +1991,7 @@ impl<R: RandomSource> Battle<R> {
                     && u.link() > 0
                     && me.pos.distance(u.pos) <= range
             })
-            .min_by_key(|(_, u)| (me.pos.distance(u.pos), u.id))
+            .min_by_key(|(_, u)| (!foci.contains(&u.pos), me.pos.distance(u.pos), u.id))
             .map(|(j, _)| j)
     }
 }
@@ -2947,7 +3014,8 @@ mod tests {
 
     #[test]
     fn a_marginal_hack_just_disables_the_implant() {
-        // Margin 0 success → the §6 floor: disable only, no liability fired.
+        // Margin 0 success → the §6 floor: disable + a light Overheat, but the implant's own
+        // liability (Seizure) does *not* fire — that needs margin / a crit.
         let mut atk = runner(0, Team::A, 0, 4);
         atk.character.base_mut().link = 4.0;
         atk.skills.set(Skill::Hacking, 4); // eff Hacking 14; channel 4 → rating 9
@@ -2958,7 +3026,9 @@ mod tests {
         let mut b = Battle::with_rng(vec![atk, tgt], ScriptedRng::from_d10([4, 5]));
         assert!(b.resolve_hack(0, 1).landed());
         assert_eq!(b.units[1].implant_condition(0), Condition::Offline); // disabled
-        assert!(b.units[1].statuses().is_empty()); // nothing fired (margin 0, no crit)
+        let names: Vec<_> = b.units[1].statuses().iter().map(|s| s.0).collect();
+        assert!(names.contains(&"Overheat")); // the hack's thermal damage lands
+        assert!(!names.contains(&"Seizure")); // but the liability is gated (margin 0, no crit)
     }
 
     #[test]

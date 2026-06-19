@@ -173,6 +173,23 @@ impl StatusSpec {
         }
     }
 
+    /// Overheat — a hack's **thermal** payload (`netrunning.md`): forcing the system cooks the
+    /// chrome from the inside, an **Internal** DoT (bypasses armor) that stacks with the breach
+    /// margin. Deterministic, unresisted — this is netrunning's *damage*.
+    pub fn overheat() -> Self {
+        Self {
+            name: "Overheat",
+            effect: Effect::Dot { magnitude: Magnitude::Flat(2.0), pen: PenTier::Internal },
+            trigger: Trigger::Tick,
+            timing: Timing::TickStart,
+            decay: Decay::Duration,
+            stacking: Stacking::Stack { max: 5 },
+            behavior: Behavior::Deterministic,
+            targeting: Targeting::Enemy,
+            resist: Resist::None,
+        }
+    }
+
     /// Poison — Internal DoT, *stochastic*, resisted by Immunity, no spread.
     pub fn poison() -> Self {
         Self {

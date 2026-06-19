@@ -8,7 +8,7 @@
 //! explicit **fail condition** is met — being merely unachieved is not a failure.
 //! The standard fight still drives *termination* (see [`Battle::outcome`]).
 
-use crate::{Hex, Team, Unit};
+use crate::{Condition, Hex, Team, Unit};
 
 /// The player's side by convention; the enemy is [`Team::B`].
 pub const PLAYER: Team = Team::A;
@@ -302,6 +302,35 @@ impl Objective for Extract {
     }
 }
 
+/// **Datamine** — breach the networked **data node** to extract its data (`netrunning.md`).
+/// Win by *hacking*, not shooting: the node is cracked when one of its implants is breached
+/// (knocked **Offline** by a runner). A netrunner guarding it covers it with an active defense
+/// ([`Battle::net_defense`](crate::Battle)), so the dive is "clear the ICE, then crack the
+/// node." Latched: once cracked it stays won even if the node is later destroyed.
+pub struct Datamine {
+    pub node: Hex,
+    cracked: bool,
+}
+impl Objective for Datamine {
+    fn tick(&mut self, units: &[Unit], _tick: u32) {
+        let breached = units.iter().any(|u| {
+            u.team == ENEMY
+                && u.pos == self.node
+                && (0..u.implants.len()).any(|i| u.implant_condition(i) == Condition::Offline)
+        });
+        self.cracked |= breached;
+    }
+    fn status(&self, units: &[Unit], _tick: u32, fight_over: bool) -> ObjectiveStatus {
+        latched(self.cracked, units, fight_over)
+    }
+    fn focus(&self) -> Option<Hex> {
+        Some(self.node)
+    }
+    fn seeker_pct(&self) -> u32 {
+        50 // push the runner up to the node; the rest screen the ICE
+    }
+}
+
 /// What to **do at the correct location** once a [`Search`] turns it up — the "…and do the
 /// above" tail. Each instantiates the matching objective *at the found hex*.
 #[derive(Clone, Copy, Debug)]
@@ -403,6 +432,10 @@ pub enum ObjectiveKind {
     Flag(Hex, u32),
     /// Grab the item at `item`, then carry it to `exit` ([`Extract`]).
     Extract { item: Hex, exit: Hex },
+    /// **Breach the data node** at `node` — extract its data by *hacking* it (the netrunning
+    /// objective, `netrunning.md`); the runner must crack it, a netrunner guarding it
+    /// defends it actively ([`Datamine`]).
+    Datamine(Hex),
     /// Search up to four `spots` (first `count` are live); the `correct` one reveals a
     /// [`FoundAction`] follow-up done at that hex ([`Search`]). Build via [`ObjectiveKind::search`].
     Search { spots: [Hex; 4], count: u8, correct: u8, then: FoundAction },
@@ -434,6 +467,7 @@ impl ObjectiveKind {
             ObjectiveKind::Extract { item, exit } => {
                 Box::new(Extract { item, exit, has_item: false, done: false })
             }
+            ObjectiveKind::Datamine(node) => Box::new(Datamine { node, cracked: false }),
             ObjectiveKind::Search { spots, count, correct, then } => {
                 let spots = spots[..count as usize].to_vec();
                 let searched = vec![false; spots.len()];

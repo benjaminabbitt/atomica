@@ -180,6 +180,13 @@ pub fn full_squad() -> Vec<Unit> {
     ]
 }
 
+/// A **heist team** for a [`datamine`] dive — the core trio plus the **sapper** (its EMP cracks
+/// chrome through Firewall, a second way at the node), but **no marksman**: its `Backline`
+/// targeting would shell the backmost unit (the objective node itself) and slag the data.
+pub fn heist_team() -> Vec<Unit> {
+    vec![blade("Katana"), runner("Glitch"), bulwark("Anvil"), sapper("Surge")]
+}
+
 // -- Enemy archetypes -------------------------------------------------------------
 
 /// A soft, lightly-armored **mook** (Mail) — cannon fodder the blade carves up. Hits
@@ -473,6 +480,43 @@ pub fn extract_run() -> RunPlan {
         )
         .on(yard())
         .with_objective(ObjectiveKind::Extract { item: Hex::new(6, 2), exit: Hex::new(0, 2) })],
+    )
+}
+
+/// A **data node** — a bolted-down networked terminal, the [`datamine`] prize. Tanky and
+/// immobile, with a fat surface (Link) and its own wall; you **crack it by hacking** (breaching
+/// its implant), not by shelling it. The guarding netrunner stiffens its defense (`net_defense`).
+fn data_node(name: &str) -> Unit {
+    let mut u = body(name, 320.0, 3.0)
+        .with_armor(ArmorClass::Plate)
+        .with_speed(0) // bolted to the floor
+        .with_movement(MovementProfile::Hold);
+    u.character.base_mut().link = 5.0; // a fat surface to dive
+    u.character.base_mut().firewall = 2.0; // a thin own-wall; the guarding runner stiffens it
+    u.install(Implant::firewall_suite()); // a digital implant — breaching it (Offline) cracks the node
+    u.disarm(); // a terminal, not a combatant — it never attacks
+    u
+}
+
+/// A **data heist** — breach the bolted-down [`data_node`] to extract its data (the netrunning
+/// objective). A guarding **breaker** defends the node *actively*, so the play is **clear the
+/// ICE, then crack the node**: drop the enemy runner to kill the active defense, then dive. The
+/// node deploys first (enemy row 0 ⇒ hex `(6, 0)`).
+pub fn datamine() -> RunPlan {
+    RunPlan::new(
+        "Data Heist",
+        vec![Encounter::new(
+            "Black Vault",
+            vec![
+                data_node("Server"), // row 0 ⇒ the node hex below
+                breaker("ICE").with_movement(MovementProfile::Hold), // guards the node (holds, does not kite)
+                enforcer("Sentinel"),
+                mook("Sec-1"),
+                mook("Sec-2"),
+            ],
+        )
+        .on(yard())
+        .with_objective(ObjectiveKind::Datamine(Hex::new(6, 0)))],
     )
 }
 

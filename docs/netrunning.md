@@ -55,13 +55,19 @@ breach lands = runner succeeds AND Firewall fails
   (`hack_rating`). Skill and channel each carry half the weight — a master runner
   on a thin pipe is dragged down but not gutted.
 - **Skill attacks, the stat defends — as an opposed roll** ◆ (`stats.md` §4, the
-  same shape as combat). The target's **Firewall** rolls an *active defense*: the
-  breach lands only if the runner connects **and** the Firewall fails its own
-  roll, so a stiffer wall **defends more often** (not "subtracts more"). An
-  **undefended** surface (Firewall ≤ 0) skips the defense roll. **Link-blind on
-  defense** — the target's Link enters the *attack* (the channel), never the wall,
-  so a **darker target is harder to hack** (thin channel) while a **juicy high-Link
-  target is easier** (its exposure widens the attacker's pipe).
+  same shape as combat). The target's **net defense** rolls back: the breach lands
+  only if the runner connects **and** the defense fails, so a stiffer defense
+  **defends more often** (not "subtracts more"). An **undefended** surface (defense
+  ≤ 0) skips the defense roll. **Link-blind on defense** — the target's Link enters
+  the *attack* (the channel), never the wall, so a **darker target is harder to
+  hack** while a **juicy high-Link target is easier**.
+- **Active net defense ✅ — runners parry, and cover nodes** ◆ (`Battle::net_defense`).
+  The defense is the **highest** of: the target's passive **Firewall**; its own
+  **Hacking**, if the target is itself a runner (it parries code with code); and the
+  **Hacking of any allied runner covering it** — a living ally with a deck whose
+  antenna reach spans the target. So netrunners are hard to hack (they defend at
+  skill), and a runner can **actively defend a node it controls** — the "ICE" on a
+  [`Datamine`] vault. Kill the guarding runner and the node drops to its own wall.
 - **Equipment arms the roll through the stats, not a separate term** ◆ — a
   cyberdeck raises **Link**, a skill-chip raises **Hacking**, a Firewall implant
   raises **Firewall**. There is no separate roll term — the stats *are* the contest
@@ -107,10 +113,19 @@ still need their own substrate:
 
 | Payload mode | What it does | Status |
 |---|---|---|
+| **Overheat (damage)** | every landed hack cooks the target — an **Internal DoT** (bypasses armor), margin-scaled. *This is netrunning's damage*: a hack now kills, not just disables | ✅ built (`StatusSpec::overheat`) |
 | **Trip a hack-effect** | breach an implant → fire its liability **on the owner**, by the severity ladder | ✅ built (`apply_breach`) |
 | **Disable an implant** | knock a slot **Offline** (the ladder's floor) | ✅ built (`disable_implant`) |
 | **Deploy a worm** | plant a spreading, re-rolling contagion strain | 🔭 **Worm contagion** family |
 | **Spoof IFF** | Flip-hostile / Masquerade / Scramble / Ghost | 🔭 **IFF / targeting** layer |
+
+**A netrunning objective ✅ — the [`Datamine`] dive.** Beyond shooting: an
+encounter can task the squad to **breach a bolted-down data node** (crack its
+implant) rather than wipe the field. The runner is **objective-aware** (it
+prioritizes hacking the node over poking grunts), the squad **won't slag the node**
+it means to crack (an unarmed enemy on the objective hex is spared weapon-fire), and
+a guarding netrunner **defends it actively** (above). The play: clear the ICE, then
+crack the vault — a self-contained showcase of the digital realm.
 
 **Severity scales with the roll ✅** (`cyberware.md` §6). A breach is not one
 thing: a plain success **disables** the target implant (the floor — it goes

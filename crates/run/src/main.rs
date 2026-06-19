@@ -42,6 +42,7 @@ fn scenario(name: &str) -> (Vec<Unit>, RunPlan) {
         "holdline" | "defend" => (content::full_squad(), content::hold_the_line()),
         "seize" | "flag" => (content::full_squad(), content::seize()),
         "recon" | "search" => (content::full_squad(), content::recon()),
+        "datamine" | "heist" => (content::heist_team(), content::datamine()),
         _ => (content::starter_roster(), content::gauntlet()),
     }
 }
