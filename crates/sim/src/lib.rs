@@ -570,10 +570,14 @@ impl Unit {
     /// script (hack target lean + program lead). A `GEAR`-priority override, so a `CORRUPTION`
     /// Spoof still beats it.
     pub fn with_doctrine(mut self, d: NetDoctrine) -> Self {
-        self.character.install(
-            Decorator::gear(Tag::Gear, vec![]).with_override(Override::Doctrine(d)),
-        );
+        self.set_doctrine(d);
         self
+    }
+
+    /// Set the **netrunning doctrine** in place — the mutator peer of [`Unit::with_doctrine`], for
+    /// rosters that equip a unit after building it (the demo / run layer).
+    pub fn set_doctrine(&mut self, d: NetDoctrine) {
+        self.character.install(Decorator::gear(Tag::Gear, vec![]).with_override(Override::Doctrine(d)));
     }
 
     /// The unit's effective **netrunning doctrine** — the behavior layer composed (a spoof

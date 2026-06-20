@@ -5,8 +5,8 @@
 //! timer. All game rules live in the sim crate.
 
 use atomica_sim::{
-    ArmorClass, Attack, Battle, Chassis, DamageType, Footprint, Hex, Implant, Outcome, Skill,
-    StatusSpec, Team, Unit, EquipmentTags,
+    ArmorClass, Attack, Battle, Chassis, DamageType, Footprint, Hex, Implant, NetDoctrine, Outcome,
+    Program, Skill, StatusSpec, Team, Unit, EquipmentTags,
 };
 use egui_macroquad::egui;
 use macroquad::prelude::*;
@@ -59,19 +59,38 @@ fn demo_battle() -> Battle {
         mk(2, "Bulwark", Team::B, 5, 0, 7.0, 4.0, 1, Bludgeoning, Contact, Plate),
         mk(3, "SMG", Team::B, 5, 2, 8.0, 6.0, 3, Piercing, External, Mail),
     ];
-    // Wire the Runner as a netrunner by **installing a cyberdeck** — the implant
-    // grants the hack loadout and folds in its Link (5) + Firewall (the derived
-    // stat line, docs/cyberware.md §7). Its Hacking is a character skill.
+    // Wire the Runner as a netrunner by **installing a cyberdeck** — the implant grants the hack
+    // loadout and folds in its Link (5) + Firewall. A sharp Intellect (the derived Hacking) so the
+    // breaches actually land on first run, and a **Burner doctrine** flying a coherent loadout: it
+    // dives heat-prone chrome and leads with the burns, falling through to a softener.
+    units[1].character.base_mut().intellect = 10.0; // eff Hacking 14
     units[1].skills.set(Skill::Hacking, 4);
     units[1].install(Implant::cyberdeck());
-    // The enemy line shows the netrunning spread (§ calibration): Bulwark is a
-    // hardened, connected "fortress" (deep if cracked); SMG a soft, low-Link
-    // "mook" (easy to land but the thin channel keeps it shallow).
+    for p in [Program::Lockware, Program::Overheat, Program::Meltdown, Program::Breach] {
+        units[1].install_program(p);
+    }
+    units[1].set_doctrine(NetDoctrine::Burner);
+
+    // The enemy line shows the netrunning spread *and* the program duel. Bulwark is a hardened
+    // "fortress" (deep if cracked) running **heat-prone** chrome — a juicy mark for the Runner's
+    // burns — and swinging an EMP maul that fries the deck on contact (the physical counter).
     units[2].character.base_mut().link = 5.0;
-    units[2].character.base_mut().firewall = 15.0; // hardened + connected
+    units[2].character.base_mut().firewall = 8.0; // hardened, but crackable on first run
+    units[2].install(Implant::reflex_booster()); // heat-prone digital chrome (the Burner's target)
     units[2].rearm(|w| w.emp = true); // an EMP maul — frying the Runner's deck on contact
+
+    // SMG is a soft **enemy breaker**: its own cyberdeck lets it hack back, running a Controller
+    // doctrine that **Spoofs** the Runner's script and a **Ghost** that keeps it harder to crack.
+    units[3].character.base_mut().intellect = 9.0;
     units[3].character.base_mut().link = 2.0;
-    units[3].character.base_mut().firewall = 9.0; // soft + dark
+    units[3].character.base_mut().firewall = 6.0;
+    units[3].skills.set(Skill::Hacking, 2);
+    units[3].install(Implant::cyberdeck());
+    for p in [Program::Lockware, Program::Spoof, Program::Ghost] {
+        units[3].install_program(p);
+    }
+    units[3].set_doctrine(NetDoctrine::Controller);
+
     // Seed a couple of statuses so the pipeline is visible on first run.
     units[2].add_status(StatusSpec::burn(), 6, 3);
     units[3].add_status(StatusSpec::lag(), 6, 1);
