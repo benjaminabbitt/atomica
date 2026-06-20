@@ -108,6 +108,7 @@ sketches (TBD); the benefit and its corruption are sized to mirror.
 | **Metabolic pump** | bio-sys | +regen (Adaptive System) | — | — | — | **Overload** — Internal DoT (runs hot) |
 | **Sensor suite** | optics | +AR range, reveal stealth | mid | — | — | **Blind** — off-AR → dumb targeting |
 | **Combat stim** | stim | +damage / Overclock (haste) | — | — | — | **Overdose** — self-DoT → Crash |
+| **Neural net** ✅ | cortex | **+Intellect** — lifts every Intellect skill (Hacking loudest) + net defense | — | — | — | **Scramble** — cognition slowed (Lag) |
 | **Skill chip** | chip | **+1 skill** (capped low, §10) | low | — | — | **Scramble** — skill denied |
 
 The **Cyberdeck** is the keystone link to the netrunning system: a unit hacks
@@ -117,7 +118,9 @@ cannons; its **Lockout** is the cost of having a deck breached.
 
 **Built so far (Phase A/B ✅, `implant.rs`):** Cyberdeck, Subdermal Plating,
 Reflex Booster, Firewall Suite, **Combat Stim** (a multi-effect **Overdose** —
-self-DoT + Crash, exercising the per-effect ladder), Metabolic Pump. **Pending a
+self-DoT + Crash, exercising the per-effect ladder), Metabolic Pump, **Neural Net**
+(the first **attribute** implant — +Intellect, so every skill on it climbs at once;
+breach **Scramble** = Lag). **Pending a
 subsystem (🔭):** Smartgun (targeting profiles), Sensor suite (AR), Skill chip
 (the §10 *take-the-max* rule, vs the current additive fold) — each waits on its
 own layer. The `Contribution` folds Link / Firewall / Plating / Initiative /

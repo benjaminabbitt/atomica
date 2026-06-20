@@ -66,6 +66,7 @@ fn demo_battle() -> Battle {
     units[1].character.base_mut().intellect = 10.0; // eff Hacking 14
     units[1].skills.set(Skill::Hacking, 4);
     units[1].install(Implant::cyberdeck());
+    units[1].install(Implant::neural_net()); // a neural net ups its Intellect → Hacking
     for p in [Program::Lockware, Program::Overheat, Program::Meltdown, Program::Breach] {
         units[1].install_program(p);
     }
@@ -86,6 +87,7 @@ fn demo_battle() -> Battle {
     units[3].character.base_mut().firewall = 6.0;
     units[3].skills.set(Skill::Hacking, 2);
     units[3].install(Implant::cyberdeck());
+    units[3].install(Implant::neural_net()); // the enemy breaker matches the cognition edge
     for p in [Program::Lockware, Program::Spoof, Program::Ghost] {
         units[3].install_program(p);
     }

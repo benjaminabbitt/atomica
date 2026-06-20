@@ -119,6 +119,7 @@ pub fn runner(name: &str) -> Unit {
         .with_attack(awkward(weapon(8.0, DamageType::Piercing, PenTier::Contact, 4))) // a rifle — clumsy in a clinch
         .with_doctrine(NetDoctrine::Burner); // dives heat-prone chrome, leads Overheat (else softens)
     u.install(Implant::cyberdeck());
+    u.install(Implant::neural_net()); // a cognition co-processor — sharper Hacking, stiffer defense
     u.install_program(Program::Lockware); // the deck's basic breach program…
     u.install_program(Program::Overheat); // …the common Overheat program…
     u.install_program(Program::Breach); // …and a softener: a breach exposes the target to the squad
@@ -281,6 +282,7 @@ fn breaker(name: &str) -> Unit {
         .with_movement(MovementProfile::Kite)
         .with_doctrine(NetDoctrine::Controller); // ICE: dives the biggest gun, leads Spoof
     u.install(Implant::cyberdeck());
+    u.install(Implant::neural_net()); // mirrors the player runner's cognition edge
     u.install_program(Program::Lockware); // a mirror of the player runner's loadout…
     u.install_program(Program::Overheat);
     u.install_program(Program::Spoof); // …plus ICE of its own: it corrupts the squad's targeting…

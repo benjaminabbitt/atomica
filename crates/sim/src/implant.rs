@@ -45,6 +45,9 @@ pub struct Contribution {
     pub initiative: f32,
     pub damage: f32,
     pub max_integrity: f32,
+    /// **Intellect** (`docs/stats.md`) — a *cognition* implant (the neural net) lifts the
+    /// attribute that governs Hacking / Medical / Tech, so every skill on it climbs at once.
+    pub intellect: i32,
 }
 
 /// A cyberware implant (`docs/cyberware.md` §1): a bundle of stat contributions,
@@ -188,6 +191,25 @@ impl Implant {
         }
     }
 
+    /// **Neural net** — a cognition co-processor (`docs/stats.md`): **+Intellect**, lifting every
+    /// Intellect-governed skill at once — **Hacking** loudest, so the runner's breaches bite harder
+    /// and, since it parries code with code, its **net defense** stiffens too (Medical / Tech ride
+    /// along). Digital and **heat-prone** (the wetware runs hot). Breached ⇒ **Scramble**: the mind
+    /// fogs and slows (Lag), the benefit inverted.
+    pub fn neural_net() -> Self {
+        Self {
+            name: "Neural Net",
+            contribution: Contribution { intellect: 3, ..Default::default() },
+            grant_hack: None,
+            hack_effects: vec![StatusSpec::lag()], // Scramble — cognition slowed
+            condition: Condition::Online,
+            removable: true,
+            coverage: 10, // cortical wiring, tucked away
+            max_hp: 18.0,
+            tags: EquipmentTags::DIGITAL.with(EquipmentTag::HeatProne), // wetware runs hot
+        }
+    }
+
     /// **Metabolic pump** — +max Integrity (resilience). Breached ⇒ **Overload**:
     /// an Internal DoT (it runs hot).
     pub fn metabolic_pump() -> Self {
@@ -231,6 +253,9 @@ impl Implant {
         if c.max_integrity != 0.0 {
             factors.push(Factor::add(Stat::MaxIntegrity, c.max_integrity));
         }
+        if c.intellect != 0 {
+            factors.push(Factor::add(Stat::Intellect, c.intellect as f32));
+        }
         let mut d = Decorator::gear(Tag::Implant, factors).with_condition(self.condition);
         if let Some(h) = self.grant_hack {
             d = d.with_grant(Capability::Hack(h));
@@ -265,6 +290,17 @@ mod tests {
             damage: 10.0,
             ..Default::default()
         }
+    }
+
+    #[test]
+    fn neural_net_lifts_intellect_and_carries_a_scramble() {
+        // A cognition implant: +Intellect folds straight onto the attribute that governs Hacking.
+        let mut c = Character::new(chassis()); // base Intellect 0
+        c.install(Implant::neural_net().to_decorator());
+        assert_eq!(c.realize().intellect(), 3);
+        assert!(Implant::neural_net().is_digital()); // breachable wetware
+        // Its inverted liability is a cognition Scramble (Lag).
+        assert_eq!(Implant::neural_net().hack_effects[0].name, "Lag");
     }
 
     #[test]
