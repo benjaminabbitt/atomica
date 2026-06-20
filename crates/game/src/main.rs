@@ -53,6 +53,7 @@ fn demo_battle() -> Battle {
     use atomica_sim::PenTier::*;
     use ArmorClass::*;
     use DamageType::*;
+    // (Katana takes wired reflexes below — a stat-up showcase on the melee duelist.)
     let mut units = vec![
         mk(0, "Katana", Team::A, 0, 0, 14.0, 7.0, 1, Slashing, Internal, Padding),
         mk(1, "Runner", Team::A, 0, 2, 9.0, 5.0, 4, Piercing, Contact, Mail),
@@ -71,6 +72,7 @@ fn demo_battle() -> Battle {
         units[1].install_program(p);
     }
     units[1].set_doctrine(NetDoctrine::Burner);
+    units[0].install(Implant::wired_reflexes()); // the duelist's stat-up: +Dexterity → Evasion
 
     // The enemy line shows the netrunning spread *and* the program duel. Bulwark is a hardened
     // "fortress" (deep if cracked) running **heat-prone** chrome — a juicy mark for the Runner's
@@ -78,6 +80,10 @@ fn demo_battle() -> Battle {
     units[2].character.base_mut().link = 5.0;
     units[2].character.base_mut().firewall = 8.0; // hardened, but crackable on first run
     units[2].install(Implant::reflex_booster()); // heat-prone digital chrome (the Burner's target)
+    // A chromed-up heavy — the stat-up suite: a fat HP buffer, raw strength, harder strikes.
+    units[2].install(Implant::decentralized_heart()); // +max Integrity (the HP stat)
+    units[2].install(Implant::actuators()); // +Body (strength)
+    units[2].install(Implant::rams()); // +damage (strike force)
     units[2].rearm(|w| w.emp = true); // an EMP maul — frying the Runner's deck on contact
 
     // SMG is a soft **enemy breaker**: its own cyberdeck lets it hack back, running a Controller

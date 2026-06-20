@@ -45,9 +45,16 @@ pub struct Contribution {
     pub initiative: f32,
     pub damage: f32,
     pub max_integrity: f32,
-    /// **Intellect** (`docs/stats.md`) — a *cognition* implant (the neural net) lifts the
-    /// attribute that governs Hacking / Medical / Tech, so every skill on it climbs at once.
+    /// **Primary attributes** (`docs/stats.md`) — a *stat-up* implant lifts an attribute, so every
+    /// skill on it climbs at once: **Body** (Melee/Heavy — the *actuators*), **Dexterity**
+    /// (Gunnery/Stealth/Evade, so Evasion too — *wired reflexes*), **Intellect** (Hacking/Medical/Tech
+    /// — the *neural net*), **Will**. The derived combat pools (Integrity / damage / initiative) are
+    /// their own fields above — a *decentralized heart* lifts `max_integrity`, *rams* lift `damage`,
+    /// *speedware* lifts `initiative`.
+    pub body: i32,
+    pub dexterity: i32,
     pub intellect: i32,
+    pub will: i32,
 }
 
 /// A cyberware implant (`docs/cyberware.md` §1): a bundle of stat contributions,
@@ -210,6 +217,90 @@ impl Implant {
         }
     }
 
+    /// **Wired reflexes** — fibre-optic nerve relacing: **+Dexterity**, lifting Gunnery / Stealth /
+    /// Evade at once (so **Evasion** climbs — Evasion *is* the Evade skill). Digital + heat-prone.
+    /// Breached ⇒ **Spasm**: the relaced nerves seize (Crash), the benefit inverted.
+    pub fn wired_reflexes() -> Self {
+        Self {
+            name: "Wired Reflexes",
+            contribution: Contribution { dexterity: 2, ..Default::default() },
+            grant_hack: None,
+            hack_effects: vec![StatusSpec::crash()], // Spasm — relaced nerves seize
+            condition: Condition::Online,
+            removable: true,
+            coverage: 25, // spinal / limb nerve trunks
+            max_hp: 22.0,
+            tags: EquipmentTags::DIGITAL.with(EquipmentTag::HeatProne),
+        }
+    }
+
+    /// **Speedware** — overclocked motor drivers: **+Initiative**, so the unit acts sooner on the
+    /// track. Digital + heat-prone. Breached ⇒ **Stutter**: the timing scrambles and drags (Lag).
+    pub fn speedware() -> Self {
+        Self {
+            name: "Speedware",
+            contribution: Contribution { initiative: 3.0, ..Default::default() },
+            grant_hack: None,
+            hack_effects: vec![StatusSpec::lag()], // Stutter — timing drags
+            condition: Condition::Online,
+            removable: true,
+            coverage: 20,
+            max_hp: 20.0,
+            tags: EquipmentTags::DIGITAL.with(EquipmentTag::HeatProne),
+        }
+    }
+
+    /// **Decentralized heart** — a redundant cardiac mesh (`docs/stats.md`): **+max Integrity**, the
+    /// unit's **HP** — its health *is* the Integrity stat, and this fattens it (a deeper buffer than
+    /// the metabolic pump). Digital + heat-prone (the pump-mesh runs hot). Breached ⇒ **Arrest**: the
+    /// rhythm faults and bleeds (Internal DoT), the benefit inverted.
+    pub fn decentralized_heart() -> Self {
+        Self {
+            name: "Decentralized Heart",
+            contribution: Contribution { max_integrity: 14.0, ..Default::default() },
+            grant_hack: None,
+            hack_effects: vec![StatusSpec::bleed()], // Arrest — rhythm faults
+            condition: Condition::Online,
+            removable: true,
+            coverage: 20, // visceral
+            max_hp: 30.0,
+            tags: EquipmentTags::DIGITAL.with(EquipmentTag::HeatProne),
+        }
+    }
+
+    /// **Actuators** — myomer muscle-replacement: **+Body**, the strength attribute, lifting Melee /
+    /// Heavy at once. Digital + heat-prone (the powered fibres run hot). Breached ⇒ **Lock**: the
+    /// actuators seize (Crash).
+    pub fn actuators() -> Self {
+        Self {
+            name: "Actuators",
+            contribution: Contribution { body: 2, ..Default::default() },
+            grant_hack: None,
+            hack_effects: vec![StatusSpec::crash()], // Lock — actuators seize
+            condition: Condition::Online,
+            removable: true,
+            coverage: 30, // bulk limb musculature
+            max_hp: 28.0,
+            tags: EquipmentTags::DIGITAL.with(EquipmentTag::HeatProne),
+        }
+    }
+
+    /// **Rams** — hydraulic strike-amplifiers: **+damage** (raw strike force) on every hit. Digital +
+    /// heat-prone. Breached ⇒ **Backfire**: the hydraulics rupture and bleed (Internal DoT).
+    pub fn rams() -> Self {
+        Self {
+            name: "Rams",
+            contribution: Contribution { damage: 4.0, ..Default::default() },
+            grant_hack: None,
+            hack_effects: vec![StatusSpec::bleed()], // Backfire — hydraulics rupture
+            condition: Condition::Online,
+            removable: true,
+            coverage: 25,
+            max_hp: 24.0,
+            tags: EquipmentTags::DIGITAL.with(EquipmentTag::HeatProne),
+        }
+    }
+
     /// **Metabolic pump** — +max Integrity (resilience). Breached ⇒ **Overload**:
     /// an Internal DoT (it runs hot).
     pub fn metabolic_pump() -> Self {
@@ -253,8 +344,17 @@ impl Implant {
         if c.max_integrity != 0.0 {
             factors.push(Factor::add(Stat::MaxIntegrity, c.max_integrity));
         }
+        if c.body != 0 {
+            factors.push(Factor::add(Stat::Body, c.body as f32));
+        }
+        if c.dexterity != 0 {
+            factors.push(Factor::add(Stat::Dexterity, c.dexterity as f32));
+        }
         if c.intellect != 0 {
             factors.push(Factor::add(Stat::Intellect, c.intellect as f32));
+        }
+        if c.will != 0 {
+            factors.push(Factor::add(Stat::Will, c.will as f32));
         }
         let mut d = Decorator::gear(Tag::Implant, factors).with_condition(self.condition);
         if let Some(h) = self.grant_hack {
@@ -301,6 +401,26 @@ mod tests {
         assert!(Implant::neural_net().is_digital()); // breachable wetware
         // Its inverted liability is a cognition Scramble (Lag).
         assert_eq!(Implant::neural_net().hack_effects[0].name, "Lag");
+    }
+
+    #[test]
+    fn stat_up_implants_fold_their_attribute_or_pool() {
+        // Each stat-up implant lifts exactly the stat it advertises (attribute or derived pool).
+        let mut c = Character::new(chassis()); // base attrs 0; init 5, max-int 30, dmg 10
+        c.install(Implant::wired_reflexes().to_decorator()); // +2 Dexterity
+        c.install(Implant::actuators().to_decorator()); // +2 Body
+        c.install(Implant::speedware().to_decorator()); // +3 Initiative
+        c.install(Implant::rams().to_decorator()); // +4 damage
+        let heart = c.install(Implant::decentralized_heart().to_decorator()); // +14 max Integrity
+        let r = c.realize();
+        assert_eq!(r.dexterity(), 2);
+        assert_eq!(r.body(), 2);
+        assert_eq!(r.initiative(), 8.0); // 5 + 3
+        assert_eq!(r.damage(), 14.0); // 10 + 4
+        assert_eq!(r.max_integrity(), 44.0); // 30 + 14 — health IS the Integrity stat
+        // Breaching the heart unfolds the HP it lent (the §6 disable floor).
+        c.set_condition(heart, Condition::Offline);
+        assert_eq!(c.realize().max_integrity(), 30.0);
     }
 
     #[test]

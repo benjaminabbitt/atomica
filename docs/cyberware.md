@@ -109,6 +109,11 @@ sketches (TBD); the benefit and its corruption are sized to mirror.
 | **Sensor suite** | optics | +AR range, reveal stealth | mid | — | — | **Blind** — off-AR → dumb targeting |
 | **Combat stim** | stim | +damage / Overclock (haste) | — | — | — | **Overdose** — self-DoT → Crash |
 | **Neural net** ✅ | cortex | **+Intellect** — lifts every Intellect skill (Hacking loudest) + net defense | — | — | — | **Scramble** — cognition slowed (Lag) |
+| **Wired reflexes** ✅ | nerves | **+Dexterity** — Gunnery/Stealth/Evade (so **Evasion**) | — | — | — | **Spasm** — nerves seize (Crash) |
+| **Speedware** ✅ | motor | **+Initiative** — act sooner on the track | — | — | — | **Stutter** — timing drags (Lag) |
+| **Decentralized heart** ✅ | bio-sys | **+max Integrity** — the unit's **HP** stat, a deep buffer | — | — | — | **Arrest** — rhythm faults (Bleed) |
+| **Actuators** ✅ | muscle | **+Body** — the strength attribute (Melee/Heavy) | — | — | — | **Lock** — actuators seize (Crash) |
+| **Rams** ✅ | strike | **+damage** — raw strike force on every hit | — | — | — | **Backfire** — hydraulics rupture (Bleed) |
 | **Skill chip** | chip | **+1 skill** (capped low, §10) | low | — | — | **Scramble** — skill denied |
 
 The **Cyberdeck** is the keystone link to the netrunning system: a unit hacks
@@ -120,7 +125,10 @@ cannons; its **Lockout** is the cost of having a deck breached.
 Reflex Booster, Firewall Suite, **Combat Stim** (a multi-effect **Overdose** —
 self-DoT + Crash, exercising the per-effect ladder), Metabolic Pump, **Neural Net**
 (the first **attribute** implant — +Intellect, so every skill on it climbs at once;
-breach **Scramble** = Lag). **Pending a
+breach **Scramble** = Lag), and the **stat-up suite** (`Contribution` now folds all four
+attributes): **Wired Reflexes** (+Dexterity), **Speedware** (+Initiative), **Decentralized
+Heart** (+max Integrity — the HP stat), **Actuators** (+Body), **Rams** (+damage) — each a
+benefit↔inverted-liability pair (Crash / Lag / Bleed). **Pending a
 subsystem (🔭):** Smartgun (targeting profiles), Sensor suite (AR), Skill chip
 (the §10 *take-the-max* rule, vs the current additive fold) — each waits on its
 own layer. The `Contribution` folds Link / Firewall / Plating / Initiative /
