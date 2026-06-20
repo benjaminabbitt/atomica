@@ -706,11 +706,22 @@ impl Unit {
         self.realized().will()
     }
 
-    /// This unit's **effective rating** at `skill` — `governing attribute + skill tier`
-    /// (`docs/stats.md`). The reworked roll-under combat target is this × 2; a lowered
-    /// attribute (plating −Dex) drags every skill it governs down with it.
+    /// This unit's **effective rating** at `skill` rolled **off a chosen attribute** — the standard
+    /// framework (`docs/stats.md`): a skill is a trained *tier* that lands on whichever attribute the
+    /// *use case* calls for, not one fixed stat. The tier is constant; the attribute is the
+    /// situation's. So a resolve check borrows a skill's tier but rolls it off **Intellect** (mental
+    /// grit) or **Body** (physical endurance) by context — a Will-flavored save needs no attribute of
+    /// its own. [`effective_skill`](Self::effective_skill) is this on the skill's *home* attribute.
+    pub fn effective_skill_off(&self, skill: Skill, attribute: Stat) -> i32 {
+        self.realized().attribute(attribute) + self.skills.level(skill)
+    }
+
+    /// This unit's **effective rating** at `skill` on its **home** attribute — `governing attribute +
+    /// skill tier` (`docs/stats.md`). The default of [`effective_skill_off`](Self::effective_skill_off);
+    /// the reworked roll-under combat target is this × 2, and a lowered attribute (plating −Dex) drags
+    /// every skill it governs down with it.
     pub fn effective_skill(&self, skill: Skill) -> i32 {
-        self.realized().attribute(skill.governs()) + self.skills.level(skill)
+        self.effective_skill_off(skill, skill.governs())
     }
 
     /// Make a roll-under contest with this unit's **effective** `skill` (+ `equipment`) vs a
@@ -3904,6 +3915,23 @@ mod tests {
         assert_eq!(u.effective_skill(Skill::Gunnery), 12); // Dex 10 + expert 2
         u.skills.set(Skill::Gunnery, SkillTier::Untrained.modifier()); // −4
         assert_eq!(u.effective_skill(Skill::Gunnery), 6); // Dex 10 − 4
+    }
+
+    #[test]
+    fn a_skill_rolls_off_the_use_case_attribute() {
+        // The standard framework (`docs/stats.md`): a trained tier lands on whichever attribute the
+        // use case calls for. A resolve check borrows the *same* tier but rolls off Intellect (mental
+        // grit) or Body (physical endurance) — tier constant, attribute situational.
+        let u = unit(0, Team::A, 0)
+            .with_body(14.0)
+            .with_intellect(8.0)
+            .with_skill(Skill::Medical, 2); // a trained tier to borrow
+        assert_eq!(u.effective_skill(Skill::Medical), 10); // home: Intellect 8 + 2
+        assert_eq!(u.effective_skill_off(Skill::Medical, Stat::Body), 16); // off Body: 14 + 2
+        assert_eq!(
+            u.effective_skill_off(Skill::Medical, Stat::Intellect),
+            u.effective_skill(Skill::Medical), // the home stat reproduces the default
+        );
     }
 
     #[test]

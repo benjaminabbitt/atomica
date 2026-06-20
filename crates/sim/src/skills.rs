@@ -42,9 +42,12 @@ impl Skill {
     ];
     pub const COUNT: usize = Self::ALL.len();
 
-    /// The **governing primary attribute** (`docs/stats.md`). Effective rating at this skill
-    /// = this attribute + the unit's tier in it — so a high attribute lifts all its skills,
-    /// and (e.g.) plating's −Dexterity drags every Dex skill down with it.
+    /// The skill's **home** primary attribute — its *default* governing stat (`docs/stats.md`).
+    /// Effective rating = attribute + the unit's tier; a high attribute lifts all its skills, and
+    /// (e.g.) plating's −Dexterity drags every Dex skill down with it. This is only the default:
+    /// a check can roll the same trained tier off a different, *contextually appropriate* attribute
+    /// (`Unit::effective_skill_off`) — the standard framework, so a resolve check goes off Intellect
+    /// or Body by use case rather than needing a stat of its own.
     pub fn governs(self) -> Stat {
         match self {
             Skill::Melee | Skill::Heavy => Stat::Body,

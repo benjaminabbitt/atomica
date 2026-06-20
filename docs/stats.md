@@ -54,7 +54,7 @@ archetypes 10–13). They are the substrate the four **skill families** are tier
 | **Body** | `unit.body` | Melee, Heavy | **Integrity = Body × `HP_PER_BODY`** ✅ (toughness *is* HP — one stat), **melee damage** ✅ (Body over 10 swings harder) |
 | **Dexterity** | `unit.dexterity` | Gunnery, Stealth, **Evade** | **Evasion** ✅, **physical Initiative** ✅ — *dragged down by heavy plating (the armor tradeoff)* |
 | **Intellect** | `unit.intellect` | Hacking, Medical, Tech | **digital Initiative** ✅ (net turn order — *speed of thought*) |
-| **Will** | `unit.will` | (morale / spoof-resist) | 🔭 |
+| **Will** | `unit.will` | (morale / spoof-resist) | served by the framework, not a roll of its own ✅ — a willpower check rolls a tier off **Intellect** (mental grit) or **Body** (physical endurance) per use case (§3) |
 
 > **Firewall and Link are *granted*, not derived.** They come from gear / chassis (a cyberdeck
 > lifts both), not from an attribute — Intellect governs the netrunning *skills* and the digital
@@ -109,6 +109,20 @@ The tiers run the GURPS default-to-master spread (**±4**):
 
 So an elite duelist on Body 12 with Melee Elite (+4) attacks at effective **16**;
 a rank-and-file mook with an untrained Dex-10 Evade defends at **6**.
+
+**A skill's attribute is the *use case's*, not a fixed binding ✅.** `governs()` names a skill's
+**home** attribute (the default), but the same trained tier can roll off **whichever attribute
+the situation calls for** — `effective_skill_off(skill, stat)`:
+
+```text
+effective skill = (use-case attribute) + skill tier
+```
+
+The tier is what you *trained*; the attribute is what the moment *tests*. This is why **Will needs
+no roll of its own**: a willpower check is just a tier rolled off the appropriate stat —
+**Intellect** for mental grit (composure, spoof-resist), **Body** for physical endurance (shrugging
+off a stagger). The four attributes stay the substrate; the framework lets a skill borrow the one
+that fits.
 
 ---
 
