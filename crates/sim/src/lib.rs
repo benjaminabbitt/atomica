@@ -824,11 +824,11 @@ const KNOCKOUT_STUN: u32 = 2;
 /// "decisive margin" tier (then `margin ≥ this` also knocks out). Placeholder (TBD).
 const KNOCKOUT_MARGIN: i32 = i32::MAX;
 
-/// **Overheat** payload (`netrunning.md`): every landed hack cooks the target with an Internal
-/// DoT for `OVERHEAT_DURATION` ticks, `OVERHEAT_BASE` stacks + one per [`hack::margin_stacks`]
-/// of the breach margin — so a deeper crack burns hotter. This is netrunning's damage. (TBD.)
+/// **Overheat** payload (`netrunning.md`): a **solid** breach cooks the target with an Internal
+/// DoT for `OVERHEAT_DURATION` ticks, one stack per [`hack::margin_stacks`] of the breach margin
+/// — so heat is the reward for a *deep* crack, scaling with degree of success. A marginal hack
+/// (the §6 disable floor) draws **no heat**. This is netrunning's damage. (TBD.)
 const OVERHEAT_DURATION: u32 = 3;
-const OVERHEAT_BASE: u32 = 1;
 
 /// Does `outcome` clear the knockout gate — a crit, or a margin at/above the decisive
 /// `tier`? (§6: "any hack-effect that stuns is crit-gated; everything else scales with
@@ -1889,10 +1889,10 @@ impl<R: RandomSource> Battle<R> {
         });
         let stacks =
             if outcome.success { self.apply_breach(target, &outcome, hack) } else { 0 };
-        if outcome.success {
-            // Forcing the system **overheats** the chrome — netrunning's damage layer, an
-            // Internal DoT whose bite scales with the breach margin (`netrunning.md`).
-            let burn = OVERHEAT_BASE + hack::margin_stacks(outcome.margin);
+        // A **solid** breach overheats the chrome — netrunning's damage layer, an Internal DoT
+        // scaling with the margin (`netrunning.md`). A marginal hack (the §6 floor) draws none.
+        let burn = hack::margin_stacks(outcome.margin);
+        if outcome.success && burn > 0 {
             self.units[target].add_status(StatusSpec::overheat(), OVERHEAT_DURATION, burn);
         }
         HackResult::Rolled { outcome, stacks }
@@ -3019,8 +3019,8 @@ mod tests {
 
     #[test]
     fn a_marginal_hack_just_disables_the_implant() {
-        // Margin 0 success → the §6 floor: disable + a light Overheat, but the implant's own
-        // liability (Seizure) does *not* fire — that needs margin / a crit.
+        // Margin 0 success → the §6 floor: a pure disable. No heat (it needs a solid margin) and
+        // no implant liability (Seizure needs margin / a crit) — nothing fires but the disable.
         let mut atk = runner(0, Team::A, 0, 4);
         atk.character.base_mut().link = 4.0;
         atk.skills.set(Skill::Hacking, 4); // eff Hacking 14; channel 4 → rating 9
@@ -3031,9 +3031,7 @@ mod tests {
         let mut b = Battle::with_rng(vec![atk, tgt], ScriptedRng::from_d10([4, 5]));
         assert!(b.resolve_hack(0, 1).landed());
         assert_eq!(b.units[1].implant_condition(0), Condition::Offline); // disabled
-        let names: Vec<_> = b.units[1].statuses().iter().map(|s| s.0).collect();
-        assert!(names.contains(&"Overheat")); // the hack's thermal damage lands
-        assert!(!names.contains(&"Seizure")); // but the liability is gated (margin 0, no crit)
+        assert!(b.units[1].statuses().is_empty()); // nothing fired (margin 0: no heat, no liability)
     }
 
     #[test]

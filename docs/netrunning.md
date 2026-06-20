@@ -113,7 +113,7 @@ still need their own substrate:
 
 | Payload mode | What it does | Status |
 |---|---|---|
-| **Overheat (damage)** | every landed hack cooks the target — an **Internal DoT** (bypasses armor), margin-scaled. *This is netrunning's damage*: a hack now kills, not just disables | ✅ built (`StatusSpec::overheat`) |
+| **Overheat (damage)** | a **solid breach** (margin ≥ one [`MARGIN_PER_STACK`]) cooks the target — an **Internal DoT** (bypasses armor), scaling with the margin; a marginal disable draws none. *This is netrunning's damage*: a deep crack kills, not just disables | ✅ built (`StatusSpec::overheat`) |
 | **Trip a hack-effect** | breach an implant → fire its liability **on the owner**, by the severity ladder | ✅ built (`apply_breach`) |
 | **Disable an implant** | knock a slot **Offline** (the ladder's floor) | ✅ built (`disable_implant`) |
 | **Deploy a worm** | plant a spreading, re-rolling contagion strain | 🔭 **Worm contagion** family |
