@@ -48,48 +48,98 @@ pub fn hack_rating(hacking: i32, channel: i32) -> i32 {
     (hacking + channel) / 2
 }
 
-/// A unit's hack loadout — the digital action it can take on its turn (§7F).
-///
-/// The hack's *strength* is the unit's own Hacking and the connection channel
-/// (the weaker endpoint's Link); this struct only says *what program* it runs and
-/// *how far*. The `payload`'s own 9-axis spec governs how it behaves once it lands.
+/// A unit's **hack capability** — the digital action a deck grants (§7F): it can project onto
+/// the net. *Strength* is the unit's Hacking and the connection channel; the **programs** it
+/// runs on a breach are a separate loadout on the unit ([`Unit::programs`](crate::Unit)).
 #[derive(Clone, Copy, Debug)]
 pub struct Hack {
-    /// *Legacy* nominal antenna reach. **Superseded:** the effective reach is now
-    /// [`Unit::hack_reach`](crate::Unit) — i.e. the unit's **Link** governs range
-    /// (`netrunning.md`). Retained on the deck spec for now; no longer read by resolution.
+    /// *Legacy* nominal antenna reach. **Superseded:** reach is the unit's **Link**
+    /// ([`Unit::hack_reach`](crate::Unit)). Retained on the deck spec; not read by resolution.
     pub range: i32,
-    /// The status landed on success — a tripped hack-effect or deployed program.
-    pub payload: StatusSpec,
-    /// Stacks at margin 0; the margin (degree of success) adds more.
+    /// Stacks a landed program lands at margin 0; the margin (degree of success) adds more.
     pub base_stacks: u32,
-    /// Duration of the landed status.
+    /// Duration of a landed program's status.
     pub duration: u32,
-    /// Runs the **Overheat** program (`netrunning.md`): a black-market loadout that cooks a
-    /// target's **`VOLATILE`** chrome on a solid breach (an Internal DoT). Off by default — heat
-    /// is an *equipped program*, not innate to hacking, and it only bites heat-prone cyberware.
-    pub overheats: bool,
 }
 
 impl Hack {
-    pub fn new(range: i32, payload: StatusSpec, base_stacks: u32, duration: u32) -> Self {
-        Self { range, payload, base_stacks, duration, overheats: false }
+    pub fn new(range: i32, base_stacks: u32, duration: u32) -> Self {
+        Self { range, base_stacks, duration }
     }
 
-    /// Builder: load the **Overheat** program (heat vs `VOLATILE` chrome).
-    pub fn with_overheat(mut self) -> Self {
-        self.overheats = true;
-        self
-    }
-
-    /// Stacks landed for a resolved `outcome`: base + a margin-scaled bonus + a
-    /// crit bump, or `0` on failure (the §13 degree-of-success rule). The margin
-    /// is floored at `0` so a crit-over-the-wall (negative margin) still lands base.
+    /// Stacks landed for a resolved `outcome`: base + a margin-scaled bonus + a crit bump, or
+    /// `0` on failure. Margin floored at `0` so a crit-over-the-wall still lands base.
     pub fn stacks_for(&self, outcome: &RollOutcome) -> u32 {
         if !outcome.success {
             return 0;
         }
         self.base_stacks + margin_stacks(outcome.margin) + outcome.crit as u32
+    }
+}
+
+/// A **netrunning program** (`netrunning.md`) — a deck-loadout slot, the runner's offensive
+/// software. A breach runs the unit's loaded programs; this is the roster a fixer / Halcyon
+/// Cybernetics would vendor. Loading one **requires a cyberdeck** ([`Unit::install_program`](crate::Unit)).
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum Program {
+    /// **Lockware** — the lockout debuff; a deck's bread-and-butter breach payload.
+    Lockware,
+    /// **Overheat** — cooks a target's **heat-prone** chrome (an Internal DoT); a *solid* breach
+    /// only, against heat-prone gear (a rider, on top of the breach).
+    Overheat,
+    /// **Crash** — a digital stun (decisive / crit breaches). 🔭 rider not yet wired.
+    Crash,
+    /// **Lag** — slows the target's digital initiative. 🔭 rider not yet wired.
+    Lag,
+}
+
+impl Program {
+    /// The full roster, in priority order.
+    pub const ALL: [Program; 4] =
+        [Program::Lockware, Program::Overheat, Program::Crash, Program::Lag];
+    const COUNT: usize = Self::ALL.len();
+
+    /// The status this program lands.
+    pub fn payload(self) -> StatusSpec {
+        match self {
+            Program::Lockware => StatusSpec::lockware(),
+            Program::Overheat => StatusSpec::overheat(),
+            Program::Crash => StatusSpec::crash(),
+            Program::Lag => StatusSpec::lag(),
+        }
+    }
+}
+
+/// A unit's **loaded program set** — its deck loadout (`netrunning.md`). A small `Copy` set
+/// keyed by [`Program`]; build with [`Programs::with`], test with [`Programs::has`].
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct Programs {
+    loaded: [bool; Program::COUNT],
+}
+
+impl Programs {
+    pub const NONE: Programs = Programs { loaded: [false; Program::COUNT] };
+    /// A set of one program.
+    pub const fn just(p: Program) -> Programs {
+        Programs::NONE.with(p)
+    }
+    /// This set with `p` loaded.
+    pub const fn with(mut self, p: Program) -> Programs {
+        self.loaded[p as usize] = true;
+        self
+    }
+    /// Is `p` loaded?
+    pub const fn has(self, p: Program) -> bool {
+        self.loaded[p as usize]
+    }
+    /// The loaded programs, in [`Program::ALL`] order.
+    pub fn iter(self) -> impl Iterator<Item = Program> {
+        Program::ALL.into_iter().filter(move |&p| self.has(p))
+    }
+    /// The **generic breach payload** landed on a chrome-less target — the first loaded
+    /// non-Overheat program (Overheat needs heat-prone chrome to bite), or none.
+    pub fn breach_payload(self) -> Option<StatusSpec> {
+        self.iter().find(|&p| p != Program::Overheat).map(Program::payload)
     }
 }
 
@@ -121,7 +171,7 @@ mod tests {
     use crate::{resolve_versus, ScriptedRng};
 
     fn hack() -> Hack {
-        Hack::new(2, StatusSpec::lockware(), 1, 5)
+        Hack::new(2, 1, 5)
     }
 
     #[test]

@@ -92,13 +92,15 @@ impl Implant {
         Self {
             name: "Cyberdeck",
             contribution: Contribution { link: 5, firewall: 2, ..Default::default() },
-            grant_hack: Some(Hack::new(6, StatusSpec::lockware(), 1, 6).with_overheat()), // runs the common Overheat program
+            grant_hack: Some(Hack::new(6, 1, 6)), // the hack capability; programs load onto the unit
             hack_effects: vec![StatusSpec::lockware()], // Lockout (placeholder)
             condition: Condition::Online,
             removable: true,
             coverage: 10, // small, tucked-away electronics
             max_hp: 18.0, // fragile
-            tags: EquipmentTags::DIGITAL.with(EquipmentTag::HeatProne), // comms gear runs hot
+            tags: EquipmentTags::DIGITAL
+                .with(EquipmentTag::HeatProne) // comms gear runs hot
+                .with(EquipmentTag::Cyberdeck), // the netrunning rig — programs load onto it
         }
     }
 

@@ -1410,7 +1410,7 @@ mod tests {
     // -- capability grant (L1.1) --
 
     fn a_deck(range: i32) -> Capability {
-        Capability::Hack(crate::Hack::new(range, crate::StatusSpec::lockware(), 1, range as u32))
+        Capability::Hack(crate::Hack::new(range, 1, range as u32))
     }
 
     #[test]

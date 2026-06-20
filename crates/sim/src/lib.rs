@@ -48,7 +48,7 @@ pub use chargen::{
 };
 pub use corruption::Corruption;
 pub use event::{BreachVector, CombatEvent, EventLog, FieldValue, Record};
-pub use hack::{hack_rating, Hack, HackResult};
+pub use hack::{hack_rating, Hack, HackResult, Program, Programs};
 pub use hex::Hex;
 pub use implant::{Contribution, Implant, Pan};
 pub use profile::{MovementProfile, TargetingProfile};
@@ -158,10 +158,14 @@ pub enum EquipmentTag {
     /// metabolic pump, reflex booster…). Only **inert physical** chrome (passive armor / plating)
     /// runs cool, so heat bites netrunners and chromed-up builds, not a bare body.
     HeatProne,
+    /// **Cyberdeck** (`netrunning.md`): the netrunning *hardware* — the rig that grants the hack
+    /// capability and that **programs load onto** ([`Unit::install_program`]). No deck ⇒ no
+    /// programs.
+    Cyberdeck,
 }
 
 impl EquipmentTag {
-    const COUNT: usize = 5;
+    const COUNT: usize = 6;
 }
 
 /// A **set of [`EquipmentTag`]s** an item carries (a rifle is `Ranged + Awkward`). A small
@@ -366,6 +370,10 @@ pub struct Unit {
     /// The implant network mode (§5): meshed (synergy, Cascade-vulnerable) vs
     /// segmented (contained, no synergy). A loadout commitment.
     pub pan: Pan,
+    /// **Loaded netrunning programs** (`netrunning.md`) — the unit's deck software (Lockware /
+    /// Overheat / …) that a breach runs. Loading one requires a **cyberdeck**
+    /// ([`Unit::install_program`]); without a deck this stays empty and unused.
+    pub programs: Programs,
     /// The unit's [`Character`] ([`layers.md`](../../docs/layers.md) L5): it owns
     /// **everything composed** — the authored `BaseLine`, the gen (implants / statuses
     /// / buffs / behavior as decorators), and the **live pools** (Integrity / Barrier /
@@ -396,6 +404,7 @@ impl Unit {
             speed: 1,
             implants: Vec::new(),
             pan: Pan::Meshed,
+            programs: Programs::NONE,
             character,
             on_death: DeathTrigger::None,
             death_resolved: false,
@@ -794,12 +803,31 @@ impl Unit {
             .collect()
     }
 
-    /// Does the unit carry any **`VOLATILE`** (heat-prone) active chrome — the subset an
-    /// Overheat program can cook (`netrunning.md`)? `false` for a build of passive armor / comms.
+    /// Does the unit carry any **heat-prone** active chrome — the subset an Overheat program can
+    /// cook (`netrunning.md`)? `false` for a build of inert physical armor.
     fn has_volatile_chrome(&self) -> bool {
         self.active_implant_indices()
             .iter()
             .any(|&i| self.implants[i].spec.tags.has(EquipmentTag::HeatProne))
+    }
+
+    /// Does the unit carry an active **cyberdeck** (a `Cyberdeck`-tagged implant) — the rig that
+    /// programs run on (`netrunning.md`)?
+    pub fn has_cyberdeck(&self) -> bool {
+        self.active_implant_indices()
+            .iter()
+            .any(|&i| self.implants[i].spec.tags.has(EquipmentTag::Cyberdeck))
+    }
+
+    /// **Install a netrunning program** onto the unit's deck. **Requires a
+    /// [`cyberdeck`](Unit::has_cyberdeck)** — returns `false` (a no-op) without one: no deck, no
+    /// programs (`netrunning.md`). The breach runs whatever's loaded.
+    pub fn install_program(&mut self, p: Program) -> bool {
+        if !self.has_cyberdeck() {
+            return false;
+        }
+        self.programs = self.programs.with(p);
+        true
     }
     fn first_digital_implant(&self) -> Option<usize> {
         self.digital_implant_indices().into_iter().next()
@@ -1915,17 +1943,21 @@ impl<R: RandomSource> Battle<R> {
             crit: outcome.crit,
             margin: outcome.margin,
         });
+        // The attacker's loaded **programs** (`netrunning.md`) — its deck software, run on a breach.
+        let programs = self.units[attacker].programs;
         // Read heat-prone chrome **before** the breach (which disables the very implant) — forcing
         // hot chrome is what cooks it.
         let runs_hot = self.units[target].has_volatile_chrome();
-        let stacks =
-            if outcome.success { self.apply_breach(target, &outcome, hack) } else { 0 };
-        // The **Overheat program** (`netrunning.md`): an *equipped* deck loadout (not innate to
-        // hacking) that, on a **solid** breach, cooks the target's **`VOLATILE`** chrome — an
-        // Internal DoT scaling with the margin. No program, a marginal hack (the §6 floor), or a
-        // target with no heat-prone chrome ⇒ no heat.
+        let stacks = if outcome.success {
+            self.apply_breach(target, &outcome, &hack, programs)
+        } else {
+            0
+        };
+        // The **Overheat program**: a rider that, on a **solid** breach, cooks the target's
+        // heat-prone chrome — an Internal DoT scaling with the margin. Needs the program loaded, a
+        // solid (non-floor) breach, and a heat-prone target.
         let burn = hack::margin_stacks(outcome.margin);
-        if outcome.success && hack.overheats && burn > 0 && runs_hot {
+        if outcome.success && programs.has(Program::Overheat) && burn > 0 && runs_hot {
             self.units[target].add_status(StatusSpec::overheat(), OVERHEAT_DURATION, burn);
         }
         HackResult::Rolled { outcome, stacks }
@@ -1934,14 +1966,16 @@ impl<R: RandomSource> Battle<R> {
     /// Apply a successful hack's consequences — the §6 **severity ladder**
     /// (`docs/cyberware.md`): breach a target implant (**disable** floor →
     /// margin-scaled **degrade** → crit **knockout**), firing its `hack_effects`
-    /// per effect. If the target carries no chrome to trip, land the deck's own
-    /// payload instead (a generic intrusion). Returns the magnitude landed.
-    fn apply_breach(&mut self, target: usize, outcome: &RollOutcome, hack: Hack) -> u32 {
+    /// per effect. If the target carries no chrome to trip, land the deck's
+    /// **generic breach program** instead ([`Programs::breach_payload`]). Returns the magnitude.
+    fn apply_breach(&mut self, target: usize, outcome: &RollOutcome, hack: &Hack, programs: Programs) -> u32 {
         let Some(first) = self.units[target].first_digital_implant() else {
-            // No *digital* chrome to trip — run the deck's own payload.
+            // No *digital* chrome to trip — land the deck's generic breach program.
             let stacks = hack.stacks_for(outcome);
-            if stacks > 0 {
-                self.units[target].add_status(hack.payload, hack.duration, stacks);
+            if let Some(spec) = programs.breach_payload() {
+                if stacks > 0 {
+                    self.units[target].add_status(spec, hack.duration, stacks);
+                }
             }
             return stacks;
         };
@@ -2050,7 +2084,8 @@ mod tests {
         let mut u = unit(id, team, q);
         u.character.base_mut().link = 3.0;
         u.character.base_mut().intellect = 10.0; // GURPS-scale Intellect ⇒ effective Hacking = 10 + tier
-        u.grant_hack(Hack::new(range, StatusSpec::lockware(), 1, 5));
+        u.grant_hack(Hack::new(range, 1, 5));
+        u.programs = Programs::just(Program::Lockware); // a deck loaded with the basic breach program
         u
     }
 
@@ -3076,11 +3111,12 @@ mod tests {
             atk.character.base_mut().link = 8.0;
             atk.character.base_mut().intellect = 10.0;
             atk.skills.set(Skill::Hacking, 6); // eff Hacking 16; channel 8 ⇒ rating 12
-            let mut hack = Hack::new(6, StatusSpec::lockware(), 1, 6);
-            if program {
-                hack = hack.with_overheat();
-            }
-            atk.grant_hack(hack);
+            atk.grant_hack(Hack::new(6, 1, 6));
+            atk.programs = if program {
+                Programs::just(Program::Overheat) // the Overheat program loaded
+            } else {
+                Programs::NONE // a deck with no Overheat program
+            };
             let mut tgt = unit(1, Team::B, 1);
             tgt.character.base_mut().link = 8.0;
             if volatile {
@@ -3190,11 +3226,26 @@ mod tests {
         let mut atk = unit(0, Team::A, 0);
         atk.character.base_mut().intellect = 10.0; // GURPS Intellect ⇒ eff Hacking 14
         atk.skills.set(Skill::Hacking, 4);
-        atk.install(Implant::cyberdeck()); // grants hack + Link 5
+        atk.install(Implant::cyberdeck()); // grants hack + Link 5 + the Cyberdeck tag
+        assert!(atk.install_program(Program::Lockware)); // the deck lets a program load
         let tgt = networked(1, Team::B, 1, 0); // soft target, in deck range 6
         let mut b = Battle::with_rng(vec![atk, tgt], ScriptedRng::from_d10([3, 3]));
         b.digital_phase();
-        assert!(!b.units[1].statuses().is_empty()); // hacked via the installed deck
+        assert!(!b.units[1].statuses().is_empty()); // hacked — the Lockware program landed
+    }
+
+    #[test]
+    fn loading_a_program_requires_a_cyberdeck() {
+        // No deck, no programs (`netrunning.md`): install_program is a no-op without a cyberdeck.
+        let mut bare = unit(0, Team::A, 0);
+        assert!(!bare.has_cyberdeck());
+        assert!(!bare.install_program(Program::Overheat)); // rejected
+        assert_eq!(bare.programs, Programs::NONE);
+        // A cyberdeck is the rig programs load onto.
+        bare.install(Implant::cyberdeck());
+        assert!(bare.has_cyberdeck());
+        assert!(bare.install_program(Program::Overheat)); // now it takes
+        assert!(bare.programs.has(Program::Overheat));
     }
 
     // -- L3: behavior profiles drive the action phase (§7J) -------------------
@@ -3531,7 +3582,7 @@ mod tests {
         let mut runner = unit(0, Team::A, 0);
         runner.character.base_mut().initiative = 1.0;
         runner.character.base_mut().link = 6.0;
-        runner.grant_hack(Hack::new(4, StatusSpec::lockware(), 1, 4));
+        runner.grant_hack(Hack::new(4, 1, 4));
         let mut bruiser = unit(1, Team::B, 1);
         bruiser.character.base_mut().initiative = 5.0;
         let b = Battle::new(vec![runner, bruiser], 1);

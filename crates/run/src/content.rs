@@ -21,7 +21,7 @@
 use crate::{Encounter, GamePlan, RunPlan};
 use atomica_sim::{
     ArmorClass, Attack, Chassis, DamageType, DeathTrigger, Footprint, FoundAction, Hex, Implant,
-    MovementProfile, ObjectiveKind, PenTier, Skill, Team, TargetingProfile, Terrain, Tile, Unit,
+    MovementProfile, ObjectiveKind, PenTier, Program, Skill, Team, TargetingProfile, Terrain, Tile, Unit,
     EquipmentTag, EquipmentTags,
 };
 
@@ -118,6 +118,8 @@ pub fn runner(name: &str) -> Unit {
         // Evade untrained: Dex 11 − 4 ⇒ Evasion 7
         .with_attack(awkward(weapon(8.0, DamageType::Piercing, PenTier::Contact, 4))); // a rifle — clumsy in a clinch
     u.install(Implant::cyberdeck());
+    u.install_program(Program::Lockware); // the deck's basic breach program…
+    u.install_program(Program::Overheat); // …and the common Overheat program
     u
 }
 
@@ -276,6 +278,8 @@ fn breaker(name: &str) -> Unit {
         .with_targeting(TargetingProfile::HighestThreat)
         .with_movement(MovementProfile::Kite);
     u.install(Implant::cyberdeck());
+    u.install_program(Program::Lockware); // a mirror of the player runner's loadout
+    u.install_program(Program::Overheat);
     u
 }
 

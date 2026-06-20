@@ -111,9 +111,17 @@ target with **no chrome to trip**, it falls back to landing the deck's own
 **payload** (margin-scaled — Lockware/Crash/Lag). The remaining payload *modes*
 still need their own substrate:
 
+**Programs are a deck loadout ◆ (`Program` / `Unit::programs`).** A hack's payload modes
+below are **programs** — the runner's offensive software, a roster a fixer / Halcyon
+Cybernetics vendors. They live on the *unit* (`programs`), and **loading one requires a
+cyberdeck** (`Unit::install_program` is a no-op without a `Cyberdeck`-tagged rig — no deck, no
+programs). A breach runs the loaded set: the generic breach payload (Lockware) on a chrome-less
+target, plus riders like Overheat on top. Built: **Lockware**, **Overheat**; rostered, riders
+🔭 not yet wired: **Crash** (stun), **Lag** (slow).
+
 | Payload mode | What it does | Status |
 |---|---|---|
-| **Overheat (damage)** | an **equipped program** (`Hack::with_overheat`, a common black-market loadout — *not* innate to hacking) that, on a **solid breach** (margin ≥ one [`MARGIN_PER_STACK`]), cooks the target's **heat-prone** (`EquipmentTag::HeatProne`) chrome — an **Internal DoT** (bypasses armor) scaling with the margin. Gated three ways: the program loaded, a solid (non-floor) breach, and a heat-prone target. *Netrunning's damage*, but a specialist's tool — useless against a target running cool | ✅ built (`StatusSpec::overheat`) |
+| **Overheat (damage)** | a loaded **program** (`Program::Overheat`, a common black-market loadout — *not* innate to hacking) that, on a **solid breach** (margin ≥ one [`MARGIN_PER_STACK`]), cooks the target's **heat-prone** (`EquipmentTag::HeatProne`) chrome — an **Internal DoT** (bypasses armor) scaling with the margin. Gated three ways: the program loaded, a solid (non-floor) breach, and a heat-prone target. *Netrunning's damage*, but a specialist's tool — useless against a target running cool | ✅ built (`StatusSpec::overheat`) |
 | **Trip a hack-effect** | breach an implant → fire its liability **on the owner**, by the severity ladder | ✅ built (`apply_breach`) |
 | **Disable an implant** | knock a slot **Offline** (the ladder's floor) | ✅ built (`disable_implant`) |
 | **Deploy a worm** | plant a spreading, re-rolling contagion strain | 🔭 **Worm contagion** family |
