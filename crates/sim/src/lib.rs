@@ -870,10 +870,19 @@ impl Unit {
         self.realized().stunned()
     }
 
-    /// Initiative after Lag-style slows — composed (a `Slow` status is a `More` factor
-    /// on Initiative, so the realized accessor already folds it).
-    fn effective_initiative(&self) -> f32 {
-        self.initiative()
+    /// **Physical initiative** (`docs/stats.md`) — when this unit acts on the **physical** track:
+    /// derived from **Dexterity** (reflexes), plus initiative chrome (speedware) and after Lag-style
+    /// slows (the `Realized` fold applies the `More` factor).
+    fn physical_initiative(&self) -> f32 {
+        self.realized().initiative_from(self.dexterity())
+    }
+
+    /// **Digital initiative** (`docs/stats.md`/`netrunning.md`) — when this unit acts on the **net**:
+    /// derived from **Intellect** (a quick mind dives sooner), plus the same initiative chrome /
+    /// slows. Replaces Link as the netrunning turn order — Link still gates reach / channel, but
+    /// *who hacks first* is a matter of wits.
+    fn digital_initiative(&self) -> f32 {
+        self.realized().initiative_from(self.intellect())
     }
 
     /// Digital **bandwidth** — Link floored to an integer (§7D). The hack channel
@@ -1222,8 +1231,8 @@ impl<R: RandomSource> Battle<R> {
             (0..self.units.len()).filter(|&i| self.units[i].is_alive()).collect();
         order.sort_by(|&a, &b| {
             let (ua, ub) = (&self.units[a], &self.units[b]);
-            ub.effective_initiative()
-                .partial_cmp(&ua.effective_initiative())
+            ub.physical_initiative()
+                .partial_cmp(&ua.physical_initiative())
                 .unwrap_or(std::cmp::Ordering::Equal)
                 .then(ua.id.cmp(&ub.id))
         });
@@ -1808,7 +1817,10 @@ impl<R: RandomSource> Battle<R> {
             .collect();
         order.sort_by(|&a, &b| {
             let (ua, ub) = (&self.units[a], &self.units[b]);
-            ub.link().cmp(&ua.link()).then(ua.id.cmp(&ub.id))
+            ub.digital_initiative()
+                .partial_cmp(&ua.digital_initiative())
+                .unwrap_or(std::cmp::Ordering::Equal)
+                .then(ua.id.cmp(&ub.id))
         });
 
         for i in order {
@@ -1828,11 +1840,11 @@ impl<R: RandomSource> Battle<R> {
     }
 
     /// The **woven** activation order (§7C/§10.3): every living unit contributes a
-    /// **physical** activation (ranked by effective Initiative) and, if it can project
-    /// onto the net (a hack + Link > 0), a **digital** one (ranked by Link) — all on
-    /// one descending track, so a high-Link runner hacks before a sluggish bruiser
-    /// swings. Ties: lower `id` first, then physical before digital. Each entry is
-    /// `(unit, is_digital)`.
+    /// **physical** activation (ranked by **Dexterity** initiative) and, if it can project
+    /// onto the net (a hack + Link > 0), a **digital** one (ranked by **Intellect** initiative)
+    /// — all on one descending track, so a quick-witted runner hacks before a sluggish bruiser
+    /// swings, then moves on its slower body. Ties: lower `id` first, then physical before
+    /// digital. Each entry is `(unit, is_digital)`.
     fn woven_order(&self) -> Vec<(usize, bool)> {
         // (key desc, id, kind-tiebreak, unit, is_digital)
         let mut order: Vec<(f32, u32, u8, usize, bool)> = Vec::new();
@@ -1841,9 +1853,9 @@ impl<R: RandomSource> Battle<R> {
             if !u.is_alive() {
                 continue;
             }
-            order.push((u.effective_initiative(), u.id.0, 0, i, false));
+            order.push((u.physical_initiative(), u.id.0, 0, i, false));
             if u.hack().is_some() && u.link() > 0 {
-                order.push((u.link() as f32, u.id.0, 1, i, true));
+                order.push((u.digital_initiative(), u.id.0, 1, i, true));
             }
         }
         order.sort_by(|a, b| {
@@ -4063,17 +4075,40 @@ mod tests {
 
     #[test]
     fn woven_order_interleaves_physical_and_digital_by_speed() {
-        // Runner: Link 6 (digital key 6) but slow (Initiative 1). Bruiser: no deck,
-        // Initiative 5. The single track interleaves: the runner *hacks* first (6),
-        // the bruiser *swings* (5), then the runner *moves* (1).
+        // Initiative is action-typed (`docs/stats.md`): a runner's **digital** turn rides its
+        // **Intellect** (quick mind: 9), its **physical** turn its **Dexterity** (slow body: 1);
+        // the bruiser swings on Dexterity 5. The single track interleaves: the runner *hacks*
+        // first (Int 9), the bruiser *swings* (Dex 5), then the runner *moves* (Dex 1) — Link only
+        // gates that the dive is possible, not its order.
         let mut runner = unit(0, Team::A, 0);
-        runner.character.base_mut().initiative = 1.0;
+        runner.character.base_mut().initiative = 0.0;
+        runner.character.base_mut().dexterity = 1.0;
+        runner.character.base_mut().intellect = 9.0;
         runner.character.base_mut().link = 6.0;
         runner.grant_hack(Hack::new(4, 1, 4));
         let mut bruiser = unit(1, Team::B, 1);
-        bruiser.character.base_mut().initiative = 5.0;
+        bruiser.character.base_mut().initiative = 0.0;
+        bruiser.character.base_mut().dexterity = 5.0;
         let b = Battle::new(vec![runner, bruiser], 1);
         assert_eq!(b.woven_order(), vec![(0, true), (1, false), (0, false)]);
+    }
+
+    #[test]
+    fn initiative_is_dexterity_physically_and_intellect_digitally() {
+        // Action-typed initiative (`docs/stats.md`): the physical turn rides Dexterity, the digital
+        // turn Intellect; chrome (+Add) lifts both and a Lag (×More) halves the whole.
+        let mut u = unit(0, Team::A, 0);
+        u.character.base_mut().initiative = 0.0;
+        u.character.base_mut().dexterity = 7.0;
+        u.character.base_mut().intellect = 11.0;
+        assert_eq!(u.physical_initiative(), 7.0); // off Dexterity
+        assert_eq!(u.digital_initiative(), 11.0); // off Intellect
+        u.install(Implant::speedware()); // +3 Initiative (Add) — lifts both tracks
+        assert_eq!(u.physical_initiative(), 10.0);
+        assert_eq!(u.digital_initiative(), 14.0);
+        u.add_status(StatusSpec::lag(), 3, 1); // ×0.5 More — slows the whole, attribute included
+        assert_eq!(u.physical_initiative(), 5.0);
+        assert_eq!(u.digital_initiative(), 7.0);
     }
 
     #[test]

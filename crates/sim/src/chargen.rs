@@ -612,6 +612,30 @@ impl Realized {
         (self.base.of(stat) + add) * (1.0 + increased) * more
     }
 
+    /// Fold the **Initiative** factors over a supplied **governing attribute** — the source of
+    /// initiative depends on the *action* (`docs/stats.md`): **Dexterity** drives a physical
+    /// activation (reflexes), **Intellect** a digital one (a quick mind on the net). The attribute
+    /// is the base, so `(attribute + BaseLine.initiative + Σadd) × (1+Σinc) × Π(1+more)`: chrome
+    /// (speedware, a `+Add`) still lifts it and a slow (Lag, a `×More`) still halves the **whole**
+    /// thing, attribute included. `BaseLine.initiative` rides along as a small innate-reaction flat.
+    pub fn initiative_from(&self, attribute: i32) -> f32 {
+        let mut add = 0.0;
+        let mut increased = 0.0;
+        let mut more = 1.0;
+        for m in &self.mods {
+            if let ModifierKind::Factor(f) = m.kind {
+                if f.stat == Stat::Initiative {
+                    match f.kind {
+                        FactorKind::Add => add += f.value,
+                        FactorKind::Increased => increased += f.value,
+                        FactorKind::More => more *= 1.0 + f.value,
+                    }
+                }
+            }
+        }
+        (attribute as f32 + self.base.initiative + add) * (1.0 + increased) * more
+    }
+
     /// The **last** override on `pick`'s axis wins, else the base (§2).
     fn last_override(&self) -> impl Iterator<Item = Override> + '_ {
         self.mods.iter().rev().filter_map(|m| match m.kind {
