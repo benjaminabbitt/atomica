@@ -21,8 +21,8 @@
 use crate::{Encounter, GamePlan, RunPlan};
 use atomica_sim::{
     ArmorClass, Attack, Chassis, DamageType, DeathTrigger, Footprint, FoundAction, Hex, Implant,
-    MovementProfile, ObjectiveKind, PenTier, Program, Skill, Team, TargetingProfile, Terrain, Tile, Unit,
-    EquipmentTag, EquipmentTags,
+    MovementProfile, NetDoctrine, ObjectiveKind, PenTier, Program, Skill, Team, TargetingProfile,
+    Terrain, Tile, Unit, EquipmentTag, EquipmentTags,
 };
 
 fn weapon(damage: f32, dtype: DamageType, pen: PenTier, range: i32) -> Attack {
@@ -116,7 +116,8 @@ pub fn runner(name: &str) -> Unit {
         .with_skill(Skill::Gunnery, 2) // expert shot ⇒ effective 13
         .with_skill(Skill::Hacking, 3) // ace netrunner ⇒ effective 15
         // Evade untrained: Dex 11 − 4 ⇒ Evasion 7
-        .with_attack(awkward(weapon(8.0, DamageType::Piercing, PenTier::Contact, 4))); // a rifle — clumsy in a clinch
+        .with_attack(awkward(weapon(8.0, DamageType::Piercing, PenTier::Contact, 4))) // a rifle — clumsy in a clinch
+        .with_doctrine(NetDoctrine::Burner); // dives heat-prone chrome, leads Overheat (else softens)
     u.install(Implant::cyberdeck());
     u.install_program(Program::Lockware); // the deck's basic breach program…
     u.install_program(Program::Overheat); // …the common Overheat program…
@@ -277,7 +278,8 @@ fn breaker(name: &str) -> Unit {
         // Evade untrained: Dex 10 − 4 ⇒ Evasion 6
         .with_attack(weapon(4.0, DamageType::Piercing, PenTier::External, 3))
         .with_targeting(TargetingProfile::HighestThreat)
-        .with_movement(MovementProfile::Kite);
+        .with_movement(MovementProfile::Kite)
+        .with_doctrine(NetDoctrine::Controller); // ICE: dives the biggest gun, leads Spoof
     u.install(Implant::cyberdeck());
     u.install_program(Program::Lockware); // a mirror of the player runner's loadout…
     u.install_program(Program::Overheat);

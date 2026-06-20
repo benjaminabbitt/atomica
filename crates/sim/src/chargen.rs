@@ -23,7 +23,7 @@
 //! those land.
 
 use crate::{
-    resolve_versus, ArmorClass, MovementProfile, PenTier, RandomSource, TargetingProfile,
+    resolve_versus, ArmorClass, MovementProfile, NetDoctrine, PenTier, RandomSource, TargetingProfile,
 };
 
 /// A decorator's stable handle. A [`Modifier`]'s `source` links back to the
@@ -123,6 +123,9 @@ impl Factor {
 pub enum Override {
     Targeting(TargetingProfile),
     Movement(MovementProfile),
+    /// The unit's **netrunning doctrine** (`netrunning.md`) — the digital behavior script
+    /// (hack target lean + program lead). A `CORRUPTION`-priority Spoof can corrupt it.
+    Doctrine(NetDoctrine),
     /// The unit's **armor class** for the mitigation matrix — gear that armors up
     /// (the highest-priority active grant wins, like the behavior overrides).
     Armor(ArmorClass),
@@ -550,6 +553,8 @@ pub struct BaseLine {
     pub will: f32,
     pub targeting: TargetingProfile,
     pub movement: MovementProfile,
+    /// Innate netrunning doctrine — the digital behavior script; gear overrides it (last-wins).
+    pub doctrine: NetDoctrine,
     /// Innate armor class for the mitigation matrix — gear overrides it (last-wins).
     pub armor: ArmorClass,
 }
@@ -675,6 +680,16 @@ impl Realized {
                 _ => None,
             })
             .unwrap_or(self.base.movement)
+    }
+    /// The effective **netrunning doctrine** — the highest-priority `Doctrine` override (a Spoof
+    /// can corrupt it), else base.
+    pub fn doctrine(&self) -> NetDoctrine {
+        self.last_override()
+            .find_map(|o| match o {
+                Override::Doctrine(d) => Some(d),
+                _ => None,
+            })
+            .unwrap_or(self.base.doctrine)
     }
     /// The effective **armor class** — the highest-priority `Armor` override, else base.
     pub fn armor_class(&self) -> ArmorClass {

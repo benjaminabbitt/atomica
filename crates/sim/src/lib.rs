@@ -51,7 +51,7 @@ pub use event::{BreachVector, CombatEvent, EventLog, FieldValue, Record};
 pub use hack::{hack_rating, Hack, HackResult, Program, Programs};
 pub use hex::Hex;
 pub use implant::{Contribution, Implant, Pan};
-pub use profile::{MovementProfile, TargetingProfile};
+pub use profile::{MovementProfile, NetDoctrine, TargetingProfile};
 pub use objective::{
     FoundAction, Goal, Hold, MarginLoss, Objective, ObjectiveKind, ObjectiveStatus, Objectives,
     Reach, Survive, TimeAttack, WinFight, PLAYER,
@@ -564,6 +564,22 @@ impl Unit {
             Decorator::gear(Tag::Gear, vec![]).with_override(Override::Movement(p)),
         );
         self
+    }
+
+    /// Builder: program the **netrunning doctrine** (`netrunning.md`) — the digital behavior
+    /// script (hack target lean + program lead). A `GEAR`-priority override, so a `CORRUPTION`
+    /// Spoof still beats it.
+    pub fn with_doctrine(mut self, d: NetDoctrine) -> Self {
+        self.character.install(
+            Decorator::gear(Tag::Gear, vec![]).with_override(Override::Doctrine(d)),
+        );
+        self
+    }
+
+    /// The unit's effective **netrunning doctrine** — the behavior layer composed (a spoof
+    /// overrides the program).
+    pub fn doctrine(&self) -> NetDoctrine {
+        self.realized().doctrine()
     }
 
     /// Compose the unit's stat line **on demand**: the `character`'s authored base +
@@ -1999,9 +2015,9 @@ impl<R: RandomSource> Battle<R> {
         let runs_hot = self.units[target].has_volatile_chrome();
         let stacks = if outcome.success {
             let stacks = self.apply_breach(target, &outcome, &hack, programs);
-            // The attacker's **offensive programs** ride on top of the breach (§10.8) — each gated
-            // to keep the §6 disable floor.
-            self.run_programs(target, &outcome, programs, runs_hot);
+            // The attacker deploys **one** offensive rider on top of the breach — its **doctrine's**
+            // best-fit applicable program (§10.8), gated to keep the §6 disable floor.
+            self.run_programs(attacker, target, &outcome, runs_hot);
             stacks
         } else {
             // A **repelled** intruder: the target's **Honeypot** counter-ICE bites back (§10.8).
@@ -2011,95 +2027,121 @@ impl<R: RandomSource> Battle<R> {
         HackResult::Rolled { outcome, stacks }
     }
 
-    /// Run the attacker's loaded **offensive programs** as riders on a successful breach
-    /// (`netrunning.md` §10.8). Each is gated to preserve the §6 floor: a *marginal* crack (margin
-    /// 0 ⇒ `solid == 0`) just disables — a program needs a **solid** breach to deploy, except the
-    /// stun-class **Crash**, which is crit-gated like every knockout. `runs_hot` is the target's
-    /// pre-breach heat-prone state (the Overheat / Meltdown gate). Lockware is *not* here — it's the
-    /// generic no-chrome payload [`apply_breach`] lands; the breach-modifier (Cascade / Logicbomb)
-    /// and defensive (Honeypot / Ghost / Antivirus) programs fire on their own seams.
-    fn run_programs(&mut self, target: usize, outcome: &RollOutcome, programs: Programs, runs_hot: bool) {
-        let solid = hack::margin_stacks(outcome.margin); // a solid breach's depth (0 ⇒ the floor)
+    /// Deploy the attacker's **doctrine** lead — the single best-fit offensive rider on a successful
+    /// breach (`netrunning.md` §10.8). Walks the doctrine's [`rider_order`](Battle::rider_order) and
+    /// fires the **first** rider that is loaded *and* whose gate the breach clears, then stops:
+    /// loadout is a toolkit you pick the right tool from, not a suite you dump. Every rider is gated
+    /// to keep the §6 disable floor — a *marginal* crack (`solid == 0`) just disables; a rider needs
+    /// a **solid** breach, except the stun-class **Crash** (crit-gated like every knockout) and the
+    /// burns (which also need a heat-prone, `runs_hot`, target). Lockware (the no-chrome payload),
+    /// the breach modifiers (Cascade / Logicbomb), and the defensive trio (Honeypot / Ghost /
+    /// Antivirus) are *not* riders — they fire on their own seams.
+    fn run_programs(&mut self, attacker: usize, target: usize, outcome: &RollOutcome, runs_hot: bool) {
+        let programs = self.units[attacker].programs;
+        let doctrine = self.units[attacker].doctrine();
+        let solid = hack::margin_stacks(outcome.margin) > 0; // a non-floor breach
         let decisive = knockout_gated(outcome, KNOCKOUT_MARGIN); // the crit gate (stun class)
-        for p in programs.iter() {
-            match p {
-                // Handled elsewhere: Lockware is the no-chrome payload; the breach modifiers
-                // reshape the breach in `apply_breach`; the defensive trio fire on other seams.
-                Program::Lockware
-                | Program::Cascade
-                | Program::Logicbomb
-                | Program::Honeypot
-                | Program::Ghost
-                | Program::Antivirus => {}
-                // Heat: cooks heat-prone chrome only (a solid breach).
-                Program::Overheat if solid > 0 && runs_hot => {
-                    self.units[target].add_status(StatusSpec::overheat(), OVERHEAT_DURATION, solid);
+        let fits = |p: Program| {
+            programs.has(p)
+                && match p {
+                    Program::Overheat | Program::Meltdown => solid && runs_hot,
+                    Program::Crash => decisive,
+                    _ => solid,
                 }
-                Program::Meltdown if solid > 0 && runs_hot => {
-                    self.units[target].add_status(StatusSpec::meltdown(), MELTDOWN_DURATION, solid);
-                }
-                Program::Overheat | Program::Meltdown => {} // loaded but the gate (solid + hot) failed
-                // Stun: crit-gated, like every knockout.
-                Program::Crash if decisive => {
-                    self.units[target].add_status(StatusSpec::crash(), KNOCKOUT_STUN, 1);
-                }
-                Program::Crash => {}
-                // Control / soften riders — a solid breach lands them.
-                Program::Lag if solid > 0 => {
-                    self.units[target].add_status(StatusSpec::lag(), LAG_DURATION, 1);
-                }
-                Program::Breach if solid > 0 => {
-                    self.units[target].add_status(StatusSpec::breach(), BREACH_DURATION, 1);
-                }
-                Program::Blind if solid > 0 => {
-                    self.units[target].apply_modifier(Decorator::timed(
-                        Tag::Debuff,
-                        BLIND_DURATION,
-                        vec![Factor::add(Stat::Dexterity, -BLIND_AMOUNT)],
-                    ));
-                }
-                Program::Decrypt if solid > 0 => {
-                    // A `Worm`-tagged Firewall rot (cleansable by an Antivirus / firewall patch).
-                    self.units[target]
-                        .apply_modifier(Corruption::worm(DECRYPT_AMOUNT, DECRYPT_DURATION));
-                }
-                Program::Leech if solid > 0 => {
-                    self.units[target].apply_modifier(Decorator::timed(
-                        Tag::Debuff,
-                        LEECH_DURATION,
-                        vec![Factor::add(Stat::Link, -LEECH_AMOUNT)],
-                    ));
-                }
-                Program::Worm if solid > 0 => {
-                    // The contagious spreader — rides the net to nearby surfaces in the contagion phase.
-                    self.units[target].apply_modifier(Corruption::worm_swarm(
-                        WORM_PROGRAM_FIREWALL,
-                        WORM_PROGRAM_VIRULENCE,
-                        WORM_PROGRAM_TURNS,
-                    ));
-                }
-                Program::Spoof if solid > 0 => {
-                    // Corrupt the targeting script — chase the back line (waste the activation).
-                    self.units[target].spoof(TargetingProfile::Backline, SPOOF_DURATION);
-                }
-                Program::Misfire if solid > 0 => {
-                    // Corrupt the movement routine — back off / break contact for a beat.
-                    self.units[target].apply_modifier(
-                        Decorator::timed(Tag::Spoof, MISFIRE_DURATION, vec![])
-                            .with_priority(Priority::CORRUPTION)
-                            .with_override(Override::Movement(MovementProfile::Kite)),
-                    );
-                }
-                // Loaded control/soften programs whose solid-breach gate failed (a marginal crack).
-                Program::Lag
-                | Program::Breach
-                | Program::Blind
-                | Program::Decrypt
-                | Program::Leech
-                | Program::Worm
-                | Program::Spoof
-                | Program::Misfire => {}
+        };
+        if let Some(rider) = Self::rider_order(doctrine).into_iter().find(|&p| fits(p)) {
+            self.deploy_rider(target, rider, outcome);
+        }
+    }
+
+    /// The offensive **riders** in a doctrine's lead order, then the rest of the roster as fallback
+    /// (`netrunning.md` §10.8) — the order [`run_programs`](Battle::run_programs) walks to pick the
+    /// single best-fit program. The doctrine's lead comes first (Burner leads its burns, Controller
+    /// its script-corruptions, …); when none of the lead is loaded / fits, it falls through the
+    /// canonical order so a loaded deck still finds *something* to run.
+    fn rider_order(doctrine: NetDoctrine) -> [Program; 11] {
+        use Program::*;
+        // The canonical fallback, roughly "biggest swing first". Each doctrine reorders its lead to
+        // the front; the rest follow in this order.
+        const REST: [Program; 11] =
+            [Crash, Meltdown, Overheat, Breach, Spoof, Lag, Decrypt, Worm, Blind, Leech, Misfire];
+        let lead: &[Program] = match doctrine {
+            NetDoctrine::Disabler => &[Crash, Lag, Breach],
+            NetDoctrine::Burner => &[Meltdown, Overheat],
+            NetDoctrine::Saboteur => &[Breach, Decrypt, Worm, Blind],
+            NetDoctrine::Controller => &[Spoof, Misfire, Lag],
+            NetDoctrine::Defender => &[Crash, Lag, Breach],
+        };
+        let mut order = [Crash; 11];
+        let mut n = 0;
+        for &p in lead.iter().chain(REST.iter()) {
+            if !order[..n].contains(&p) {
+                order[n] = p;
+                n += 1;
             }
+        }
+        debug_assert_eq!(n, 11, "rider_order must cover every offensive rider exactly once");
+        order
+    }
+
+    /// Apply one resolved offensive **rider**'s payload to `target` (`netrunning.md` §10.8) — the
+    /// effect of the program [`run_programs`](Battle::run_programs) selected. The burns scale their
+    /// stacks with the breach margin; the rest land a fixed debuff. (Only riders reach here; the
+    /// non-rider programs are handled on their own seams.)
+    fn deploy_rider(&mut self, target: usize, rider: Program, outcome: &RollOutcome) {
+        let burn = hack::margin_stacks(outcome.margin);
+        let t = &mut self.units[target];
+        match rider {
+            Program::Overheat => t.add_status(StatusSpec::overheat(), OVERHEAT_DURATION, burn),
+            Program::Meltdown => t.add_status(StatusSpec::meltdown(), MELTDOWN_DURATION, burn),
+            Program::Crash => t.add_status(StatusSpec::crash(), KNOCKOUT_STUN, 1),
+            Program::Lag => t.add_status(StatusSpec::lag(), LAG_DURATION, 1),
+            Program::Breach => t.add_status(StatusSpec::breach(), BREACH_DURATION, 1),
+            Program::Blind => {
+                t.apply_modifier(Decorator::timed(
+                    Tag::Debuff,
+                    BLIND_DURATION,
+                    vec![Factor::add(Stat::Dexterity, -BLIND_AMOUNT)],
+                ));
+            }
+            // A `Worm`-tagged Firewall rot (cleansable by an Antivirus / firewall patch).
+            Program::Decrypt => {
+                t.apply_modifier(Corruption::worm(DECRYPT_AMOUNT, DECRYPT_DURATION));
+            }
+            Program::Leech => {
+                t.apply_modifier(Decorator::timed(
+                    Tag::Debuff,
+                    LEECH_DURATION,
+                    vec![Factor::add(Stat::Link, -LEECH_AMOUNT)],
+                ));
+            }
+            // The contagious spreader — rides the net to nearby surfaces in the contagion phase.
+            Program::Worm => {
+                t.apply_modifier(Corruption::worm_swarm(
+                    WORM_PROGRAM_FIREWALL,
+                    WORM_PROGRAM_VIRULENCE,
+                    WORM_PROGRAM_TURNS,
+                ));
+            }
+            // Corrupt the targeting script — chase the back line (waste the activation).
+            Program::Spoof => {
+                t.spoof(TargetingProfile::Backline, SPOOF_DURATION);
+            }
+            // Corrupt the movement routine — back off / break contact for a beat.
+            Program::Misfire => {
+                t.apply_modifier(
+                    Decorator::timed(Tag::Spoof, MISFIRE_DURATION, vec![])
+                        .with_priority(Priority::CORRUPTION)
+                        .with_override(Override::Movement(MovementProfile::Kite)),
+                );
+            }
+            // Not a rider — selected only from the rider set, so this is unreachable.
+            Program::Lockware
+            | Program::Cascade
+            | Program::Logicbomb
+            | Program::Honeypot
+            | Program::Ghost
+            | Program::Antivirus => {}
         }
     }
 
@@ -2199,14 +2241,16 @@ impl<R: RandomSource> Battle<R> {
         n
     }
 
-    /// Nearest enemy with a digital surface (Link > 0) within the unit's antenna
-    /// range — the hack's target selection.
+    /// The runner's **hack target** — a reachable enemy with a digital surface (Link > 0), chosen by
+    /// its [`doctrine`](NetDoctrine) (`netrunning.md` §10.8). Two leans always come first, whatever
+    /// the doctrine: an **objective** focus (a Datamine **node**) so the dive drives toward the
+    /// prize, then the doctrine's own lean — a Burner hunts heat-prone chrome, a Disabler the
+    /// most-chromed, a Controller / Saboteur the biggest gun, a Defender an enemy runner — with
+    /// **nearest** the universal tiebreak.
     fn nearest_hackable_enemy(&self, i: usize) -> Option<usize> {
         let me = &self.units[i];
         let range = me.hack_reach(); // Link governs antenna reach (`netrunning.md`)
-        // **Objective-aware** (`netrunning.md`): a runner prioritizes cracking a hackable enemy
-        // sitting on an objective focus hex (a Datamine **node**) over poking the nearest grunt
-        // — so the dive actually drives toward the prize. Falls back to nearest otherwise.
+        let doctrine = me.doctrine();
         let foci = self
             .objectives
             .foci(&self.units, self.tick, self.fight_over())
@@ -2222,8 +2266,25 @@ impl<R: RandomSource> Battle<R> {
                     && u.link() > 0
                     && me.pos.distance(u.pos) <= range
             })
-            .min_by_key(|(_, u)| (!foci.contains(&u.pos), me.pos.distance(u.pos), u.id))
+            .min_by_key(|(_, u)| {
+                (!foci.contains(&u.pos), self.hack_target_lean(doctrine, u), me.pos.distance(u.pos), u.id)
+            })
             .map(|(j, _)| j)
+    }
+
+    /// A candidate's **doctrine lean** score for hack targeting (`netrunning.md` §10.8) — *lower is
+    /// more preferred*, applied after the objective focus and before distance. Each doctrine pulls
+    /// toward the marks its loadout bites hardest: Burner → heat-prone chrome, Disabler → the most
+    /// digital slots, Saboteur / Controller → the biggest gun, Defender → enemy runners.
+    fn hack_target_lean(&self, doctrine: NetDoctrine, u: &Unit) -> i32 {
+        match doctrine {
+            NetDoctrine::Burner => i32::from(!u.has_volatile_chrome()), // heat-prone first
+            NetDoctrine::Disabler => -(u.digital_implant_indices().len() as i32), // most chrome first
+            NetDoctrine::Saboteur | NetDoctrine::Controller => {
+                -(u.weapon_at_any().map_or(0.0, |w| w.damage) as i32) // biggest threat first
+            }
+            NetDoctrine::Defender => i32::from(u.hack().is_none()), // enemy runners first
+        }
     }
 }
 
@@ -3581,6 +3642,93 @@ mod tests {
         let mut b = Battle::new(vec![unit(0, Team::A, 0), warded], 1);
         b.ward_phase();
         assert_eq!(b.units[1].firewall(), 10); // the antivirus stripped the worm
+    }
+
+    // -- the netrunning doctrine: scripted hack targeting + program use (§10.8) -----------
+
+    /// Like [`solid_breach`] but the attacker runs a chosen `doctrine` over a multi-program loadout.
+    fn solid_breach_doctrine(
+        loadout: Programs,
+        doctrine: NetDoctrine,
+        setup: impl FnOnce(&mut Unit),
+    ) -> Battle<ScriptedRng> {
+        let mut atk = unit(0, Team::A, 0).with_doctrine(doctrine);
+        atk.character.base_mut().link = 8.0;
+        atk.character.base_mut().intellect = 10.0;
+        atk.skills.set(Skill::Hacking, 6); // rating 12
+        atk.grant_hack(Hack::new(6, 1, 6));
+        atk.programs = loadout;
+        let mut tgt = unit(1, Team::B, 1);
+        tgt.character.base_mut().link = 8.0;
+        tgt.character.base_mut().firewall = 0.0;
+        setup(&mut tgt);
+        let mut b = Battle::with_rng(vec![atk, tgt], ScriptedRng::from_d10([1, 3])); // margin 8
+        b.resolve_hack(0, 1);
+        b
+    }
+
+    #[test]
+    fn the_doctrine_leads_with_one_best_fit_program() {
+        // One deck, three riders loaded — the doctrine picks the single lead, the same loadout
+        // deploying a different program under a different doctrine.
+        let loadout =
+            Programs::NONE.with(Program::Overheat).with(Program::Lag).with(Program::Breach);
+        let hot = |t: &mut Unit| {
+            t.install(Implant::combat_stim()); // heat-prone chrome ⇒ the burns can bite
+        };
+        // Burner leads its burn on heat-prone chrome…
+        let burner = solid_breach_doctrine(loadout, NetDoctrine::Burner, hot);
+        assert!(has_status(&burner.units[1], "Overheat"));
+        assert!(!has_status(&burner.units[1], "Lag")); // only one rider deploys
+        // …while a Disabler leads lock-down (Lag) from the very same loadout.
+        let disabler = solid_breach_doctrine(loadout, NetDoctrine::Disabler, hot);
+        assert!(has_status(&disabler.units[1], "Lag"));
+        assert!(!has_status(&disabler.units[1], "Overheat"));
+    }
+
+    #[test]
+    fn the_doctrine_falls_through_to_a_loaded_program() {
+        // Burner's lead burns aren't loaded — it falls through to whatever the deck carries.
+        let b = solid_breach_doctrine(Programs::just(Program::Breach), NetDoctrine::Burner, |_| {});
+        assert!(has_status(&b.units[1], "Breach"));
+    }
+
+    #[test]
+    fn a_burner_dives_the_heat_prone_mark() {
+        // Two reachable surfaces: a nearer cool one, a farther heat-prone one. A Burner's targeting
+        // leans past distance to the mark its burns bite.
+        let mut atk = unit(0, Team::A, 0).with_doctrine(NetDoctrine::Burner);
+        atk.character.base_mut().link = 8.0;
+        atk.grant_hack(Hack::new(8, 1, 6));
+        let mut cool = unit(1, Team::B, 1); // nearer, runs cool
+        cool.character.base_mut().link = 4.0;
+        let mut hot = unit(2, Team::B, 3); // farther, but heat-prone
+        hot.character.base_mut().link = 4.0;
+        hot.install(Implant::combat_stim());
+        let b = Battle::new(vec![atk, cool, hot], 1);
+        assert_eq!(b.nearest_hackable_enemy(0), Some(2)); // the hot mark, despite the extra distance
+        // A Saboteur leans on threat instead; the two marks pack equal guns, so it just takes the
+        // nearest — a different doctrine, a different dive.
+        let mut atk2 = unit(0, Team::A, 0).with_doctrine(NetDoctrine::Saboteur);
+        atk2.character.base_mut().link = 8.0;
+        atk2.grant_hack(Hack::new(8, 1, 6));
+        let b2 = Battle::new(vec![atk2, b.units[1].clone(), b.units[2].clone()], 1);
+        assert_eq!(b2.nearest_hackable_enemy(0), Some(1)); // nearest
+    }
+
+    #[test]
+    fn the_doctrine_defaults_to_disabler_and_a_spoof_corrupts_it() {
+        let mut u = unit(0, Team::A, 0);
+        assert_eq!(u.doctrine(), NetDoctrine::Disabler); // the dumb default
+        u = u.with_doctrine(NetDoctrine::Burner);
+        assert_eq!(u.doctrine(), NetDoctrine::Burner);
+        // A CORRUPTION-priority override (a Spoof) outranks the programmed doctrine.
+        u.apply_modifier(
+            Decorator::timed(Tag::Spoof, 3, vec![])
+                .with_priority(Priority::CORRUPTION)
+                .with_override(Override::Doctrine(NetDoctrine::Defender)),
+        );
+        assert_eq!(u.doctrine(), NetDoctrine::Defender); // the enemy hacks your script
     }
 
     // -- L3: behavior profiles drive the action phase (§7J) -------------------

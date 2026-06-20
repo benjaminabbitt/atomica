@@ -147,6 +147,26 @@ Two **intrinsic** breach effects are always there, program or no:
 | **Trip a hack-effect** | breach an implant → fire its liability **on the owner**, by the severity ladder | ✅ built (`apply_breach`) |
 | **Disable an implant** | knock a slot **Offline** (the ladder's floor) | ✅ built (`disable_implant`) |
 
+**The netrunning doctrine ✅ (`NetDoctrine` / `Unit::with_doctrine`).** A loadout is only
+half the runner — the other half is *how it's flown*. The **doctrine** is the digital
+analog of the physical behavior profiles (`TargetingProfile` / `MovementProfile`): the
+**code** the player programs into a deck, scripting **both** who the runner dives and which
+program it leads with. Like the other profiles it's a behavior `Override`, so a hostile
+**Spoof** (`CORRUPTION` priority) can corrupt a runner's *doctrine* too — the enemy hacks
+your script. Each doctrine pairs a **target lean** (`hack_target_lean`) with a **rider
+priority** (`rider_order`); on a breach the resolver deploys the **single** best-fit
+applicable program (`run_programs` → `deploy_rider`) — a toolkit you pick from, not a suite
+you dump — falling through the loadout when the lead doesn't fit. An **objective** focus (the
+Datamine node) always outranks the doctrine's own lean.
+
+| Doctrine | Dives | Leads with |
+|---|---|---|
+| **Disabler** (default) | the most-chromed enemy (more slots to trip) | Crash → Lag → Breach |
+| **Burner** | **heat-prone** chrome (its burns bite there) | Meltdown → Overheat |
+| **Saboteur** | the biggest gun | Breach → Decrypt → Worm → Blind |
+| **Controller** | the biggest gun | Spoof → Misfire → Lag |
+| **Defender** | enemy **runners** (kill the active defense) | Crash → Lag → Breach |
+
 **A netrunning objective ✅ — the [`Datamine`] dive.** Beyond shooting: an
 encounter can task the squad to **breach a bolted-down data node** (crack its
 implant) rather than wipe the field. The runner is **objective-aware** (it
