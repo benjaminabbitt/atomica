@@ -60,6 +60,14 @@ archetypes 10–13). They are the substrate the four **skill families** are tier
 > lifts both), not from an attribute — Intellect governs the netrunning *skills* and the digital
 > turn order, but the wall itself is equipment. This is deliberate: the net surface is something
 > you *install*, not something you *are*.
+>
+> **Programs are the digital domain's *skills*.** Where a physical action is `attribute + skill-tier`,
+> a digital one is `granted stat (Link / Firewall) + quality program` — you don't *train* onto the
+> net surface, you *load better software* onto it. A quality program runs **on** the granted stat
+> and acts as its skill-tier: **Ghost** raises net defense on top of Firewall (a defensive program,
+> `netrunning.md` §10.8), the offensive riders run on the attacker's Link channel. So a fat granted
+> stat with cheap software, or a thin one with premium programs, are two routes to the same edge —
+> the same attribute-vs-skill trade, in installed form.
 
 **Body and Integrity are one stat ✅.** Max Integrity (the HP pool) is **derived** —
 `Body × HP_PER_BODY` (K = 6: an average Body-10 build carries ~60 HP; a bolted-down node
