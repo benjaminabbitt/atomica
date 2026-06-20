@@ -44,7 +44,7 @@ pub use board::{Board, SeamOffset};
 pub use chargen::{
     Amount, BaseLine, Capability, Character, Condition, Contagion, Decorator, DamageEvent, Event,
     Expiration, Factor, FactorKind, Flag, Gate, GenId, Hook, HookEffect, Modifier, ModifierKind,
-    Override, Priority, Reaction, Realized, Remove, Stat, Tag, Vector, Wear,
+    Override, Priority, Reaction, Realized, Remove, Stat, Tag, Vector, Wear, HP_PER_BODY,
 };
 pub use corruption::Corruption;
 pub use event::{BreachVector, CombatEvent, EventLog, FieldValue, Record};
@@ -393,7 +393,7 @@ impl Unit {
     /// the run layer and content build rosters from.
     pub fn new(id: u32, name: impl Into<String>, team: Team, chassis: Chassis) -> Self {
         let mut character =
-            Character::new(BaseLine { max_integrity: 30.0, initiative: 5.0, ..BaseLine::default() });
+            Character::new(BaseLine { body: 30.0 / HP_PER_BODY, initiative: 5.0, ..BaseLine::default() });
         character.install(weapon_grant(Attack::melee(10.0))); // default melee
         Self {
             id: UnitId(id),
@@ -418,9 +418,12 @@ impl Unit {
         self
     }
 
-    /// Builder: set Integrity (its base max **and** the live pool).
+    /// Builder: set Integrity — now **Body-derived** (`docs/stats.md`): sets **Body** to the value
+    /// that yields `hp` (`hp / HP_PER_BODY`) and fills the live pool. Toughness and HP are one stat,
+    /// so this also sets the unit's Body (and its Melee/Heavy floor). Call **after** `with_body` (or
+    /// instead of it) — the later of the two wins.
     pub fn with_integrity(mut self, hp: f32) -> Self {
-        self.character.base_mut().max_integrity = hp;
+        self.character.base_mut().body = hp / HP_PER_BODY;
         self.character.integrity = hp;
         self
     }
@@ -3250,8 +3253,8 @@ mod tests {
         assert_eq!(u.damage_bonus(), 4.0); // +4 composed damage bonus (weapon base unchanged)
         assert_eq!(u.weapon_at(1).unwrap().damage, 10.0);
         u.install(Implant::metabolic_pump());
-        assert_eq!(u.max_integrity(), base_hp + 8.0);
-        assert_eq!(u.character.integrity, base_hp + 8.0); // gained the HP too
+        assert_eq!(u.max_integrity(), base_hp + 6.0); // +1 Body ⇒ +6 HP (Integrity = Body × K)
+        assert_eq!(u.character.integrity, base_hp + 6.0); // gained the HP too
     }
 
     #[test]
@@ -3639,11 +3642,11 @@ mod tests {
     fn ghost_stiffens_a_units_net_defense() {
         let mut runner_ghost = unit(1, Team::B, 1);
         runner_ghost.character.base_mut().firewall = 5.0;
-        let mut plain = Battle::new(vec![unit(0, Team::A, 0), runner_ghost.clone()], 1);
+        let plain = Battle::new(vec![unit(0, Team::A, 0), runner_ghost.clone()], 1);
         assert_eq!(plain.net_defense(1), 5); // bare Firewall
         runner_ghost.grant_hack(Hack::new(4, 1, 5));
         runner_ghost.programs = Programs::just(Program::Ghost);
-        let mut ghosted = Battle::new(vec![unit(0, Team::A, 0), runner_ghost], 1);
+        let ghosted = Battle::new(vec![unit(0, Team::A, 0), runner_ghost], 1);
         assert_eq!(ghosted.net_defense(1), 5 + GHOST_DEFENSE); // reads darker
     }
 

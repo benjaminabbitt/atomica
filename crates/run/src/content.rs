@@ -79,16 +79,16 @@ fn smart(mut a: Attack) -> Attack {
 }
 
 fn body(name: &str, hp: f32, init: f32) -> Unit {
-    // Average (GURPS 10) baseline across the four attributes (`docs/stats.md`); archetypes
-    // bump their signature stat and layer skill tiers on top. Evasion = Dexterity + Evade-tier,
-    // and Evade defaults to untrained (−4), so a non-dodger sits at Dex − 4 — a secondary save.
+    // GURPS-10 baseline for the non-toughness attributes; **Body is HP-derived** now (`docs/stats.md`
+    // — Integrity = Body × HP_PER_BODY), so `with_integrity(hp)` *is* the Body setter and a heavier
+    // unit (more HP ⇒ more Body) also hits harder in melee. Evasion = Dexterity + Evade-tier (Evade
+    // untrained −4 ⇒ a non-dodger sits at Dex − 4, a secondary save).
     Unit::new(0, name, Team::A, Chassis::Augmented)
-        .with_integrity(hp)
-        .with_initiative(init)
-        .with_body(10.0)
         .with_dexterity(10.0)
         .with_intellect(10.0)
         .with_will(10.0)
+        .with_initiative(init)
+        .with_integrity(hp) // sets Body = hp / HP_PER_BODY (last, so it owns Body)
 }
 
 // -- Player archetypes ------------------------------------------------------------
@@ -98,9 +98,8 @@ fn body(name: &str, hp: f32, init: f32) -> Unit {
 /// armor that soaks blows into its own HP (a buffer that wears through under fire).
 pub fn blade(name: &str) -> Unit {
     let mut u = body(name, 68.0, 7.0)
-        .with_body(12.0)
         .with_dexterity(11.0)
-        .with_skill(Skill::Melee, 3) // master duelist ⇒ effective Melee 15
+        .with_skill(Skill::Melee, 3) // master duelist; Body 11 (HP 68) ⇒ effective Melee 14
         .with_skill(Skill::Evade, 1) // nimble, but no acrobat ⇒ Evasion 11 + 1 = 12
         .with_attack(weapon(14.0, DamageType::Slashing, PenTier::Internal, 1));
     u.install(Implant::skin_weave());
@@ -132,9 +131,8 @@ pub fn runner(name: &str) -> Unit {
 pub fn bulwark(name: &str) -> Unit {
     body(name, 94.0, 5.0)
         .with_armor(ArmorClass::Plate)
-        .with_body(13.0)
         .with_dexterity(9.0)
-        .with_skill(Skill::Melee, 1) // a seasoned maul ⇒ effective 14
+        .with_skill(Skill::Melee, 1) // a seasoned maul; Body 16 (HP 94) ⇒ effective 17
         // heavy and slow: Evade untrained, Dex 9 − 4 ⇒ Evasion 5, easy to hit
         .with_attack(weapon(12.0, DamageType::Bludgeoning, PenTier::Contact, 1))
 }
@@ -210,8 +208,7 @@ fn mook(name: &str) -> Unit {
 fn enforcer(name: &str) -> Unit {
     let mut u = body(name, 104.0, 5.0)
         .with_armor(ArmorClass::Plate)
-        .with_body(11.0)
-        .with_skill(Skill::Melee, 2) // a hardened bruiser ⇒ effective 13
+        .with_skill(Skill::Melee, 0) // Body 17 (HP 104) already hits hard ⇒ effective 17
         // Evade untrained: Dex 10 − 4 ⇒ Evasion 6
         .with_attack(weapon(5.0, DamageType::Bludgeoning, PenTier::Contact, 1));
     u.character.base_mut().link = 4.0; // a networked surface to hack at

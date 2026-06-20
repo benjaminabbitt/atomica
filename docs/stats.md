@@ -51,10 +51,22 @@ archetypes 10–13). They are the substrate the four **skill families** are tier
 
 | Attribute | Field | Governs (skills) | Feeds |
 |---|---|---|---|
-| **Body** | `unit.body` | Melee, Heavy | Integrity, melee damage |
-| **Dexterity** | `unit.dexterity` | Gunnery, Stealth, **Evade** | **Evasion**, Initiative — *dragged down by heavy plating (the armor tradeoff)* |
-| **Intellect** | `unit.intellect` | Hacking, Medical, Tech | **Firewall** |
+| **Body** | `unit.body` | Melee, Heavy | **Integrity = Body × `HP_PER_BODY`** ✅ (toughness *is* HP — one stat), melee damage |
+| **Dexterity** | `unit.dexterity` | Gunnery, Stealth, **Evade** | **Evasion** ✅, **physical Initiative** ✅ — *dragged down by heavy plating (the armor tradeoff)* |
+| **Intellect** | `unit.intellect` | Hacking, Medical, Tech | **digital Initiative** ✅ (net turn order), Firewall 🔭 |
 | **Will** | `unit.will` | (morale / spoof-resist) | 🔭 |
+
+**Body and Integrity are one stat ✅.** Max Integrity (the HP pool) is **derived** —
+`Body × HP_PER_BODY` (K = 6: an average Body-10 build carries ~60 HP; a bolted-down node
+scales Body up to whatever pool it needs). So toughness and health aren't tracked separately:
+a heavier unit (more HP) is *also* a harder melee hitter, and a Body stat-up implant (actuators,
+the decentralized heart) fattens the HP pool directly. The cost the design accepts: a very
+high-HP bruiser reliably lands its melee (Evasion, not a to-hit roll, is the defense).
+
+**Initiative is action-typed ✅.** A unit's turn order derives from the attribute the *action*
+uses — **Dexterity** for a physical activation (reflexes), **Intellect** for a digital one (a
+quick mind dives sooner). Link still gates a hack's reach/channel/presence but no longer sets
+the net turn order.
 
 ---
 

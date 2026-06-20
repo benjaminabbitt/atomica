@@ -44,13 +44,12 @@ pub struct Contribution {
     pub plating: f32,
     pub initiative: f32,
     pub damage: f32,
-    pub max_integrity: f32,
     /// **Primary attributes** (`docs/stats.md`) — a *stat-up* implant lifts an attribute, so every
-    /// skill on it climbs at once: **Body** (Melee/Heavy — the *actuators*), **Dexterity**
-    /// (Gunnery/Stealth/Evade, so Evasion too — *wired reflexes*), **Intellect** (Hacking/Medical/Tech
-    /// — the *neural net*), **Will**. The derived combat pools (Integrity / damage / initiative) are
-    /// their own fields above — a *decentralized heart* lifts `max_integrity`, *rams* lift `damage`,
-    /// *speedware* lifts `initiative`.
+    /// skill on it climbs at once: **Body** (Melee/Heavy **and HP** — Integrity is `Body ×
+    /// HP_PER_BODY`, so the *actuators* / *decentralized heart* fatten the pool too), **Dexterity**
+    /// (Gunnery/Stealth/Evade, so Evasion — *wired reflexes*), **Intellect** (Hacking/Medical/Tech —
+    /// the *neural net*), **Will**. The other combat pools (damage / initiative) are their own fields
+    /// above — *rams* lift `damage`, *speedware* lifts `initiative`.
     pub body: i32,
     pub dexterity: i32,
     pub intellect: i32,
@@ -257,7 +256,7 @@ impl Implant {
     pub fn decentralized_heart() -> Self {
         Self {
             name: "Decentralized Heart",
-            contribution: Contribution { max_integrity: 14.0, ..Default::default() },
+            contribution: Contribution { body: 3, ..Default::default() }, // +Body ⇒ +HP (Integrity = Body × K)
             grant_hack: None,
             hack_effects: vec![StatusSpec::bleed()], // Arrest — rhythm faults
             condition: Condition::Online,
@@ -301,12 +300,12 @@ impl Implant {
         }
     }
 
-    /// **Metabolic pump** — +max Integrity (resilience). Breached ⇒ **Overload**:
-    /// an Internal DoT (it runs hot).
+    /// **Metabolic pump** — +Body ⇒ +max Integrity (resilience; Integrity is `Body × K`). Breached
+    /// ⇒ **Overload**: an Internal DoT (it runs hot).
     pub fn metabolic_pump() -> Self {
         Self {
             name: "Metabolic Pump",
-            contribution: Contribution { max_integrity: 8.0, ..Default::default() },
+            contribution: Contribution { body: 1, ..Default::default() },
             grant_hack: None,
             hack_effects: vec![StatusSpec::bleed()], // Overload (Internal DoT)
             condition: Condition::Online,
@@ -340,9 +339,6 @@ impl Implant {
         }
         if c.damage != 0.0 {
             factors.push(Factor::add(Stat::Damage, c.damage));
-        }
-        if c.max_integrity != 0.0 {
-            factors.push(Factor::add(Stat::MaxIntegrity, c.max_integrity));
         }
         if c.body != 0 {
             factors.push(Factor::add(Stat::Body, c.body as f32));
@@ -385,7 +381,7 @@ mod tests {
     fn chassis() -> BaseLine {
         BaseLine {
             firewall: 9.0,
-            max_integrity: 30.0,
+            body: 5.0, // Body 5 ⇒ 30 HP (max Integrity = Body × HP_PER_BODY)
             initiative: 5.0,
             damage: 10.0,
             ..Default::default()
@@ -405,22 +401,24 @@ mod tests {
 
     #[test]
     fn stat_up_implants_fold_their_attribute_or_pool() {
-        // Each stat-up implant lifts exactly the stat it advertises (attribute or derived pool).
-        let mut c = Character::new(chassis()); // base attrs 0; init 5, max-int 30, dmg 10
+        // Each stat-up implant lifts the stat it advertises; the Body ones (actuators / heart) also
+        // fatten HP, since Integrity IS Body × HP_PER_BODY.
+        let mut c = Character::new(chassis()); // base Body 5 (⇒ 30 HP); init 5, dmg 10
         c.install(Implant::wired_reflexes().to_decorator()); // +2 Dexterity
         c.install(Implant::actuators().to_decorator()); // +2 Body
         c.install(Implant::speedware().to_decorator()); // +3 Initiative
         c.install(Implant::rams().to_decorator()); // +4 damage
-        let heart = c.install(Implant::decentralized_heart().to_decorator()); // +14 max Integrity
+        let heart = c.install(Implant::decentralized_heart().to_decorator()); // +3 Body
         let r = c.realize();
         assert_eq!(r.dexterity(), 2);
-        assert_eq!(r.body(), 2);
+        assert_eq!(r.body(), 10); // 5 + 2 + 3
         assert_eq!(r.initiative(), 8.0); // 5 + 3
         assert_eq!(r.damage(), 14.0); // 10 + 4
-        assert_eq!(r.max_integrity(), 44.0); // 30 + 14 — health IS the Integrity stat
-        // Breaching the heart unfolds the HP it lent (the §6 disable floor).
+        assert_eq!(r.max_integrity(), 60.0); // Body 10 × 6 — health IS the Body stat
+        // Breaching the heart unfolds the Body (and HP) it lent (the §6 disable floor).
         c.set_condition(heart, Condition::Offline);
-        assert_eq!(c.realize().max_integrity(), 30.0);
+        assert_eq!(c.realize().body(), 7); // 5 + 2
+        assert_eq!(c.realize().max_integrity(), 42.0); // 7 × 6
     }
 
     #[test]
@@ -460,11 +458,11 @@ mod tests {
 
     #[test]
     fn max_integrity_implant_fills_at_deploy_then_chunks_on_breach() {
-        let mut c = Character::new(chassis()); // base max 30
-        let pump = c.install(Implant::metabolic_pump().to_decorator()); // +8 max
-        assert_eq!(c.realize().max_integrity(), 38.0);
+        let mut c = Character::new(chassis()); // base Body 5 ⇒ max 30
+        let pump = c.install(Implant::metabolic_pump().to_decorator()); // +1 Body ⇒ +6 max
+        assert_eq!(c.realize().max_integrity(), 36.0);
         c.fill(); // deploy at full
-        assert_eq!(c.integrity, 38.0);
+        assert_eq!(c.integrity, 36.0);
 
         // breach the pump: max drops, current chunks to the new cap (§3a).
         c.set_condition(pump, Condition::Offline);
@@ -475,7 +473,7 @@ mod tests {
         // repair: capacity returns, but current does NOT refill (repair ≠ heal).
         c.set_condition(pump, Condition::Online);
         c.clamp_integrity();
-        assert_eq!(c.realize().max_integrity(), 38.0);
+        assert_eq!(c.realize().max_integrity(), 36.0);
         assert_eq!(c.integrity, 30.0);
     }
 
@@ -487,7 +485,7 @@ mod tests {
             Implant::subdermal_plating(), // +6 plating
             Implant::reflex_booster(),    // +3 init
             Implant::combat_stim(),       // +4 dmg, +1 init
-            Implant::metabolic_pump(),    // +8 max
+            Implant::metabolic_pump(),    // +1 Body ⇒ +6 max
         ] {
             c.install(im.to_decorator());
         }
@@ -498,9 +496,9 @@ mod tests {
         assert_eq!(r.plating(), 6.0);
         assert_eq!(r.initiative(), 9.0); // 5 base + 3 + 1
         assert_eq!(r.damage(), 14.0); // 10 base + 4
-        assert_eq!(r.max_integrity(), 38.0);
+        assert_eq!(r.max_integrity(), 36.0); // Body 6 × 6
         assert!(r.hack().is_some());
-        assert_eq!(c.integrity, 38.0);
+        assert_eq!(c.integrity, 36.0);
     }
 
     #[test]

@@ -366,7 +366,7 @@ mod l2b_tests {
     fn chassis() -> BaseLine {
         BaseLine {
             initiative: 6.0,
-            max_integrity: 30.0,
+            body: 5.0, // Body 5 ⇒ 30 max Integrity
             plating: 10.0,
             ..Default::default()
         }
@@ -434,7 +434,7 @@ mod l2b_tests {
     #[test]
     fn poison_softener_never_kills() {
         // Poison: PctCurrent 0.08 Internal — the softener (can_kill = false).
-        let mut c = Character::new(BaseLine { max_integrity: 30.0, ..Default::default() });
+        let mut c = Character::new(BaseLine { body: 5.0, ..Default::default() });
         c.apply_damage(0, 0, 29.0); // down to 1
         c.install(StatusSpec::poison().to_decorator(5, 3));
         c.dispatch(Event::TickStart, 1, &mut crate::SplitMix64::new(0));

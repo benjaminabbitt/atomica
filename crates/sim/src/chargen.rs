@@ -64,14 +64,15 @@ pub enum Stat {
     Firewall,
     Immunity,
     Initiative,
-    MaxIntegrity,
     Plating,
     Barrier,
     Damage,
     // -- Primary attributes (the stat/skill rework, `docs/stats.md`) -------------------
     // The four characteristics skills are tiers *on* (effective = attribute + skill-tier)
     // and the combat stats derive from. ~1-8, competent baseline 5.
-    /// Physical power & toughness — governs Melee/Heavy, feeds Integrity & damage.
+    /// Physical power & toughness — governs Melee/Heavy and **is** the unit's **HP**: max
+    /// Integrity derives as `Body × HP_PER_BODY` (`docs/stats.md`), so toughness and health are one
+    /// stat. Also feeds damage. A heavy build raises Body for the HP, and hits harder for it.
     Body,
     /// Agility & coordination — governs Gunnery/Stealth/Evade, feeds Evasion & Initiative.
     /// **Reduced by heavy plating** (the armor tradeoff).
@@ -81,6 +82,11 @@ pub enum Stat {
     /// Resolve & nerve — governs morale / spoof-resist (when that lands).
     Will,
 }
+
+/// HP per point of **Body** (`docs/stats.md`) — the merge factor: max Integrity is `Body ×
+/// HP_PER_BODY`. An average build (Body ~10) carries ~60 HP; a bolted-down object scales Body up
+/// to whatever pool it needs. Placeholder tuning value (TBD).
+pub const HP_PER_BODY: f32 = 6.0;
 
 /// How a [`Factor`] combines with its peers — the **bucket** model (§2). `Add` and
 /// `Increased` are additive-safe (runaway-proof); `More` genuinely multiplies and is
@@ -542,7 +548,6 @@ pub struct BaseLine {
     pub firewall: f32,
     pub immunity: f32,
     pub initiative: f32,
-    pub max_integrity: f32,
     pub plating: f32,
     pub barrier: f32,
     pub damage: f32,
@@ -566,7 +571,6 @@ impl BaseLine {
             Stat::Firewall => self.firewall,
             Stat::Immunity => self.immunity,
             Stat::Initiative => self.initiative,
-            Stat::MaxIntegrity => self.max_integrity,
             Stat::Plating => self.plating,
             Stat::Barrier => self.barrier,
             Stat::Damage => self.damage,
@@ -676,8 +680,11 @@ impl Realized {
     pub fn initiative(&self) -> f32 {
         self.stat(Stat::Initiative)
     }
+    /// Max **Integrity** (the HP pool) — *derived* from **Body** (`docs/stats.md`): `Body ×
+    /// HP_PER_BODY`. Toughness and health are one stat, so a Body buff (a stat-up implant, a heavy
+    /// build) fattens the HP pool directly.
     pub fn max_integrity(&self) -> f32 {
-        self.stat(Stat::MaxIntegrity)
+        self.stat(Stat::Body) * HP_PER_BODY
     }
     pub fn plating(&self) -> f32 {
         self.stat(Stat::Plating)
@@ -814,7 +821,7 @@ impl Character {
             base,
             gen: Vec::new(),
             next_gen: 0,
-            integrity: base.max_integrity,
+            integrity: base.body * HP_PER_BODY,
             barrier: base.barrier,
             plating: base.plating,
             alive: true,
@@ -1256,7 +1263,7 @@ mod tests {
             link: 4.0,
             firewall: 9.0,
             initiative: 5.0,
-            max_integrity: 30.0,
+            body: 5.0, // Body 5 ⇒ 30 max Integrity
             plating: 2.0,
             damage: 10.0,
             ..Default::default()
@@ -1432,18 +1439,18 @@ mod tests {
 
     #[test]
     fn condition_scales_then_gates_factors_keeping_identity() {
-        let mut c = Character::new(base()); // max_integrity 30
+        let mut c = Character::new(base()); // Body 5 ⇒ max_integrity 30
         let imp = c.install(Decorator::gear(
             Tag::Implant,
-            vec![Factor::add(Stat::MaxIntegrity, 20.0)],
+            vec![Factor::add(Stat::Body, 5.0)], // +5 Body ⇒ +30 max Integrity
         ));
-        assert_eq!(c.realize().max_integrity(), 50.0); // Online: full +20
+        assert_eq!(c.realize().max_integrity(), 60.0); // Online: Body 10 ⇒ 60
         c.set_condition(imp, Condition::Degraded);
-        assert_eq!(c.realize().max_integrity(), 40.0); // Degraded: +10
+        assert_eq!(c.realize().max_integrity(), 45.0); // Degraded: +2.5 Body ⇒ 7.5 × 6
         c.set_condition(imp, Condition::Offline);
         assert_eq!(c.realize().max_integrity(), 30.0); // Offline: nothing
         c.set_condition(imp, Condition::Online);
-        assert_eq!(c.realize().max_integrity(), 50.0); // repaired — same decorator
+        assert_eq!(c.realize().max_integrity(), 60.0); // repaired — same decorator
     }
 
     // -- capability grant (L1.1) --
@@ -1485,7 +1492,7 @@ mod tests {
 
     #[test]
     fn a_stochastic_gate_fires_only_on_a_passing_roll() {
-        let mut c = Character::new(BaseLine { firewall: 4.0, max_integrity: 30.0, ..Default::default() });
+        let mut c = Character::new(BaseLine { firewall: 4.0, body: 5.0, ..Default::default() });
         c.install(
             Decorator::status(Tag::Debuff, 1, Expiration::Duration(3), Wear::ByDuration)
                 .with_hook(
@@ -1536,16 +1543,16 @@ mod tests {
     #[test]
     fn max_drop_chunks_current_but_max_rise_does_not_refill() {
         let mut c = Character::new(base());
-        // +20 max from an implant (50 total); current still 30.
+        // +30 max from a +5-Body implant (60 total); current still 30.
         let imp = c.install(Decorator::gear(
             Tag::Implant,
-            vec![Factor::add(Stat::MaxIntegrity, 20.0)],
+            vec![Factor::add(Stat::Body, 5.0)],
         ));
-        assert_eq!(c.realize().max_integrity(), 50.0);
+        assert_eq!(c.realize().max_integrity(), 60.0);
         assert_eq!(c.integrity, 30.0); // not auto-filled by the buffer
 
         c.heal(100.0);
-        assert_eq!(c.integrity, 50.0); // now topped to the new max
+        assert_eq!(c.integrity, 60.0); // now topped to the new max
 
         // breach the implant: max drops to 30, current chunks to 30.
         c.remove(imp);
@@ -1553,10 +1560,10 @@ mod tests {
         assert_eq!(c.realize().max_integrity(), 30.0);
         assert_eq!(c.integrity, 30.0);
 
-        // repair: max back to 50, but current does NOT refill (capacity, not health).
-        c.install(Decorator::gear(Tag::Implant, vec![Factor::add(Stat::MaxIntegrity, 20.0)]));
+        // repair: max back to 60, but current does NOT refill (capacity, not health).
+        c.install(Decorator::gear(Tag::Implant, vec![Factor::add(Stat::Body, 5.0)]));
         c.clamp_integrity();
-        assert_eq!(c.realize().max_integrity(), 50.0);
+        assert_eq!(c.realize().max_integrity(), 60.0);
         assert_eq!(c.integrity, 30.0);
     }
 }

@@ -6,7 +6,7 @@
 
 use atomica_sim::{
     ArmorClass, Attack, Battle, Chassis, DamageType, Footprint, Hex, Implant, NetDoctrine, Outcome,
-    Program, Skill, StatusSpec, Team, Unit, EquipmentTags,
+    Program, Skill, StatusSpec, Team, Unit, EquipmentTags, HP_PER_BODY,
 };
 use egui_macroquad::egui;
 use macroquad::prelude::*;
@@ -43,8 +43,8 @@ fn demo_battle() -> Battle {
                 tags: EquipmentTags::NONE,
             });
         u = u.with_armor(armor_class);
-        // Beefier base than the default: Integrity 40, Plating / Barrier 6 — then fill.
-        u.character.base_mut().max_integrity = 40.0;
+        // Beefier base than the default: Integrity 40 (Body-derived now), Plating / Barrier 6 — then fill.
+        u.character.base_mut().body = 40.0 / HP_PER_BODY;
         u.character.base_mut().plating = 6.0;
         u.character.base_mut().barrier = 6.0;
         u.character.fill();
