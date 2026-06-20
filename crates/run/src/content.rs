@@ -57,6 +57,21 @@ fn awkward(mut a: Attack) -> Attack {
     a
 }
 
+/// Builder: a **finesse** weapon — its to-hit rides **Dexterity**, not the skill's home stat
+/// (`docs/stats.md`). A light, precise blade is aimed by reflexes; the trained Melee tier rolls
+/// off Dex instead of Body.
+fn finesse(mut a: Attack) -> Attack {
+    a.tags = a.tags.with(EquipmentTag::Finesse);
+    a
+}
+
+/// Builder: a **brawn** weapon — its to-hit rides **Body** (`docs/stats.md`). Muscle to swing or
+/// brace it; on a heavy *ranged* weapon this overrides Gunnery's Dexterity.
+fn brawn(mut a: Attack) -> Attack {
+    a.tags = a.tags.with(EquipmentTag::Brawn);
+    a
+}
+
 /// Builder: a **blast** weapon (grenade / rocket) — an AoE disc of `radius`. No `SMART`
 /// tag means **no IFF**: the blast catches allies caught in the footprint too (§7G).
 fn blast(mut a: Attack, radius: i32) -> Attack {
@@ -99,9 +114,9 @@ fn body(name: &str, hp: f32, init: f32) -> Unit {
 pub fn blade(name: &str) -> Unit {
     let mut u = body(name, 68.0, 7.0)
         .with_dexterity(11.0)
-        .with_skill(Skill::Melee, 3) // master duelist; Body 11 (HP 68) ⇒ effective Melee 14
+        .with_skill(Skill::Melee, 3) // master duelist; finesse off Dex 11 ⇒ effective Melee 14
         .with_skill(Skill::Evade, 1) // nimble, but no acrobat ⇒ Evasion 11 + 1 = 12
-        .with_attack(weapon(14.0, DamageType::Slashing, PenTier::Internal, 1));
+        .with_attack(finesse(weapon(14.0, DamageType::Slashing, PenTier::Internal, 1)));
     u.install(Implant::skin_weave());
     u
 }
@@ -260,9 +275,9 @@ fn sniper(name: &str) -> Unit {
 fn grenadier(name: &str) -> Unit {
     body(name, 70.0, 4.0)
         .with_armor(ArmorClass::Mail)
-        .with_skill(Skill::Gunnery, -2) // a poor shot ⇒ effective 8
+        .with_skill(Skill::Gunnery, -4) // a braced launcher off Body 12, untrained aim ⇒ effective 8
         // Evade untrained: Dex 10 − 4 ⇒ Evasion 6
-        .with_attack(blast(weapon(6.0, DamageType::Bludgeoning, PenTier::External, 3), 1))
+        .with_attack(brawn(blast(weapon(6.0, DamageType::Bludgeoning, PenTier::External, 3), 1)))
 }
 
 /// A **swarmer** — a fast, fragile rusher (speed 2, **Swarm**) that hunts the **lowest
@@ -270,10 +285,10 @@ fn grenadier(name: &str) -> Unit {
 fn swarmer(name: &str) -> Unit {
     body(name, 40.0, 7.0)
         .with_dexterity(11.0)
-        .with_skill(Skill::Melee, 0) // a rusher's slash ⇒ effective 11
+        .with_skill(Skill::Melee, -1) // a finesse rusher; slash off Dex 11 ⇒ effective 10
         .with_skill(Skill::Evade, -2) // quicker than a grunt ⇒ Evasion 11 − 2 = 9
         .with_speed(2)
-        .with_attack(weapon(5.0, DamageType::Slashing, PenTier::Internal, 1))
+        .with_attack(finesse(weapon(5.0, DamageType::Slashing, PenTier::Internal, 1)))
         .with_targeting(TargetingProfile::LowestIntegrity)
         .with_movement(MovementProfile::Swarm)
 }

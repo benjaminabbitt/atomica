@@ -162,10 +162,18 @@ pub enum EquipmentTag {
     /// capability and that **programs load onto** ([`Unit::install_program`]). No deck ⇒ no
     /// programs.
     Cyberdeck,
+    /// **Finesse** (`docs/stats.md`): a light / precise weapon (a duelist's blade, a pistol) whose
+    /// to-hit rides **Dexterity**, not the skill's home attribute. The contextual-skill framework as
+    /// a weapon trait — same trained tier, retargeted onto the stat the weapon actually uses.
+    Finesse,
+    /// **Brawn** (`docs/stats.md`): a heavy weapon (a maul, a braced cannon) whose to-hit rides
+    /// **Body** — muscle to swing or steady it. On a Melee weapon that's already the home stat; on a
+    /// heavy *ranged* one it overrides Gunnery's Dexterity.
+    Brawn,
 }
 
 impl EquipmentTag {
-    const COUNT: usize = 6;
+    const COUNT: usize = 8;
 }
 
 /// A **set of [`EquipmentTag`]s** an item carries (a rifle is `Ranged + Awkward`). A small
@@ -183,6 +191,8 @@ impl EquipmentTags {
     pub const SMART: EquipmentTags = EquipmentTags::NONE.with(EquipmentTag::Smart);
     pub const AWKWARD: EquipmentTags = EquipmentTags::NONE.with(EquipmentTag::Awkward);
     pub const RANGED: EquipmentTags = EquipmentTags::NONE.with(EquipmentTag::Ranged);
+    pub const FINESSE: EquipmentTags = EquipmentTags::NONE.with(EquipmentTag::Finesse);
+    pub const BRAWN: EquipmentTags = EquipmentTags::NONE.with(EquipmentTag::Brawn);
     pub const DIGITAL: EquipmentTags = EquipmentTags::NONE.with(EquipmentTag::Digital);
 
     /// Does this set contain `tag`?
@@ -215,6 +225,21 @@ impl EquipmentTags {
             };
         }
         tn
+    }
+
+    /// The **attribute this weapon's to-hit rolls off** (`docs/stats.md`): a `FINESSE` weapon (a
+    /// light blade, a pistol) rides **Dexterity**; a `BRAWN` weapon (a maul, a braced cannon) rides
+    /// **Body**; anything else uses the skill's home attribute (`fallback`). The tag retargets the
+    /// same trained tier — the contextual-skill framework expressed as gear. (Finesse wins if a
+    /// weapon somehow carries both — light handling trumps muscle.)
+    pub fn to_hit_attribute(self, fallback: Stat) -> Stat {
+        if self.has(EquipmentTag::Finesse) {
+            Stat::Dexterity
+        } else if self.has(EquipmentTag::Brawn) {
+            Stat::Body
+        } else {
+            fallback
+        }
     }
 
     /// `SMART`'s rule (§7F): does this equipment **spare the attacker's team** in its
@@ -644,13 +669,13 @@ impl Unit {
         self.realized().damage()
     }
 
-    /// **Body-driven melee damage** (`docs/stats.md`): a heavier frame swings harder. Body
-    /// **above** the competent baseline (10) adds flat damage to a *Melee* blow, scaled by
-    /// [`BODY_MELEE_DAMAGE`] — so the same Body that carries the HP and lands the hit also lends
-    /// weight to it. Floored at 0 (a frail build doesn't *subtract* from the weapon), and **melee
-    /// only**: Heavy / ranged damage is the munition, not muscle, so it doesn't scale.
+    /// **Body-driven melee damage** (`docs/stats.md`): a heavier frame swings harder, a frail one
+    /// softer. Body's distance from the competent baseline (10) adjusts a *Melee* blow's damage,
+    /// scaled by [`BODY_MELEE_DAMAGE`] — **signed**, so a bruiser adds and a weakling *subtracts*
+    /// (the whole blow can't drop below 0). The same Body that carries the HP and lands the hit lends
+    /// (or denies) it weight. **Melee only**: Heavy / ranged damage is the munition, not muscle.
     pub fn melee_body_bonus(&self) -> f32 {
-        (self.body() as f32 - BODY_MELEE_BASELINE).max(0.0) * BODY_MELEE_DAMAGE
+        (self.body() as f32 - BODY_MELEE_BASELINE) * BODY_MELEE_DAMAGE
     }
 
     /// Install a stat/behavior **modifier** on the unit (a buff, debuff, or gear) — a
@@ -1614,8 +1639,11 @@ impl<R: RandomSource> Battle<R> {
         // matter once the target can dodge or the shot is hard).
         let dist = self.reach(attacker, target);
         let penalty = atk.tags.to_hit_penalty(dist) + self.terrain.cover_tn(self.units[target].pos);
+        // The weapon's tags pick the to-hit attribute (`FINESSE` ⇒ Dex, `BRAWN` ⇒ Body, else the
+        // skill's home) — a light blade rides reflexes, a heavy maul rides muscle (`docs/stats.md`).
+        let to_hit_attr = atk.tags.to_hit_attribute(atk.skill.governs());
         let atk_target =
-            self.units[attacker].effective_skill(atk.skill) + atk.accuracy - penalty;
+            self.units[attacker].effective_skill_off(atk.skill, to_hit_attr) + atk.accuracy - penalty;
         // A fast attack is far harder to dodge than a slow one — the weapon's Speed docks Evade.
         let evade = self.units[target].evasion() - atk.speed;
         let landed = if evade <= 0 {
@@ -1633,6 +1661,7 @@ impl<R: RandomSource> Battle<R> {
         if atk.skill == Skill::Melee {
             base += self.units[attacker].melee_body_bonus();
         }
+        let base = base.max(0.0); // a frail Body bump can't push the blow below 0
         let src = atk_id.0;
         for t in self.footprint_targets(attacker, target, atk) {
             let mult =
@@ -2430,7 +2459,7 @@ mod tests {
 
     #[test]
     fn breach_amplifies_incoming_damage() {
-        let attacker = unit(0, Team::A, 0);
+        let attacker = unit(0, Team::A, 0).with_body(10.0); // average Body ⇒ no melee bump, clean base
         let mut target = unit(1, Team::B, 0); // same hex ⇒ in melee range
         target.add_status(StatusSpec::breach(), 3, 1); // ×1.5
         let mut b = Battle::new(vec![attacker, target], 1);
@@ -3175,7 +3204,7 @@ mod tests {
         let mut tgt = unit(1, Team::B, 0); // Augmented chassis, body coverage 90; Integrity 30
         tgt.install(Implant::cyberdeck()); // coverage 10, HP 18 → domain 1..100
         assert!(tgt.hack().is_some());
-        let atk = unit(0, Team::A, 0); // default melee 10, Internal → ~10 a hit
+        let atk = unit(0, Team::A, 0).with_body(10.0); // average Body ⇒ clean melee 10, Internal
         // Evasion 0 auto-hits (no to-hit draw); each attack spends location rolls. A roll of
         // 90 lands in the deck's slice [90,100).
         let mut b = Battle::with_rng(vec![atk, tgt], ScriptedRng::new([90, 90]));
@@ -3277,12 +3306,11 @@ mod tests {
 
     #[test]
     fn body_lends_weight_to_a_melee_blow() {
-        // Body over the competent baseline (10) adds flat melee damage (`docs/stats.md`): a heavier
-        // frame swings harder. An average frame is unchanged; a frail one doesn't *subtract* (floored).
-        let heavy = unit(0, Team::A, 0).with_body(16.0);
-        assert_eq!(heavy.melee_body_bonus(), 3.0); // (16 − 10) × 0.5
+        // Body's distance from the baseline (10) shifts melee damage (`docs/stats.md`), signed: a
+        // heavier frame swings harder, an average one is unchanged, a frail one swings softer.
+        assert_eq!(unit(0, Team::A, 0).with_body(16.0).melee_body_bonus(), 3.0); // (16 − 10) × 0.5
         assert_eq!(unit(0, Team::A, 0).with_body(10.0).melee_body_bonus(), 0.0); // average: none
-        assert_eq!(unit(0, Team::A, 0).with_body(6.0).melee_body_bonus(), 0.0); // frail: floored, no penalty
+        assert_eq!(unit(0, Team::A, 0).with_body(6.0).melee_body_bonus(), -2.0); // frail: (6 − 10) × 0.5
     }
 
     #[test]

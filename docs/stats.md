@@ -51,7 +51,7 @@ archetypes 10–13). They are the substrate the four **skill families** are tier
 
 | Attribute | Field | Governs (skills) | Feeds |
 |---|---|---|---|
-| **Body** | `unit.body` | Melee, Heavy | **Integrity = Body × `HP_PER_BODY`** ✅ (toughness *is* HP — one stat), **melee damage** ✅ (Body over 10 swings harder) |
+| **Body** | `unit.body` | Melee, Heavy | **Integrity = Body × `HP_PER_BODY`** ✅ (toughness *is* HP — one stat), **melee damage** ✅ (signed off 10: heavier swings harder, frail softer) |
 | **Dexterity** | `unit.dexterity` | Gunnery, Stealth, **Evade** | **Evasion** ✅, **physical Initiative** ✅ — *dragged down by heavy plating (the armor tradeoff)* |
 | **Intellect** | `unit.intellect` | Hacking, Medical, Tech | **digital Initiative** ✅ (net turn order — *speed of thought*) |
 | **Will** | `unit.will` | (morale / spoof-resist) | served by the framework, not a roll of its own ✅ — a willpower check rolls a tier off **Intellect** (mental grit) or **Body** (physical endurance) per use case (§3) |
@@ -60,8 +60,9 @@ archetypes 10–13). They are the substrate the four **skill families** are tier
 > lifts both), not from an attribute — Intellect governs the netrunning *skills* and the digital
 > turn order, but the wall itself is equipment. This is deliberate: the net surface is something
 > you *install*, not something you *are*. (The `Damage` stat is *also* gear — a weapon's base plus
-> chrome like rams / combat-stim — but a Melee blow adds a **Body** bump on top: `weapon + Body-over-10
-> + chrome`. Ranged / Heavy damage is the munition, so it doesn't scale with Body.)
+> chrome like rams / combat-stim — but a Melee blow adds a signed **Body** bump on top: `weapon +
+> (Body − 10)×k + chrome` (heavier hits harder, frail softer; the blow can't drop below 0). Ranged /
+> Heavy damage is the munition, so it doesn't scale with Body.)
 >
 > **Programs are the digital domain's *skills*.** Where a physical action is `attribute + skill-tier`,
 > a digital one is `granted stat (Link / Firewall) + quality program` — you don't *train* onto the
@@ -123,6 +124,13 @@ no roll of its own**: a willpower check is just a tier rolled off the appropriat
 **Intellect** for mental grit (composure, spoof-resist), **Body** for physical endurance (shrugging
 off a stagger). The four attributes stay the substrate; the framework lets a skill borrow the one
 that fits.
+
+**Weapons carry this too — the to-hit attribute is a *tag* ✅.** A `FINESSE` weapon (a light blade,
+a pistol) rolls its Melee/Gunnery tier off **Dexterity**; a `BRAWN` weapon (a heavy maul, a braced
+launcher) rolls off **Body**; an untagged one uses the skill's home stat. So a duelist's slash rides
+reflexes while a bruiser's maul rides muscle — same skill, different governing stat, picked by the
+weapon (`EquipmentTags::to_hit_attribute`). Melee's home is already Body, so only *light* melee needs
+`FINESSE`; `BRAWN` is what lets a *heavy ranged* weapon override Gunnery's Dexterity.
 
 ---
 
