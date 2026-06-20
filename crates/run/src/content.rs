@@ -221,6 +221,19 @@ fn enforcer(name: &str) -> Unit {
     u
 }
 
+/// A **jammer** — an enemy **EMP** trooper, the anti-deck answer in a netrunning fight. A short
+/// pulse that fries a diver's cyberware *through* Firewall (§7I) — bricking the deck mid-crack —
+/// hunting the **biggest threat** (usually the squad's runner), so a chromed-up dive is a gamble.
+fn jammer(name: &str) -> Unit {
+    let shock = emp(weapon(6.0, DamageType::Bludgeoning, PenTier::Contact, 2));
+    body(name, 72.0, 5.0)
+        .with_armor(ArmorClass::Mail)
+        .with_skill(Skill::Gunnery, 0) // competent ⇒ effective 11
+        // Evade untrained: Dex 10 − 4 ⇒ Evasion 6
+        .with_attack(shock)
+        .with_targeting(TargetingProfile::HighestThreat)
+}
+
 /// A **brute** — a tougher, up-armored mook (Plate). No chrome to breach and no plague;
 /// just a meatier body than the rank-and-file, the muscle of a hardened position.
 fn brute(name: &str) -> Unit {
@@ -503,10 +516,21 @@ fn data_node(name: &str) -> Unit {
         .with_speed(0) // bolted to the floor
         .with_movement(MovementProfile::Hold);
     u.character.base_mut().link = 5.0; // a fat surface to dive
-    u.character.base_mut().firewall = 2.0; // a thin own-wall; the guarding runner stiffens it
+    u.character.base_mut().firewall = 12.0; // a hard own-wall — a real contest even for a neural-netted runner
     u.install(Implant::firewall_suite()); // a digital implant — breaching it (Offline) cracks the node
     u.disarm(); // a terminal, not a combatant — it never attacks
     u
+}
+
+/// The **ICE** guarding a [`datamine`] node — a [`breaker`] hardened for the post-neural-net duel:
+/// it runs a **Honeypot** (counter-ICE: a repelled dive fries the intruder's deck) under a
+/// **Defender** doctrine (it dives the squad's runner to break the dive), and **holds** the node
+/// rather than kiting. Its active cover plus the node's own wall is what keeps the vault hard.
+fn ice_guard(name: &str) -> Unit {
+    let mut u = breaker(name);
+    u.install_program(Program::Honeypot);
+    u.set_doctrine(NetDoctrine::Defender);
+    u.with_movement(MovementProfile::Hold)
 }
 
 /// A **data heist** — breach the bolted-down [`data_node`] to extract its data (the netrunning
@@ -520,10 +544,10 @@ pub fn datamine() -> RunPlan {
             "Black Vault",
             vec![
                 data_node("Server"), // row 0 ⇒ the node hex below
-                breaker("ICE").with_movement(MovementProfile::Hold), // guards the node (holds, does not kite)
+                ice_guard("ICE"), // a Honeypot-running Defender that holds the node
                 enforcer("Sentinel"),
+                jammer("Static"), // an EMP trooper hunting the diver — brick the deck mid-crack
                 mook("Sec-1"),
-                mook("Sec-2"),
             ],
         )
         .on(yard())
