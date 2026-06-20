@@ -442,7 +442,7 @@ impl Unit {
 
     /// Builder: set base **Evasion** (the physical to-hit TN, §7G).
     /// Builder: set a **primary attribute** (`docs/stats.md`). Skills are tiers on these and
-    /// the combat stats derive from them — e.g. Evasion = `(Dexterity + Evade-tier) × 2`.
+    /// the combat stats derive from them — e.g. Evasion = `Dexterity + Evade-tier`.
     pub fn with_body(mut self, body: f32) -> Self {
         self.character.base_mut().body = body;
         self
