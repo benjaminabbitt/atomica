@@ -53,8 +53,13 @@ archetypes 10–13). They are the substrate the four **skill families** are tier
 |---|---|---|---|
 | **Body** | `unit.body` | Melee, Heavy | **Integrity = Body × `HP_PER_BODY`** ✅ (toughness *is* HP — one stat), melee damage |
 | **Dexterity** | `unit.dexterity` | Gunnery, Stealth, **Evade** | **Evasion** ✅, **physical Initiative** ✅ — *dragged down by heavy plating (the armor tradeoff)* |
-| **Intellect** | `unit.intellect` | Hacking, Medical, Tech | **digital Initiative** ✅ (net turn order), Firewall 🔭 |
+| **Intellect** | `unit.intellect` | Hacking, Medical, Tech | **digital Initiative** ✅ (net turn order — *speed of thought*) |
 | **Will** | `unit.will` | (morale / spoof-resist) | 🔭 |
+
+> **Firewall and Link are *granted*, not derived.** They come from gear / chassis (a cyberdeck
+> lifts both), not from an attribute — Intellect governs the netrunning *skills* and the digital
+> turn order, but the wall itself is equipment. This is deliberate: the net surface is something
+> you *install*, not something you *are*.
 
 **Body and Integrity are one stat ✅.** Max Integrity (the HP pool) is **derived** —
 `Body × HP_PER_BODY` (K = 6: an average Body-10 build carries ~60 HP; a bolted-down node
