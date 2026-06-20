@@ -248,6 +248,7 @@ impl std::fmt::Debug for EquipmentTags {
             (EquipmentTag::Ranged, "Ranged"),
             (EquipmentTag::Digital, "Digital"),
             (EquipmentTag::HeatProne, "HeatProne"),
+            (EquipmentTag::Cyberdeck, "Cyberdeck"),
         ]
         .into_iter()
         .filter(|&(t, _)| self.has(t))
@@ -886,6 +887,36 @@ const KNOCKOUT_MARGIN: i32 = i32::MAX;
 /// (the §6 disable floor) draws **no heat**. This is netrunning's damage. (TBD.)
 const OVERHEAT_DURATION: u32 = 3;
 
+// --- Program rider tuning (`netrunning.md`, §10.8) — all placeholders (TBD) -----------------
+/// **Meltdown** burn duration — the heavy finisher DoT runs a touch longer than Overheat.
+const MELTDOWN_DURATION: u32 = 4;
+/// **Lag** / **Breach** rider durations — control debuffs that linger a few ticks.
+const LAG_DURATION: u32 = 3;
+const BREACH_DURATION: u32 = 3;
+/// **Blind** — Dexterity bleed (its shots go wide) and how long it lasts.
+const BLIND_AMOUNT: f32 = 3.0;
+const BLIND_DURATION: u32 = 3;
+/// **Decrypt** — Firewall rot (a `Worm` corruption) and its duration.
+const DECRYPT_AMOUNT: f32 = 4.0;
+const DECRYPT_DURATION: u32 = 3;
+/// **Leech** — Link drain and its duration.
+const LEECH_AMOUNT: f32 = 2.0;
+const LEECH_DURATION: u32 = 3;
+/// **Worm** program — the contagious Firewall-rot it deploys (rot / virulence / turns).
+const WORM_PROGRAM_FIREWALL: f32 = 3.0;
+const WORM_PROGRAM_VIRULENCE: i32 = 10;
+const WORM_PROGRAM_TURNS: u32 = 4;
+/// **Spoof** / **Misfire** scramble durations (targeting vs movement).
+const SPOOF_DURATION: u32 = 3;
+const MISFIRE_DURATION: u32 = 2;
+/// **Logicbomb** — the floor degrade a planted bomb fires past the disable floor.
+const LOGICBOMB_DEGRADE: u32 = 2;
+/// **Ghost** — the passive net-defense bonus a stealth suite adds to its owner.
+const GHOST_DEFENSE: i32 = 3;
+/// **Honeypot** — the counter-ICE DoT a repelled intruder eats (duration / stacks).
+const HONEYPOT_DURATION: u32 = 3;
+const HONEYPOT_STACKS: u32 = 2;
+
 /// Does `outcome` clear the knockout gate — a crit, or a margin at/above the decisive
 /// `tier`? (§6: "any hack-effect that stuns is crit-gated; everything else scales with
 /// margin" — `tier` is the knob between strict-crit and a decisive-margin gate.)
@@ -1065,6 +1096,7 @@ impl<R: RandomSource> Battle<R> {
         self.reap(); // DoTs / hazards can kill — fire their death triggers
         self.woven_phase();
         self.contagion_phase(); // corruption jumps to fresh victims (contested)
+        self.ward_phase(); // Antivirus programs cleanse worm corruption
         self.decay_phase();
         self.objectives.tick(&self.units, self.tick); // advance objective state (capture/hold/extract)
 
@@ -1806,6 +1838,18 @@ impl<R: RandomSource> Battle<R> {
     /// Run the woven order (§10.3). The order is snapshotted at phase start; the dead /
     /// stunned are skipped as it runs, and death triggers are reaped after each
     /// activation.
+    /// **Ward phase** (`netrunning.md` §10.8): every unit running an **Antivirus** program strips
+    /// the **worm** corruption off itself each tick — the standing digital counterplay, loaded as a
+    /// program rather than a gear ward. (Decrypt's Firewall-rot is `Tag::Worm`, so this also un-pries
+    /// a decrypted wall; the contagious Worm program likewise.)
+    fn ward_phase(&mut self) {
+        for u in &mut self.units {
+            if u.is_alive() && u.programs.has(Program::Antivirus) {
+                u.character.remove_where(Tag::Worm);
+            }
+        }
+    }
+
     fn woven_phase(&mut self) {
         for (i, digital) in self.woven_order() {
             if !self.units[i].is_alive() || self.units[i].is_stunned() {
@@ -1892,6 +1936,11 @@ impl<R: RandomSource> Battle<R> {
                 d = d.max(ally.effective_skill(Skill::Hacking));
             }
         }
+        // **Ghost** (`netrunning.md` §10.8): a stealth-suite program reads the unit darker — a flat
+        // bonus to whatever defense it already has, so it's harder to crack.
+        if t.programs.has(Program::Ghost) {
+            d += GHOST_DEFENSE;
+        }
         d
     }
 
@@ -1946,21 +1995,122 @@ impl<R: RandomSource> Battle<R> {
         // The attacker's loaded **programs** (`netrunning.md`) — its deck software, run on a breach.
         let programs = self.units[attacker].programs;
         // Read heat-prone chrome **before** the breach (which disables the very implant) — forcing
-        // hot chrome is what cooks it.
+        // hot chrome is what cooks it (the Overheat / Meltdown gate).
         let runs_hot = self.units[target].has_volatile_chrome();
         let stacks = if outcome.success {
-            self.apply_breach(target, &outcome, &hack, programs)
+            let stacks = self.apply_breach(target, &outcome, &hack, programs);
+            // The attacker's **offensive programs** ride on top of the breach (§10.8) — each gated
+            // to keep the §6 disable floor.
+            self.run_programs(target, &outcome, programs, runs_hot);
+            stacks
         } else {
+            // A **repelled** intruder: the target's **Honeypot** counter-ICE bites back (§10.8).
+            self.run_counter_ice(attacker, target);
             0
         };
-        // The **Overheat program**: a rider that, on a **solid** breach, cooks the target's
-        // heat-prone chrome — an Internal DoT scaling with the margin. Needs the program loaded, a
-        // solid (non-floor) breach, and a heat-prone target.
-        let burn = hack::margin_stacks(outcome.margin);
-        if outcome.success && programs.has(Program::Overheat) && burn > 0 && runs_hot {
-            self.units[target].add_status(StatusSpec::overheat(), OVERHEAT_DURATION, burn);
-        }
         HackResult::Rolled { outcome, stacks }
+    }
+
+    /// Run the attacker's loaded **offensive programs** as riders on a successful breach
+    /// (`netrunning.md` §10.8). Each is gated to preserve the §6 floor: a *marginal* crack (margin
+    /// 0 ⇒ `solid == 0`) just disables — a program needs a **solid** breach to deploy, except the
+    /// stun-class **Crash**, which is crit-gated like every knockout. `runs_hot` is the target's
+    /// pre-breach heat-prone state (the Overheat / Meltdown gate). Lockware is *not* here — it's the
+    /// generic no-chrome payload [`apply_breach`] lands; the breach-modifier (Cascade / Logicbomb)
+    /// and defensive (Honeypot / Ghost / Antivirus) programs fire on their own seams.
+    fn run_programs(&mut self, target: usize, outcome: &RollOutcome, programs: Programs, runs_hot: bool) {
+        let solid = hack::margin_stacks(outcome.margin); // a solid breach's depth (0 ⇒ the floor)
+        let decisive = knockout_gated(outcome, KNOCKOUT_MARGIN); // the crit gate (stun class)
+        for p in programs.iter() {
+            match p {
+                // Handled elsewhere: Lockware is the no-chrome payload; the breach modifiers
+                // reshape the breach in `apply_breach`; the defensive trio fire on other seams.
+                Program::Lockware
+                | Program::Cascade
+                | Program::Logicbomb
+                | Program::Honeypot
+                | Program::Ghost
+                | Program::Antivirus => {}
+                // Heat: cooks heat-prone chrome only (a solid breach).
+                Program::Overheat if solid > 0 && runs_hot => {
+                    self.units[target].add_status(StatusSpec::overheat(), OVERHEAT_DURATION, solid);
+                }
+                Program::Meltdown if solid > 0 && runs_hot => {
+                    self.units[target].add_status(StatusSpec::meltdown(), MELTDOWN_DURATION, solid);
+                }
+                Program::Overheat | Program::Meltdown => {} // loaded but the gate (solid + hot) failed
+                // Stun: crit-gated, like every knockout.
+                Program::Crash if decisive => {
+                    self.units[target].add_status(StatusSpec::crash(), KNOCKOUT_STUN, 1);
+                }
+                Program::Crash => {}
+                // Control / soften riders — a solid breach lands them.
+                Program::Lag if solid > 0 => {
+                    self.units[target].add_status(StatusSpec::lag(), LAG_DURATION, 1);
+                }
+                Program::Breach if solid > 0 => {
+                    self.units[target].add_status(StatusSpec::breach(), BREACH_DURATION, 1);
+                }
+                Program::Blind if solid > 0 => {
+                    self.units[target].apply_modifier(Decorator::timed(
+                        Tag::Debuff,
+                        BLIND_DURATION,
+                        vec![Factor::add(Stat::Dexterity, -BLIND_AMOUNT)],
+                    ));
+                }
+                Program::Decrypt if solid > 0 => {
+                    // A `Worm`-tagged Firewall rot (cleansable by an Antivirus / firewall patch).
+                    self.units[target]
+                        .apply_modifier(Corruption::worm(DECRYPT_AMOUNT, DECRYPT_DURATION));
+                }
+                Program::Leech if solid > 0 => {
+                    self.units[target].apply_modifier(Decorator::timed(
+                        Tag::Debuff,
+                        LEECH_DURATION,
+                        vec![Factor::add(Stat::Link, -LEECH_AMOUNT)],
+                    ));
+                }
+                Program::Worm if solid > 0 => {
+                    // The contagious spreader — rides the net to nearby surfaces in the contagion phase.
+                    self.units[target].apply_modifier(Corruption::worm_swarm(
+                        WORM_PROGRAM_FIREWALL,
+                        WORM_PROGRAM_VIRULENCE,
+                        WORM_PROGRAM_TURNS,
+                    ));
+                }
+                Program::Spoof if solid > 0 => {
+                    // Corrupt the targeting script — chase the back line (waste the activation).
+                    self.units[target].spoof(TargetingProfile::Backline, SPOOF_DURATION);
+                }
+                Program::Misfire if solid > 0 => {
+                    // Corrupt the movement routine — back off / break contact for a beat.
+                    self.units[target].apply_modifier(
+                        Decorator::timed(Tag::Spoof, MISFIRE_DURATION, vec![])
+                            .with_priority(Priority::CORRUPTION)
+                            .with_override(Override::Movement(MovementProfile::Kite)),
+                    );
+                }
+                // Loaded control/soften programs whose solid-breach gate failed (a marginal crack).
+                Program::Lag
+                | Program::Breach
+                | Program::Blind
+                | Program::Decrypt
+                | Program::Leech
+                | Program::Worm
+                | Program::Spoof
+                | Program::Misfire => {}
+            }
+        }
+    }
+
+    /// **Counter-ICE** (`netrunning.md` §10.8): a target running a **Honeypot** program bites a
+    /// **repelled** intruder back — the trap fries the attacker's deck (an Internal lockout DoT).
+    /// Fires only when the hack *failed* and the attacker is still a live netrunner.
+    fn run_counter_ice(&mut self, attacker: usize, target: usize) {
+        if self.units[target].programs.has(Program::Honeypot) && self.units[attacker].is_alive() {
+            self.units[attacker].add_status(StatusSpec::lockware(), HONEYPOT_DURATION, HONEYPOT_STACKS);
+            self.emit(CombatEvent::Breached { target: self.units[attacker].id, vector: BreachVector::Hack });
+        }
     }
 
     /// Apply a successful hack's consequences — the §6 **severity ladder**
@@ -1979,14 +2129,23 @@ impl<R: RandomSource> Battle<R> {
             }
             return stacks;
         };
-        // Cascade (§5): a crit on a **meshed** PAN rides the net to *every*
-        // implant; a segmented PAN contains it to the one slot.
-        let slots = if outcome.crit && self.units[target].pan == Pan::Meshed {
+        let solid = hack::margin_stacks(outcome.margin) > 0; // a non-floor breach (the program gate)
+        // Cascade (§5): a crit on a **meshed** PAN rides the net to *every* implant; a segmented PAN
+        // contains it to the one slot. The **Cascade program** forces that breadth on any *solid*
+        // breach (no crit needed) against a meshed target.
+        let cascade = outcome.crit || (programs.has(Program::Cascade) && solid);
+        let slots = if cascade && self.units[target].pan == Pan::Meshed {
             self.units[target].digital_implant_indices()
         } else {
             vec![first]
         };
-        let degrade = hack::margin_stacks(outcome.margin);
+        // The **Logicbomb program** force-fires the tripped chrome's degrade liabilities **past the
+        // disable floor** — even a marginal breach detonates the planted bomb at a fixed magnitude.
+        let degrade = if programs.has(Program::Logicbomb) {
+            hack::margin_stacks(outcome.margin).max(LOGICBOMB_DEGRADE)
+        } else {
+            hack::margin_stacks(outcome.margin)
+        };
         self.breach_slots(target, slots, degrade, knockout_gated(outcome, KNOCKOUT_MARGIN), BreachVector::Hack);
         degrade
     }
@@ -3246,6 +3405,182 @@ mod tests {
         assert!(bare.has_cyberdeck());
         assert!(bare.install_program(Program::Overheat)); // now it takes
         assert!(bare.programs.has(Program::Overheat));
+    }
+
+    // -- the program roster: each loaded program's rider (`netrunning.md` §10.8) ----------
+
+    /// A **solid-breach** fixture: a strong runner vs a soft, undefended target, scripted to a
+    /// solid (non-crit) margin-8 breach. Loads `programs` on the attacker, runs `setup` on the
+    /// target, resolves the hack, and hands back the battle to inspect.
+    fn solid_breach(programs: Programs, setup: impl FnOnce(&mut Unit)) -> Battle<ScriptedRng> {
+        let mut atk = unit(0, Team::A, 0);
+        atk.character.base_mut().link = 8.0;
+        atk.character.base_mut().intellect = 10.0;
+        atk.skills.set(Skill::Hacking, 6); // eff Hacking 16; channel 8 ⇒ rating 12
+        atk.grant_hack(Hack::new(6, 1, 6));
+        atk.programs = programs;
+        let mut tgt = unit(1, Team::B, 1);
+        tgt.character.base_mut().link = 8.0;
+        tgt.character.base_mut().firewall = 0.0; // undefended ⇒ a clean attacker-only roll
+        setup(&mut tgt);
+        // rating 12, dice 4 ⇒ margin 8 (a solid breach, not a crit).
+        let mut b = Battle::with_rng(vec![atk, tgt], ScriptedRng::from_d10([1, 3]));
+        b.resolve_hack(0, 1);
+        b
+    }
+
+    fn has_status(u: &Unit, name: &str) -> bool {
+        u.statuses().iter().any(|(n, _)| *n == name)
+    }
+
+    #[test]
+    fn meltdown_is_a_heavy_burn_on_volatile_chrome() {
+        // Like Overheat, Meltdown cooks heat-prone chrome on a solid breach — the premium DoT.
+        let b = solid_breach(Programs::just(Program::Meltdown), |t| {
+            t.install(Implant::combat_stim()); // runs hot (heat-prone); adds no Firewall
+        });
+        assert!(has_status(&b.units[1], "Meltdown"));
+        // No heat-prone chrome ⇒ nothing to melt, like Overheat.
+        let cool = solid_breach(Programs::just(Program::Meltdown), |_| {});
+        assert!(!has_status(&cool.units[1], "Meltdown"));
+    }
+
+    #[test]
+    fn lag_breach_and_blind_are_solid_breach_riders() {
+        let lag = solid_breach(Programs::just(Program::Lag), |_| {});
+        assert!(has_status(&lag.units[1], "Lag"));
+        let breach = solid_breach(Programs::just(Program::Breach), |_| {});
+        assert!(has_status(&breach.units[1], "Breach"));
+        // Blind bleeds the target's Dexterity (its shots go wide).
+        let blind = solid_breach(Programs::just(Program::Blind), |t| {
+            t.character.base_mut().dexterity = 10.0;
+        });
+        assert_eq!(blind.units[1].dexterity(), 10 - BLIND_AMOUNT as i32);
+    }
+
+    #[test]
+    fn crash_program_is_crit_gated_like_every_knockout() {
+        // A solid (non-crit) breach does NOT land the Crash stun — the floor holds.
+        let solid = solid_breach(Programs::just(Program::Crash), |_| {});
+        assert!(!solid.units[1].is_stunned());
+        // A crit does: rating 12 vs an undefended target, natural-3 crit.
+        let mut atk = unit(0, Team::A, 0);
+        atk.character.base_mut().link = 8.0;
+        atk.character.base_mut().intellect = 10.0;
+        atk.skills.set(Skill::Hacking, 6);
+        atk.grant_hack(Hack::new(6, 1, 6));
+        atk.programs = Programs::just(Program::Crash);
+        let mut tgt = unit(1, Team::B, 1);
+        tgt.character.base_mut().link = 8.0;
+        tgt.character.base_mut().firewall = 0.0;
+        let mut b = Battle::with_rng(vec![atk, tgt], ScriptedRng::from_d10([1, 2])); // natural 3 ⇒ crit
+        b.resolve_hack(0, 1);
+        assert!(b.units[1].is_stunned());
+    }
+
+    #[test]
+    fn decrypt_and_leech_drain_the_digital_stats() {
+        // Decrypt rots Firewall as a cleansable Worm corruption.
+        let dec = solid_breach(Programs::just(Program::Decrypt), |_| {});
+        assert!(has_status(&dec.units[1], "Worm"));
+        // Leech drains Link (a thinner channel / slower digital initiative).
+        let leech = solid_breach(Programs::just(Program::Leech), |_| {});
+        assert_eq!(leech.units[1].link(), 8 - LEECH_AMOUNT as i32);
+    }
+
+    #[test]
+    fn the_worm_program_deploys_a_contagion() {
+        let b = solid_breach(Programs::just(Program::Worm), |_| {});
+        assert!(has_status(&b.units[1], "Worm"));
+        assert!(!b.units[1].character.active_contagions().is_empty()); // it spreads
+    }
+
+    #[test]
+    fn spoof_and_misfire_corrupt_the_behavior_script() {
+        // Spoof flips targeting to Backline (chase the wrong enemy).
+        let spoof = solid_breach(Programs::just(Program::Spoof), |_| {});
+        assert_eq!(spoof.units[1].targeting(), TargetingProfile::Backline);
+        // Misfire scrambles movement to Kite (break contact for a beat).
+        let misfire = solid_breach(Programs::just(Program::Misfire), |_| {});
+        assert_eq!(misfire.units[1].movement(), MovementProfile::Kite);
+    }
+
+    #[test]
+    fn cascade_trips_every_implant_without_a_crit() {
+        // Two digital implants, meshed (default), no Firewall (undefended). A solid breach with
+        // Cascade rides to *both*; without it only the first trips.
+        let chrome = |t: &mut Unit| {
+            t.install(Implant::reflex_booster()); // digital, no Firewall
+            t.install(Implant::combat_stim()); // digital, no Firewall
+        };
+        let cascade = solid_breach(Programs::just(Program::Cascade), chrome);
+        assert_eq!(cascade.units[1].implant_condition(0), Condition::Offline);
+        assert_eq!(cascade.units[1].implant_condition(1), Condition::Offline); // rode the mesh
+        let plain = solid_breach(Programs::NONE, chrome);
+        assert_eq!(plain.units[1].implant_condition(0), Condition::Offline);
+        assert_eq!(plain.units[1].implant_condition(1), Condition::Online); // contained to the first
+    }
+
+    #[test]
+    fn logicbomb_fires_the_degrade_liability_past_the_floor() {
+        // A *marginal* breach (margin 0) normally just disables; a planted Logicbomb force-fires
+        // the chrome's degrade liability anyway.
+        let marginal = |programs: Programs| {
+            let mut atk = runner(0, Team::A, 0, 4);
+            atk.character.base_mut().link = 4.0;
+            atk.skills.set(Skill::Hacking, 4); // eff Hacking 14; channel 4 ⇒ rating 9
+            atk.programs = programs;
+            let mut tgt = unit(1, Team::B, 1);
+            tgt.character.base_mut().link = 4.0;
+            tgt.install(Implant::combat_stim()); // Bleed (degrade) + Crash (stun)
+            tgt.character.base_mut().firewall = 0.0; // target = rating 9; dice 9 ⇒ margin 0
+            let mut b = Battle::with_rng(vec![atk, tgt], ScriptedRng::from_d10([4, 5]));
+            b.resolve_hack(0, 1);
+            b
+        };
+        assert!(has_status(&marginal(Programs::just(Program::Logicbomb)).units[1], "Bleed"));
+        assert!(!has_status(&marginal(Programs::NONE).units[1], "Bleed")); // the floor: pure disable
+    }
+
+    #[test]
+    fn honeypot_bites_a_repelled_intruder() {
+        // A failed hack against a Honeypot defender fries the attacker's deck (a lockout DoT).
+        let mut atk = runner(0, Team::A, 0, 4);
+        atk.character.base_mut().link = 4.0;
+        atk.skills.set(Skill::Hacking, 4); // rating 9
+        let mut tgt = unit(1, Team::B, 1);
+        tgt.character.base_mut().link = 4.0;
+        tgt.character.base_mut().firewall = 0.0; // undefended, but it carries a trap
+        tgt.programs = Programs::just(Program::Honeypot);
+        // rating 9, dice 18 ⇒ a clean miss (not a fumble) — the intruder is repelled.
+        let mut b = Battle::with_rng(vec![atk, tgt], ScriptedRng::from_d10([9, 9]));
+        assert!(!b.resolve_hack(0, 1).landed());
+        assert!(has_status(&b.units[0], "Lockware")); // the attacker eats the counter
+    }
+
+    #[test]
+    fn ghost_stiffens_a_units_net_defense() {
+        let mut runner_ghost = unit(1, Team::B, 1);
+        runner_ghost.character.base_mut().firewall = 5.0;
+        let mut plain = Battle::new(vec![unit(0, Team::A, 0), runner_ghost.clone()], 1);
+        assert_eq!(plain.net_defense(1), 5); // bare Firewall
+        runner_ghost.grant_hack(Hack::new(4, 1, 5));
+        runner_ghost.programs = Programs::just(Program::Ghost);
+        let mut ghosted = Battle::new(vec![unit(0, Team::A, 0), runner_ghost], 1);
+        assert_eq!(ghosted.net_defense(1), 5 + GHOST_DEFENSE); // reads darker
+    }
+
+    #[test]
+    fn antivirus_cleanses_worm_corruption_each_tick() {
+        let mut warded = unit(1, Team::B, 1);
+        warded.character.base_mut().firewall = 10.0;
+        warded.grant_hack(Hack::new(4, 1, 5)); // a deck to load the program onto
+        warded.programs = Programs::just(Program::Antivirus);
+        warded.apply_modifier(Corruption::worm(4.0, 5)); // a worm pries the wall to 6
+        assert_eq!(warded.firewall(), 6);
+        let mut b = Battle::new(vec![unit(0, Team::A, 0), warded], 1);
+        b.ward_phase();
+        assert_eq!(b.units[1].firewall(), 10); // the antivirus stripped the worm
     }
 
     // -- L3: behavior profiles drive the action phase (§7J) -------------------

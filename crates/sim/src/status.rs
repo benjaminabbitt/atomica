@@ -190,6 +190,24 @@ impl StatusSpec {
         }
     }
 
+    /// Meltdown — a hack's **heavy** thermal payload (`netrunning.md`): a premium burn program
+    /// that melts a system far harder than [`Self::overheat`] (Flat 4 vs 2, Internal — straight
+    /// to Integrity), the runner's *finisher* DoT. Like Overheat it's deterministic and unresisted
+    /// (the breach already paid the Firewall) and stacks with the breach margin.
+    pub fn meltdown() -> Self {
+        Self {
+            name: "Meltdown",
+            effect: Effect::Dot { magnitude: Magnitude::Flat(4.0), pen: PenTier::Internal },
+            trigger: Trigger::Tick,
+            timing: Timing::TickStart,
+            decay: Decay::Duration,
+            stacking: Stacking::Stack { max: 5 },
+            behavior: Behavior::Deterministic,
+            targeting: Targeting::Enemy,
+            resist: Resist::None,
+        }
+    }
+
     /// Poison — Internal DoT, *stochastic*, resisted by Immunity, no spread.
     pub fn poison() -> Self {
         Self {

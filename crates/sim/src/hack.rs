@@ -77,35 +77,109 @@ impl Hack {
     }
 }
 
-/// A **netrunning program** (`netrunning.md`) — a deck-loadout slot, the runner's offensive
-/// software. A breach runs the unit's loaded programs; this is the roster a fixer / Halcyon
-/// Cybernetics would vendor. Loading one **requires a cyberdeck** ([`Unit::install_program`](crate::Unit)).
+/// A **netrunning program** (`netrunning.md`) — a deck-loadout slot, the runner's software. A
+/// breach runs the unit's loaded programs; this is the roster a fixer / Halcyon Cybernetics would
+/// vendor. Loading one **requires a cyberdeck** ([`Unit::install_program`](crate::Unit)).
+///
+/// Programs fall in three classes, by *when* they fire (the resolver routes each, §10.8):
+/// - **Offensive riders** run on a successful breach against the hacked target — most of the
+///   roster. Each is gated to keep the §6 **disable floor**: a *marginal* crack just disables;
+///   a program needs a **solid** breach (Crash needs a **crit**) to deploy.
+/// - **Breach modifiers** ([`Program::Cascade`] / [`Program::Logicbomb`]) reshape the breach
+///   itself — its **breadth** (all implants) or **depth** (past the floor).
+/// - **Defensive** programs ([`Program::Honeypot`] / [`Program::Ghost`] / [`Program::Antivirus`])
+///   fire on their *own* seam — a hack-back on a repelled intruder, a passive net-defense bonus,
+///   a standing worm-cleanse — not on the owner's offensive breach.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Program {
-    /// **Lockware** — the lockout debuff; a deck's bread-and-butter breach payload.
+    /// **Lockware** — the lockout drain; a deck's bread-and-butter payload on a target with **no
+    /// chrome** to exploit (the generic breach program). Lands an Internal DoT.
     Lockware,
     /// **Overheat** — cooks a target's **heat-prone** chrome (an Internal DoT); a *solid* breach
-    /// only, against heat-prone gear (a rider, on top of the breach).
+    /// only, against heat-prone gear.
     Overheat,
-    /// **Crash** — a digital stun (decisive / crit breaches). 🔭 rider not yet wired.
+    /// **Meltdown** — a premium **heavy** burn (Internal DoT, far harder than Overheat); the
+    /// runner's finisher, on any *solid* breach.
+    Meltdown,
+    /// **Crash** — a digital **stun**; crit-gated like every knockout (a *decisive* breach only).
     Crash,
-    /// **Lag** — slows the target's digital initiative. 🔭 rider not yet wired.
+    /// **Lag** — slows the target's initiative (a `Slow` on a *solid* breach).
     Lag,
+    /// **Breach** — pries the target open: a **vulnerability** (incoming damage amped) on a solid
+    /// breach, so the squad's next blows bite harder.
+    Breach,
+    /// **Blind** — corrupts the target's targeting optics: a **Dexterity** debuff (its shots go
+    /// wide) on a solid breach.
+    Blind,
+    /// **Decrypt** — rots the target's **Firewall** (a `Worm`-tagged corruption) on a solid
+    /// breach, softening it for the next dive.
+    Decrypt,
+    /// **Leech** — drains the target's **Link** on a solid breach: a thinner channel and slower
+    /// digital initiative, and it edges toward going dark (unreachable).
+    Leech,
+    /// **Worm** — deploys a **contagious** Firewall-rot ([`Corruption::worm_swarm`](crate::Corruption))
+    /// that rides the net to nearby surfaces; the spreader, on a solid breach.
+    Worm,
+    /// **Cascade** — a *breach modifier*: forces a meshed target's breach to trip **every** implant
+    /// (not just on a crit), on a solid breach.
+    Cascade,
+    /// **Logicbomb** — a *breach modifier*: a planted bomb force-fires the tripped chrome's degrade
+    /// liabilities **past the disable floor** (even a marginal breach detonates it).
+    Logicbomb,
+    /// **Spoof** — corrupts the target's **targeting** script (a `CORRUPTION`-priority override) for
+    /// several ticks: it chases the wrong enemy. On a solid breach.
+    Spoof,
+    /// **Misfire** — corrupts the target's **movement** routine (a brief `CORRUPTION` override): it
+    /// backs off / scatters instead of pressing. A cheap, short scramble.
+    Misfire,
+    /// **Honeypot** — a *defensive* counter-ICE: a repelled intruder (a hack that **fails** against
+    /// this unit) gets bitten back — its deck fried by the trap.
+    Honeypot,
+    /// **Ghost** — a *defensive* stealth suite: the runner reads **darker**, a passive bonus to its
+    /// own [net defense](crate::Battle) (harder to hack back).
+    Ghost,
+    /// **Antivirus** — a *defensive* ward: a standing cleanse that strips **worm** corruption off
+    /// its owner each tick (the digital counterplay, loaded as a program).
+    Antivirus,
 }
 
 impl Program {
-    /// The full roster, in priority order.
-    pub const ALL: [Program; 4] =
-        [Program::Lockware, Program::Overheat, Program::Crash, Program::Lag];
+    /// The full roster, in resolution order (offensive riders, then breach modifiers, then the
+    /// defensive trio).
+    pub const ALL: [Program; 17] = [
+        Program::Lockware,
+        Program::Overheat,
+        Program::Meltdown,
+        Program::Crash,
+        Program::Lag,
+        Program::Breach,
+        Program::Blind,
+        Program::Decrypt,
+        Program::Leech,
+        Program::Worm,
+        Program::Cascade,
+        Program::Logicbomb,
+        Program::Spoof,
+        Program::Misfire,
+        Program::Honeypot,
+        Program::Ghost,
+        Program::Antivirus,
+    ];
     const COUNT: usize = Self::ALL.len();
 
-    /// The status this program lands.
+    /// The **status payload** a DoT/control rider program lands (the resolver scales its stacks /
+    /// duration). Only the status-shaped programs map here; the stat-debuff, corruption, behavior,
+    /// breach-modifier, and defensive programs have no `StatusSpec` and are routed directly by the
+    /// resolver (§10.8) — calling this on one is a programming error.
     pub fn payload(self) -> StatusSpec {
         match self {
             Program::Lockware => StatusSpec::lockware(),
             Program::Overheat => StatusSpec::overheat(),
+            Program::Meltdown => StatusSpec::meltdown(),
             Program::Crash => StatusSpec::crash(),
             Program::Lag => StatusSpec::lag(),
+            Program::Breach => StatusSpec::breach(),
+            other => unreachable!("{other:?} is not a status-payload program"),
         }
     }
 }
@@ -136,10 +210,11 @@ impl Programs {
     pub fn iter(self) -> impl Iterator<Item = Program> {
         Program::ALL.into_iter().filter(move |&p| self.has(p))
     }
-    /// The **generic breach payload** landed on a chrome-less target — the first loaded
-    /// non-Overheat program (Overheat needs heat-prone chrome to bite), or none.
+    /// The **generic breach payload** landed on a chrome-less target — **Lockware**, the deck's
+    /// bread-and-butter drain (every other program is a margin-gated rider the resolver runs
+    /// separately, so only the reliable lockout lands here). `None` if no Lockware is loaded.
     pub fn breach_payload(self) -> Option<StatusSpec> {
-        self.iter().find(|&p| p != Program::Overheat).map(Program::payload)
+        self.has(Program::Lockware).then(StatusSpec::lockware)
     }
 }
 

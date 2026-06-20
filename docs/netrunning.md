@@ -108,24 +108,44 @@ The **contest** is built, and (Phase C ✅) a success now **breaches a target
 implant** via the severity ladder (`cyberware.md` §6) — **disable** → margin
 **degrade** → crit **knockout** — firing the implant's `hack_effects`. Against a
 target with **no chrome to trip**, it falls back to landing the deck's own
-**payload** (margin-scaled — Lockware/Crash/Lag). The remaining payload *modes*
-still need their own substrate:
+**payload** (Lockware). On top of the breach, the runner's **loaded programs** ride.
 
-**Programs are a deck loadout ◆ (`Program` / `Unit::programs`).** A hack's payload modes
-below are **programs** — the runner's offensive software, a roster a fixer / Halcyon
-Cybernetics vendors. They live on the *unit* (`programs`), and **loading one requires a
-cyberdeck** (`Unit::install_program` is a no-op without a `Cyberdeck`-tagged rig — no deck, no
-programs). A breach runs the loaded set: the generic breach payload (Lockware) on a chrome-less
-target, plus riders like Overheat on top. Built: **Lockware**, **Overheat**; rostered, riders
-🔭 not yet wired: **Crash** (stun), **Lag** (slow).
+**Programs are a deck loadout ✅ (`Program` / `Unit::programs`).** A program is the
+runner's software — a roster a fixer / Halcyon Cybernetics vendors. They live on the
+*unit* (`programs`), and **loading one requires a cyberdeck** (`Unit::install_program`
+is a no-op without a `Cyberdeck`-tagged rig — no deck, no programs). The resolver
+(`run_programs`, §10.8) routes each by *when* it fires. Every offensive rider is
+**gated to keep the §6 disable floor**: a *marginal* crack (margin 0) just disables;
+a program needs a **solid** breach (margin ≥ one [`MARGIN_PER_STACK`]) to deploy —
+except **Crash**, which is **crit-gated** like every knockout. The full roster is
+built and tested:
 
-| Payload mode | What it does | Status |
+| Program | Class | What it does | Gate |
+|---|---|---|---|
+| **Lockware** | payload | the generic lockout drain — an Internal DoT on a target with **no chrome** to exploit (the bread-and-butter) | success (no-chrome) |
+| **Overheat** | rider (damage) | cooks the target's **heat-prone** (`EquipmentTag::HeatProne`) chrome — an Internal DoT scaling with the margin. Useless against a target running cool | solid + heat-prone |
+| **Meltdown** | rider (damage) | a **heavy** burn (Internal DoT, far harder than Overheat) — the finisher | solid + heat-prone |
+| **Crash** | rider (control) | a digital **stun** | **crit** |
+| **Lag** | rider (control) | a `Slow` on the target's initiative | solid |
+| **Breach** | rider (soften) | a **vulnerability** — incoming damage amped, so the squad's blows bite harder | solid |
+| **Blind** | rider (soften) | a **Dexterity** debuff — its shots go wide | solid |
+| **Decrypt** | rider (soften) | rots the target's **Firewall** (a `Worm`-tagged corruption — cleansable) | solid |
+| **Leech** | rider (soften) | drains the target's **Link** — thinner channel, slower digital initiative, edges toward dark | solid |
+| **Worm** | rider (spread) | deploys a **contagious** Firewall-rot (`Corruption::worm_swarm`) that rides the net to nearby surfaces | solid |
+| **Cascade** | breach modifier | forces a **meshed** target's breach to trip **every** implant (not just on a crit) | solid + meshed |
+| **Logicbomb** | breach modifier | force-fires the tripped chrome's degrade liabilities **past the disable floor** | success (chrome) |
+| **Spoof** | rider (hijack) | corrupts the target's **targeting** script (`CORRUPTION` override) — it chases the wrong enemy | solid |
+| **Misfire** | rider (hijack) | corrupts the target's **movement** routine — it backs off / scatters for a beat | solid |
+| **Honeypot** | defensive | counter-ICE: a **repelled** intruder (a hack that fails) gets its deck fried (a lockout DoT) | on a failed hack vs the owner |
+| **Ghost** | defensive | a stealth suite — the owner reads **darker**, a flat bonus to its `net_defense` | passive |
+| **Antivirus** | defensive | a standing ward — strips **worm** corruption off the owner each tick (the `ward_phase`) | passive (per tick) |
+
+Two **intrinsic** breach effects are always there, program or no:
+
+| Effect | What it does | Status |
 |---|---|---|
-| **Overheat (damage)** | a loaded **program** (`Program::Overheat`, a common black-market loadout — *not* innate to hacking) that, on a **solid breach** (margin ≥ one [`MARGIN_PER_STACK`]), cooks the target's **heat-prone** (`EquipmentTag::HeatProne`) chrome — an **Internal DoT** (bypasses armor) scaling with the margin. Gated three ways: the program loaded, a solid (non-floor) breach, and a heat-prone target. *Netrunning's damage*, but a specialist's tool — useless against a target running cool | ✅ built (`StatusSpec::overheat`) |
 | **Trip a hack-effect** | breach an implant → fire its liability **on the owner**, by the severity ladder | ✅ built (`apply_breach`) |
 | **Disable an implant** | knock a slot **Offline** (the ladder's floor) | ✅ built (`disable_implant`) |
-| **Deploy a worm** | plant a spreading, re-rolling contagion strain | 🔭 **Worm contagion** family |
-| **Spoof IFF** | Flip-hostile / Masquerade / Scramble / Ghost | 🔭 **IFF / targeting** layer |
 
 **A netrunning objective ✅ — the [`Datamine`] dive.** Beyond shooting: an
 encounter can task the squad to **breach a bolted-down data node** (crack its

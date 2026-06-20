@@ -119,7 +119,8 @@ pub fn runner(name: &str) -> Unit {
         .with_attack(awkward(weapon(8.0, DamageType::Piercing, PenTier::Contact, 4))); // a rifle — clumsy in a clinch
     u.install(Implant::cyberdeck());
     u.install_program(Program::Lockware); // the deck's basic breach program…
-    u.install_program(Program::Overheat); // …and the common Overheat program
+    u.install_program(Program::Overheat); // …the common Overheat program…
+    u.install_program(Program::Breach); // …and a softener: a breach exposes the target to the squad
     u
 }
 
@@ -278,8 +279,10 @@ fn breaker(name: &str) -> Unit {
         .with_targeting(TargetingProfile::HighestThreat)
         .with_movement(MovementProfile::Kite);
     u.install(Implant::cyberdeck());
-    u.install_program(Program::Lockware); // a mirror of the player runner's loadout
+    u.install_program(Program::Lockware); // a mirror of the player runner's loadout…
     u.install_program(Program::Overheat);
+    u.install_program(Program::Spoof); // …plus ICE of its own: it corrupts the squad's targeting…
+    u.install_program(Program::Ghost); // …and runs dark, harder to crack back
     u
 }
 
