@@ -644,6 +644,15 @@ impl Unit {
         self.realized().damage()
     }
 
+    /// **Body-driven melee damage** (`docs/stats.md`): a heavier frame swings harder. Body
+    /// **above** the competent baseline (10) adds flat damage to a *Melee* blow, scaled by
+    /// [`BODY_MELEE_DAMAGE`] — so the same Body that carries the HP and lands the hit also lends
+    /// weight to it. Floored at 0 (a frail build doesn't *subtract* from the weapon), and **melee
+    /// only**: Heavy / ranged damage is the munition, not muscle, so it doesn't scale.
+    pub fn melee_body_bonus(&self) -> f32 {
+        (self.body() as f32 - BODY_MELEE_BASELINE).max(0.0) * BODY_MELEE_DAMAGE
+    }
+
     /// Install a stat/behavior **modifier** on the unit (a buff, debuff, or gear) — a
     /// decorator on its `character`; the effective accessors compose it immediately.
     /// Returns the [`GenId`] for later removal (a cleanse / dispel).
@@ -943,6 +952,12 @@ const SPOOF_DURATION: u32 = 3;
 const MISFIRE_DURATION: u32 = 2;
 /// **Logicbomb** — the floor degrade a planted bomb fires past the disable floor.
 const LOGICBOMB_DEGRADE: u32 = 2;
+/// **Body → melee damage** (`docs/stats.md`): Body above this baseline lends `BODY_MELEE_DAMAGE`
+/// flat damage *per point* to a Melee blow (a heavier frame swings harder). Baseline 10 is the
+/// competent attribute, so an average build is unchanged and only the heavies gain. Placeholder
+/// tuning values (TBD).
+const BODY_MELEE_BASELINE: f32 = 10.0;
+const BODY_MELEE_DAMAGE: f32 = 0.5;
 /// **Ghost** — the passive net-defense bonus a stealth suite adds to its owner.
 const GHOST_DEFENSE: i32 = 3;
 /// **Honeypot** — the counter-ICE DoT a repelled intruder eats (duration / stacks).
@@ -1601,8 +1616,12 @@ impl<R: RandomSource> Battle<R> {
             self.emit(CombatEvent::Missed { attacker: atk_id, target: self.units[target].id });
             return; // whiff — the whole attack (incl. its AoE) misses
         }
-        // Weapon base + the attacker's composed damage bonus (an implant combat-stim).
-        let base = atk.damage + self.units[attacker].damage_bonus();
+        // Weapon base + the attacker's composed damage bonus (an implant combat-stim) + a
+        // Body-driven melee bump (a heavier frame swings harder; melee only, `docs/stats.md`).
+        let mut base = atk.damage + self.units[attacker].damage_bonus();
+        if atk.skill == Skill::Melee {
+            base += self.units[attacker].melee_body_bonus();
+        }
         let src = atk_id.0;
         for t in self.footprint_targets(attacker, target, atk) {
             let mult =
@@ -3243,6 +3262,16 @@ mod tests {
         u.install(Implant::firewall_suite());
         assert_eq!(u.firewall(), 4);
         assert_eq!(u.link(), 1); // a little surface comes with it
+    }
+
+    #[test]
+    fn body_lends_weight_to_a_melee_blow() {
+        // Body over the competent baseline (10) adds flat melee damage (`docs/stats.md`): a heavier
+        // frame swings harder. An average frame is unchanged; a frail one doesn't *subtract* (floored).
+        let heavy = unit(0, Team::A, 0).with_body(16.0);
+        assert_eq!(heavy.melee_body_bonus(), 3.0); // (16 − 10) × 0.5
+        assert_eq!(unit(0, Team::A, 0).with_body(10.0).melee_body_bonus(), 0.0); // average: none
+        assert_eq!(unit(0, Team::A, 0).with_body(6.0).melee_body_bonus(), 0.0); // frail: floored, no penalty
     }
 
     #[test]

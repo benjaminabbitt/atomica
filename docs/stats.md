@@ -51,17 +51,17 @@ archetypes 10–13). They are the substrate the four **skill families** are tier
 
 | Attribute | Field | Governs (skills) | Feeds |
 |---|---|---|---|
-| **Body** | `unit.body` | Melee, Heavy | **Integrity = Body × `HP_PER_BODY`** ✅ (toughness *is* HP — one stat) |
+| **Body** | `unit.body` | Melee, Heavy | **Integrity = Body × `HP_PER_BODY`** ✅ (toughness *is* HP — one stat), **melee damage** ✅ (Body over 10 swings harder) |
 | **Dexterity** | `unit.dexterity` | Gunnery, Stealth, **Evade** | **Evasion** ✅, **physical Initiative** ✅ — *dragged down by heavy plating (the armor tradeoff)* |
 | **Intellect** | `unit.intellect` | Hacking, Medical, Tech | **digital Initiative** ✅ (net turn order — *speed of thought*) |
 | **Will** | `unit.will` | (morale / spoof-resist) | 🔭 |
 
-> **Firewall, Link, and Damage are *granted*, not derived.** They come from gear / chassis (a
-> cyberdeck lifts Firewall + Link; a weapon and chrome like rams / combat-stim set Damage), not from
-> an attribute. Intellect governs the netrunning *skills* and the digital turn order, but the wall
-> itself is equipment; **Body** governs *whether* a melee blow lands (Melee = Body + tier) and *how
-> much you can take* (HP), but *how hard it lands* is the weapon + chrome, not muscle. This is
-> deliberate: these are things you *install / wield*, not things you *are*.
+> **Firewall and Link are *granted*, not derived.** They come from gear / chassis (a cyberdeck
+> lifts both), not from an attribute — Intellect governs the netrunning *skills* and the digital
+> turn order, but the wall itself is equipment. This is deliberate: the net surface is something
+> you *install*, not something you *are*. (The `Damage` stat is *also* gear — a weapon's base plus
+> chrome like rams / combat-stim — but a Melee blow adds a **Body** bump on top: `weapon + Body-over-10
+> + chrome`. Ranged / Heavy damage is the munition, so it doesn't scale with Body.)
 >
 > **Programs are the digital domain's *skills*.** Where a physical action is `attribute + skill-tier`,
 > a digital one is `granted stat (Link / Firewall) + quality program` — you don't *train* onto the
