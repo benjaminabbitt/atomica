@@ -92,7 +92,7 @@ impl Implant {
         Self {
             name: "Cyberdeck",
             contribution: Contribution { link: 5, firewall: 2, ..Default::default() },
-            grant_hack: Some(Hack::new(6, StatusSpec::lockware(), 1, 6)),
+            grant_hack: Some(Hack::new(6, StatusSpec::lockware(), 1, 6).with_overheat()), // runs the common Overheat program
             hack_effects: vec![StatusSpec::lockware()], // Lockout (placeholder)
             condition: Condition::Online,
             removable: true,
@@ -149,7 +149,7 @@ impl Implant {
             removable: true,
             coverage: 25, // spinal / limb wiring — a sizeable limb's worth
             max_hp: 24.0,
-            tags: EquipmentTags::DIGITAL,
+            tags: EquipmentTags::DIGITAL.with(EquipmentTags::VOLATILE), // runs hot
         }
     }
 
@@ -182,7 +182,7 @@ impl Implant {
             removable: true,
             coverage: 10,
             max_hp: 16.0, // volatile
-            tags: EquipmentTags::DIGITAL,
+            tags: EquipmentTags::DIGITAL.with(EquipmentTags::VOLATILE), // runs hot
         }
     }
 
@@ -198,7 +198,7 @@ impl Implant {
             removable: true,
             coverage: 20, // visceral
             max_hp: 28.0,
-            tags: EquipmentTags::DIGITAL,
+            tags: EquipmentTags::DIGITAL.with(EquipmentTags::VOLATILE), // runs hot
         }
     }
 

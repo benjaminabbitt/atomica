@@ -162,6 +162,10 @@ impl EquipmentTags {
     /// chrome a breach can trip (deck, smartware); absent ⇒ **inert physical** cyberware,
     /// immune to hack / worm / EMP.
     pub const DIGITAL: EquipmentTags = EquipmentTags(1 << 3);
+    /// **Volatile** (`netrunning.md`) — powered / overclocked chrome that *runs hot*: the
+    /// subset a runner's **Overheat** program can cook (combat stim, metabolic pump, reflex
+    /// booster…). Passive armor and comms gear lack it, so heat only bites a heat-prone build.
+    pub const VOLATILE: EquipmentTags = EquipmentTags(1 << 4);
 
     /// Does this set contain every flag in `tag`?
     pub const fn has(self, tag: EquipmentTags) -> bool {
@@ -772,6 +776,14 @@ impl Unit {
             .into_iter()
             .filter(|&i| self.implants[i].spec.is_digital())
             .collect()
+    }
+
+    /// Does the unit carry any **`VOLATILE`** (heat-prone) active chrome — the subset an
+    /// Overheat program can cook (`netrunning.md`)? `false` for a build of passive armor / comms.
+    fn has_volatile_chrome(&self) -> bool {
+        self.active_implant_indices()
+            .iter()
+            .any(|&i| self.implants[i].spec.tags.has(EquipmentTags::VOLATILE))
     }
     fn first_digital_implant(&self) -> Option<usize> {
         self.digital_implant_indices().into_iter().next()
@@ -1887,12 +1899,17 @@ impl<R: RandomSource> Battle<R> {
             crit: outcome.crit,
             margin: outcome.margin,
         });
+        // Read heat-prone chrome **before** the breach (which disables the very implant) — forcing
+        // hot chrome is what cooks it.
+        let runs_hot = self.units[target].has_volatile_chrome();
         let stacks =
             if outcome.success { self.apply_breach(target, &outcome, hack) } else { 0 };
-        // A **solid** breach overheats the chrome — netrunning's damage layer, an Internal DoT
-        // scaling with the margin (`netrunning.md`). A marginal hack (the §6 floor) draws none.
+        // The **Overheat program** (`netrunning.md`): an *equipped* deck loadout (not innate to
+        // hacking) that, on a **solid** breach, cooks the target's **`VOLATILE`** chrome — an
+        // Internal DoT scaling with the margin. No program, a marginal hack (the §6 floor), or a
+        // target with no heat-prone chrome ⇒ no heat.
         let burn = hack::margin_stacks(outcome.margin);
-        if outcome.success && burn > 0 {
+        if outcome.success && hack.overheats && burn > 0 && runs_hot {
             self.units[target].add_status(StatusSpec::overheat(), OVERHEAT_DURATION, burn);
         }
         HackResult::Rolled { outcome, stacks }
@@ -3032,6 +3049,36 @@ mod tests {
         assert!(b.resolve_hack(0, 1).landed());
         assert_eq!(b.units[1].implant_condition(0), Condition::Offline); // disabled
         assert!(b.units[1].statuses().is_empty()); // nothing fired (margin 0: no heat, no liability)
+    }
+
+    #[test]
+    fn overheat_is_a_program_that_cooks_only_volatile_chrome() {
+        // Heat is an *equipped* deck program, gated on the target's **VOLATILE** chrome — not
+        // innate to hacking. A solid breach lands Overheat only when both hold.
+        let heat_landed = |program: bool, volatile: bool| {
+            let mut atk = unit(0, Team::A, 0);
+            atk.character.base_mut().link = 8.0;
+            atk.character.base_mut().intellect = 10.0;
+            atk.skills.set(Skill::Hacking, 6); // eff Hacking 16; channel 8 ⇒ rating 12
+            let mut hack = Hack::new(6, StatusSpec::lockware(), 1, 6);
+            if program {
+                hack = hack.with_overheat();
+            }
+            atk.grant_hack(hack);
+            let mut tgt = unit(1, Team::B, 1);
+            tgt.character.base_mut().link = 8.0;
+            if volatile {
+                tgt.install(Implant::combat_stim()); // runs hot (VOLATILE); adds no Firewall
+            }
+            tgt.character.base_mut().firewall = 0.0; // undefended ⇒ a clean attacker-only roll
+            // rating 12, dice 4 ⇒ margin 8 (a solid breach, not a crit).
+            let mut b = Battle::with_rng(vec![atk, tgt], ScriptedRng::from_d10([1, 3]));
+            b.resolve_hack(0, 1);
+            b.units[1].statuses().iter().any(|(n, _)| *n == "Overheat")
+        };
+        assert!(heat_landed(true, true)); // program + volatile chrome ⇒ it cooks
+        assert!(!heat_landed(false, true)); // no program ⇒ no heat, even on volatile chrome
+        assert!(!heat_landed(true, false)); // program but cool chrome ⇒ nothing to cook
     }
 
     #[test]

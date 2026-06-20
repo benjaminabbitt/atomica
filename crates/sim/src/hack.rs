@@ -65,11 +65,21 @@ pub struct Hack {
     pub base_stacks: u32,
     /// Duration of the landed status.
     pub duration: u32,
+    /// Runs the **Overheat** program (`netrunning.md`): a black-market loadout that cooks a
+    /// target's **`VOLATILE`** chrome on a solid breach (an Internal DoT). Off by default — heat
+    /// is an *equipped program*, not innate to hacking, and it only bites heat-prone cyberware.
+    pub overheats: bool,
 }
 
 impl Hack {
     pub fn new(range: i32, payload: StatusSpec, base_stacks: u32, duration: u32) -> Self {
-        Self { range, payload, base_stacks, duration }
+        Self { range, payload, base_stacks, duration, overheats: false }
+    }
+
+    /// Builder: load the **Overheat** program (heat vs `VOLATILE` chrome).
+    pub fn with_overheat(mut self) -> Self {
+        self.overheats = true;
+        self
     }
 
     /// Stacks landed for a resolved `outcome`: base + a margin-scaled bonus + a
