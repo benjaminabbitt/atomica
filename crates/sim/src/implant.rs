@@ -13,7 +13,7 @@
 //! later phases — the fields are here, the wiring is not.
 
 use crate::chargen::{Capability, Condition, Decorator, Factor, Stat, Tag};
-use crate::{EquipmentTags, Hack, StatusSpec};
+use crate::{EquipmentTag, EquipmentTags, Hack, StatusSpec};
 
 /// A unit's **Personal Area Network** mode (`docs/cyberware.md` §5, delta §6) — a
 /// loadout commitment, not an in-battle toggle.
@@ -98,7 +98,7 @@ impl Implant {
             removable: true,
             coverage: 10, // small, tucked-away electronics
             max_hp: 18.0, // fragile
-            tags: EquipmentTags::DIGITAL,
+            tags: EquipmentTags::DIGITAL.with(EquipmentTag::HeatProne), // comms gear runs hot
         }
     }
 
@@ -149,7 +149,7 @@ impl Implant {
             removable: true,
             coverage: 25, // spinal / limb wiring — a sizeable limb's worth
             max_hp: 24.0,
-            tags: EquipmentTags::DIGITAL.with(EquipmentTags::VOLATILE), // runs hot
+            tags: EquipmentTags::DIGITAL.with(EquipmentTag::HeatProne), // runs hot
         }
     }
 
@@ -182,7 +182,7 @@ impl Implant {
             removable: true,
             coverage: 10,
             max_hp: 16.0, // volatile
-            tags: EquipmentTags::DIGITAL.with(EquipmentTags::VOLATILE), // runs hot
+            tags: EquipmentTags::DIGITAL.with(EquipmentTag::HeatProne), // runs hot
         }
     }
 
@@ -198,7 +198,7 @@ impl Implant {
             removable: true,
             coverage: 20, // visceral
             max_hp: 28.0,
-            tags: EquipmentTags::DIGITAL.with(EquipmentTags::VOLATILE), // runs hot
+            tags: EquipmentTags::DIGITAL.with(EquipmentTag::HeatProne), // runs hot
         }
     }
 

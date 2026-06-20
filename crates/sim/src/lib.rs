@@ -137,43 +137,58 @@ pub enum DeathTrigger {
     Legacy { spec: StatusSpec, stacks: u32, duration: u32, radius: i32 },
 }
 
-/// A **set of equipment tags** — boolean traits on a piece of equipment (a weapon's
-/// `Attack`, an `Implant`, …) packed as a bitset of `const` flags, so equipment carries
-/// any combination (`SMART | AWKWARD`, …) in one field instead of a bool per trait. The
-/// shared tag set for the equipment base; test membership with [`EquipmentTags::has`].
+/// A **boolean trait** a piece of equipment (a weapon's `Attack`, an `Implant`, …) can carry.
+/// Each is one membership flag in an [`EquipmentTags`] set; the rules they drive live on the
+/// set ([`EquipmentTags::to_hit_penalty`] / [`spares_team`](EquipmentTags::spares_team) / …).
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum EquipmentTag {
+    /// **IFF / smartgun** (§7F): the line of fire / blast spares the attacker's team.
+    Smart,
+    /// **Awkward** (§7G): a long / unwieldy weapon is clumsy **up close** (to-hit penalty
+    /// that fades to none at proper range).
+    Awkward,
+    /// **Ranged** (§7G): a projectile weapon's to-hit penalty **grows with distance** (a rifle
+    /// is `Ranged + Awkward`, hard far *and* near with a sweet spot between).
+    Ranged,
+    /// **Digital** (§6): networked chrome a breach can trip; absent ⇒ inert physical cyberware,
+    /// immune to hack / worm / EMP.
+    Digital,
+    /// **Heat-prone** (`netrunning.md`): powered / overclocked chrome and **comms gear** that
+    /// *runs hot* — the subset a runner's **Overheat** program can cook (cyberdeck, combat stim,
+    /// metabolic pump, reflex booster…). Only **inert physical** chrome (passive armor / plating)
+    /// runs cool, so heat bites netrunners and chromed-up builds, not a bare body.
+    HeatProne,
+}
+
+impl EquipmentTag {
+    const COUNT: usize = 5;
+}
+
+/// A **set of [`EquipmentTag`]s** an item carries (a rifle is `Ranged + Awkward`). A small
+/// `Copy` membership set keyed by the tag — no bit-twiddling; build with [`EquipmentTags::with`]
+/// and test with [`EquipmentTags::has`].
 #[derive(Clone, Copy, PartialEq, Eq, Default)]
-pub struct EquipmentTags(u32);
+pub struct EquipmentTags {
+    present: [bool; EquipmentTag::COUNT],
+}
 
 impl EquipmentTags {
     /// No tags.
-    pub const NONE: EquipmentTags = EquipmentTags(0);
+    pub const NONE: EquipmentTags = EquipmentTags { present: [false; EquipmentTag::COUNT] };
+    /// Single-tag sets — the common bases content builds from.
+    pub const SMART: EquipmentTags = EquipmentTags::NONE.with(EquipmentTag::Smart);
+    pub const AWKWARD: EquipmentTags = EquipmentTags::NONE.with(EquipmentTag::Awkward);
+    pub const RANGED: EquipmentTags = EquipmentTags::NONE.with(EquipmentTag::Ranged);
+    pub const DIGITAL: EquipmentTags = EquipmentTags::NONE.with(EquipmentTag::Digital);
 
-    /// **IFF / smartgun** (§7F) — *rule:* [`spares_team`](EquipmentTags::spares_team):
-    /// the line of fire / blast spares the attacker's team (filtered in `footprint_targets`).
-    pub const SMART: EquipmentTags = EquipmentTags(1 << 0);
-    /// **Awkward** (§7G) — *rule:* a long / unwieldy weapon is clumsy **up close**: a
-    /// to-hit penalty that fades to none at proper range (see [`to_hit_penalty`](EquipmentTags::to_hit_penalty)).
-    pub const AWKWARD: EquipmentTags = EquipmentTags(1 << 1);
-    /// **Ranged** (§7G) — *rule:* a projectile weapon's to-hit penalty **grows with
-    /// distance** (discrete from `AWKWARD`; a rifle is `RANGED | AWKWARD`, hard far *and*
-    /// near with a sweet spot between).
-    pub const RANGED: EquipmentTags = EquipmentTags(1 << 2);
-    /// **Digital** (§6) — *rule:* [`breachable`](EquipmentTags::breachable): networked
-    /// chrome a breach can trip (deck, smartware); absent ⇒ **inert physical** cyberware,
-    /// immune to hack / worm / EMP.
-    pub const DIGITAL: EquipmentTags = EquipmentTags(1 << 3);
-    /// **Volatile** (`netrunning.md`) — powered / overclocked chrome that *runs hot*: the
-    /// subset a runner's **Overheat** program can cook (combat stim, metabolic pump, reflex
-    /// booster…). Passive armor and comms gear lack it, so heat only bites a heat-prone build.
-    pub const VOLATILE: EquipmentTags = EquipmentTags(1 << 4);
-
-    /// Does this set contain every flag in `tag`?
-    pub const fn has(self, tag: EquipmentTags) -> bool {
-        self.0 & tag.0 == tag.0
+    /// Does this set contain `tag`?
+    pub const fn has(self, tag: EquipmentTag) -> bool {
+        self.present[tag as usize]
     }
     /// This set with `tag` added.
-    pub const fn with(self, tag: EquipmentTags) -> EquipmentTags {
-        EquipmentTags(self.0 | tag.0)
+    pub const fn with(mut self, tag: EquipmentTag) -> EquipmentTags {
+        self.present[tag as usize] = true;
+        self
     }
 
     /// The **to-hit TN** these tags add at hex-distance `dist` (§7G) — the sum of each
@@ -181,14 +196,14 @@ impl EquipmentTags {
     /// One place for the rules, universal to any equipment (an item with neither pays 0).
     pub fn to_hit_penalty(self, dist: i32) -> i32 {
         let mut tn = 0;
-        if self.has(Self::AWKWARD) {
+        if self.has(EquipmentTag::Awkward) {
             tn += match dist {
                 d if d <= 0 => AWKWARD_POINT_BLANK, // same hex — practically unreachable
                 1 => AWKWARD_ADJACENT,              // jammed in close
                 _ => 0,                             // at proper range
             };
         }
-        if self.has(Self::RANGED) {
+        if self.has(EquipmentTag::Ranged) {
             tn += match dist {
                 d if d >= RANGED_LONG => RANGED_LONG_PENALTY,
                 d if d >= RANGED_MEDIUM => RANGED_MEDIUM_PENALTY,
@@ -201,38 +216,39 @@ impl EquipmentTags {
     /// `SMART`'s rule (§7F): does this equipment **spare the attacker's team** in its
     /// line of fire / blast? (`footprint_targets` filters teammates out when true.)
     pub const fn spares_team(self) -> bool {
-        self.has(Self::SMART)
+        self.has(EquipmentTag::Smart)
     }
 
     /// `DIGITAL`'s rule (§6): can a **breach** (hack / worm / EMP) trip this equipment?
     /// `false` ⇒ inert physical chrome, immune to every vector.
     pub const fn breachable(self) -> bool {
-        self.has(Self::DIGITAL)
+        self.has(EquipmentTag::Digital)
     }
 }
 
 impl std::ops::BitOr for EquipmentTags {
     type Output = EquipmentTags;
-    fn bitor(self, rhs: EquipmentTags) -> EquipmentTags {
-        EquipmentTags(self.0 | rhs.0)
+    fn bitor(mut self, rhs: EquipmentTags) -> EquipmentTags {
+        for i in 0..EquipmentTag::COUNT {
+            self.present[i] |= rhs.present[i];
+        }
+        self
     }
 }
 
 impl std::fmt::Debug for EquipmentTags {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let mut names = Vec::new();
-        if self.has(Self::SMART) {
-            names.push("SMART");
-        }
-        if self.has(Self::AWKWARD) {
-            names.push("AWKWARD");
-        }
-        if self.has(Self::RANGED) {
-            names.push("RANGED");
-        }
-        if self.has(Self::DIGITAL) {
-            names.push("DIGITAL");
-        }
+        let names: Vec<_> = [
+            (EquipmentTag::Smart, "Smart"),
+            (EquipmentTag::Awkward, "Awkward"),
+            (EquipmentTag::Ranged, "Ranged"),
+            (EquipmentTag::Digital, "Digital"),
+            (EquipmentTag::HeatProne, "HeatProne"),
+        ]
+        .into_iter()
+        .filter(|&(t, _)| self.has(t))
+        .map(|(_, n)| n)
+        .collect();
         write!(f, "EquipmentTags({})", names.join(" | "))
     }
 }
@@ -297,7 +313,7 @@ impl Attack {
     /// Builder: add the **`SMART`** tag (IFF) — its blast / line of fire spares the
     /// attacker's team (`docs/combat.md`). The "smartgun" mod over any base profile.
     pub fn smartlinked(mut self) -> Self {
-        self.tags = self.tags.with(EquipmentTags::SMART);
+        self.tags = self.tags.with(EquipmentTag::Smart);
         self
     }
 }
@@ -783,7 +799,7 @@ impl Unit {
     fn has_volatile_chrome(&self) -> bool {
         self.active_implant_indices()
             .iter()
-            .any(|&i| self.implants[i].spec.tags.has(EquipmentTags::VOLATILE))
+            .any(|&i| self.implants[i].spec.tags.has(EquipmentTag::HeatProne))
     }
     fn first_digital_implant(&self) -> Option<usize> {
         self.digital_implant_indices().into_iter().next()
@@ -3480,7 +3496,7 @@ mod tests {
         let mut atk = unit(0, Team::A, 0);
         atk.rearm(|w| {
             w.footprint = Footprint::Beam(4);
-            w.tags = w.tags.with(EquipmentTags::SMART); // smartgun
+            w.tags = w.tags.with(EquipmentTag::Smart); // smartgun
         });
         let on1 = unit(1, Team::B, 1); // (1,0) — enemy on the beam
         let ally = unit(2, Team::A, 2); // (2,0) — ally in the path
@@ -3586,14 +3602,14 @@ mod tests {
     #[test]
     fn equipment_tags_are_a_set_of_const_flags() {
         let plain = EquipmentTags::NONE;
-        assert!(!plain.has(EquipmentTags::SMART) && !plain.has(EquipmentTags::AWKWARD));
+        assert!(!plain.has(EquipmentTag::Smart) && !plain.has(EquipmentTag::Awkward));
         // Equipment can carry several tags at once.
         let both = EquipmentTags::SMART | EquipmentTags::AWKWARD;
-        assert!(both.has(EquipmentTags::SMART) && both.has(EquipmentTags::AWKWARD));
+        assert!(both.has(EquipmentTag::Smart) && both.has(EquipmentTag::Awkward));
         // `with` adds one without disturbing the rest.
-        let added = EquipmentTags::SMART.with(EquipmentTags::AWKWARD);
+        let added = EquipmentTags::SMART.with(EquipmentTag::Awkward);
         assert_eq!(added, both);
-        assert!(!EquipmentTags::SMART.has(EquipmentTags::AWKWARD)); // distinct flags
+        assert!(!EquipmentTags::SMART.has(EquipmentTag::Awkward)); // distinct flags
     }
 
     #[test]
