@@ -101,7 +101,7 @@ fn body(name: &str, hp: f32, init: f32) -> Unit {
     Unit::new(0, name, Team::A, Chassis::Augmented)
         .with_dexterity(10.0)
         .with_intellect(10.0)
-        .with_will(10.0)
+        .with_health(10.0)
         .with_initiative(init)
         .with_integrity(hp) // sets Body = hp / HP_PER_BODY (last, so it owns Body)
 }

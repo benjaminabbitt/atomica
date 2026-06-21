@@ -54,7 +54,7 @@ archetypes 10–13). They are the substrate the four **skill families** are tier
 | **Body** | `unit.body` | Melee, Heavy | **Integrity = Body × `HP_PER_BODY`** ✅ (toughness *is* HP — one stat), **melee damage** ✅ (signed off 10: heavier swings harder, frail softer) |
 | **Dexterity** | `unit.dexterity` | Gunnery, Stealth, **Evade** | **Evasion** ✅, **physical Initiative** ✅ — *dragged down by heavy plating (the armor tradeoff)* |
 | **Intellect** | `unit.intellect` | Hacking, Medical, Tech | **digital Initiative** ✅ (net turn order — *speed of thought*) |
-| **Will** | `unit.will` | (morale / spoof-resist) | served by the framework, not a roll of its own ✅ — a willpower check rolls a tier off **Intellect** (mental grit) or **Body** (physical endurance) per use case (§3) |
+| **Health** (GURPS **HT**) | `unit.health` | — | **biological resilience** ✅ — the resist **poison / plague / virus** afflictions roll against (their attack is `power − Health`), and that a virus *rots* (§5). A tough constitution shrugs off toxins and infection. |
 
 > **Firewall and Link are *granted*, not derived.** They come from gear / chassis (a cyberdeck
 > lifts both), not from an attribute — Intellect governs the netrunning *skills* and the digital
@@ -74,10 +74,12 @@ archetypes 10–13). They are the substrate the four **skill families** are tier
 
 **Body and Integrity are one stat ✅.** Max Integrity (the HP pool) is **derived** —
 `Body × HP_PER_BODY` (K = 6: an average Body-10 build carries ~60 HP; a bolted-down node
-scales Body up to whatever pool it needs). So toughness and health aren't tracked separately:
+scales Body up to whatever pool it needs). So wounds and toughness aren't tracked separately:
 a heavier unit (more HP) is *also* a harder melee hitter, and a Body stat-up implant (actuators,
 the decentralized heart) fattens the HP pool directly. The cost the design accepts: a very
-high-HP bruiser reliably lands its melee (Evasion, not a to-hit roll, is the defense).
+high-HP bruiser reliably lands its melee (Evasion, not a to-hit roll, is the defense). (This is
+the GURPS split: **HP scales with Body/ST**, while **constitution is its own attribute, Health/HT** —
+the poison- and disease-resist of §2/§5 — so a big frame and a *hardy* one are different things.)
 
 **Initiative is action-typed ✅.** A unit's turn order derives from the attribute the *action*
 uses — **Dexterity** for a physical activation (reflexes), **Intellect** for a digital one (a
@@ -119,11 +121,12 @@ the situation calls for** — `effective_skill_off(skill, stat)`:
 effective skill = (use-case attribute) + skill tier
 ```
 
-The tier is what you *trained*; the attribute is what the moment *tests*. This is why **Will needs
-no roll of its own**: a willpower check is just a tier rolled off the appropriate stat —
-**Intellect** for mental grit (composure, spoof-resist), **Body** for physical endurance (shrugging
-off a stagger). The four attributes stay the substrate; the framework lets a skill borrow the one
-that fits.
+The tier is what you *trained*; the attribute is what the moment *tests*. This is why there's **no
+separate "willpower" attribute**: a resolve / composure check is just a tier rolled off the stat the
+moment tests — **Intellect** for mental grit (spoof-resist, nerve), **Body** for physical strain.
+The four attributes (Body, Dexterity, Intellect, **Health**) stay the substrate; the framework lets a
+skill borrow the one that fits, so we don't need a fifth for every flavor of "resist." (Biological
+affliction has its own primary, **Health** — see §5 — because it's a standing TN, not a trained roll.)
 
 **Weapons carry this too — the to-hit attribute is a *tag* ✅.** A `FINESSE` weapon (a light blade,
 a pistol) rolls its Melee/Gunnery tier off **Dexterity**; a `BRAWN` weapon (a heavy maul, a braced
@@ -180,14 +183,14 @@ target number** ◆ ([`resolve_versus`](../crates/sim/src/roll.rs)):
 ```
 
 - `rating` is the actor's effective skill/potency (~10–15); `resist` is the
-  target's **Firewall / Immunity / security rating** as a small penalty (a few
+  target's **Firewall / Health / security rating** as a small penalty (a few
   points), *not* a number to beat. Every point of resist costs the actor a point of
   target. This is the GURPS skill-check pattern: *roll under your skill, penalized
   by the difficulty.*
 - **No static TN anywhere** — the same `2d10 ≤ target` core; the defense is just a
   term inside `target`. (Hacking, which *does* have an active defender, is an
   opposed roll instead — §4.)
-- Used by: **contagion** spread (`rating = virulence`, `resist = Immunity`,
+- Used by: **contagion** spread (`rating = virulence`, `resist = Health`,
   [`corruption.md`](corruption.md)) and the status **stochastic gate**
   (`rating = power + stacks`, `resist = the status's Resist`). Afflictions/contagions
   are authored on the same ~10 scale so the penalty bites meaningfully.
@@ -200,7 +203,6 @@ target number** ◆ ([`resolve_versus`](../crates/sim/src/roll.rs)):
 |---|---|---|
 | **Evasion** | `Dexterity + Evade-tier` | the active-defense roll (§4) |
 | **Firewall** | `Intellect` + implants | digital **active defense** — rolls back against a hack (opposed, §4); ≤ 0 = undefended |
-| **Immunity** | (bio track) | contagion resist penalty (§5) |
 | **Link** | implants (cyberdeck…) | reachability gate · digital initiative · hack channel · **antenna range** ([`netrunning.md`](netrunning.md)) |
 | **Initiative** | `Dexterity` + gear | physical activation order |
 | **Integrity / Barrier / Plating** | Body + armor | the HP pools ([`combat.md`](combat.md)) — *not* modifiers; clamped pools |
@@ -222,7 +224,7 @@ Illustrative bands on the 2d10 scale:
 - **Attributes** — weak 8 · average 10 · strong 12 · exceptional 13–14.
 - **Skill tiers** — untrained −4 (default) · competent 0 · expert +2 · elite +4.
 - **Effective combat skill** — fodder ~8–10 · professional ~13–15 · master ~16.
-- **Firewall / Immunity (penalty)** — unprotected 0 · modest 4 · hardened 6–8.
+- **Firewall / Health (penalty)** — unprotected 0 · modest 4 · hardened 6–8.
 - **Speed** — melee/thrown ~1 · firearm ~3.
 
 The flatter curve means **bigger skill *gaps*** read as advantage (a +4 effective

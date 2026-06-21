@@ -62,7 +62,6 @@ impl Default for Priority {
 pub enum Stat {
     Link,
     Firewall,
-    Immunity,
     Initiative,
     Plating,
     Barrier,
@@ -71,7 +70,7 @@ pub enum Stat {
     // The four characteristics skills are tiers *on* (effective = attribute + skill-tier)
     // and the combat stats derive from. ~1-8, competent baseline 5.
     /// Physical power & toughness — governs Melee/Heavy and **is** the unit's **HP**: max
-    /// Integrity derives as `Body × HP_PER_BODY` (`docs/stats.md`), so toughness and health are one
+    /// Integrity derives as `Body × HP_PER_BODY` (`docs/stats.md`), so wounds and toughness are one
     /// stat. Also feeds damage. A heavy build raises Body for the HP, and hits harder for it.
     Body,
     /// Agility & coordination — governs Gunnery/Stealth/Evade, feeds Evasion & Initiative.
@@ -79,8 +78,10 @@ pub enum Stat {
     Dexterity,
     /// Wits & training — governs Hacking/Medical/Tech, feeds Firewall.
     Intellect,
-    /// Resolve & nerve — governs morale / spoof-resist (when that lands).
-    Will,
+    /// Vitality & constitution (GURPS **HT**) — **biological resilience**: the stat poison, plague,
+    /// and virus afflictions roll against (resist applies as a penalty to their attack), and that a
+    /// virus *rots*. A tough constitution shrugs off toxins and infection (`docs/stats.md`).
+    Health,
 }
 
 /// HP per point of **Body** (`docs/stats.md`) — the merge factor: max Integrity is `Body ×
@@ -281,7 +282,7 @@ pub enum Resist {
     #[default]
     None,
     Firewall,
-    Immunity,
+    Health,
 }
 
 /// A **stochastic gate** (the status `behavior` axis): each tick the decorator rolls
@@ -359,14 +360,14 @@ pub enum Vector {
 
 /// A **contagion** riding a decorator (`docs/corruption.md`): each contagion phase it
 /// attempts to **jump** to fresh victims along its [`Vector`], a *contested* roll of its
-/// `virulence` vs the victim's `resist` stat (Immunity for a plague, Firewall for a
+/// `virulence` vs the victim's `resist` stat (Health for a plague, Firewall for a
 /// worm). On a win the whole decorator **copies itself** onto the victim — so a
 /// contagion is self-replicating. Cleansed by the same tag-ward as any corruption.
 #[derive(Clone, Copy, Debug)]
 pub struct Contagion {
     /// The jump roll's attack rating (`2d10 ≤ virulence − resist`).
     pub virulence: i32,
-    /// The victim stat that defends each jump (`Stat::Immunity` / `Stat::Firewall`).
+    /// The victim stat that defends each jump (`Stat::Health` / `Stat::Firewall`).
     pub resist: Stat,
     /// How it reaches candidates.
     pub vector: Vector,
@@ -546,16 +547,15 @@ impl Decorator {
 pub struct BaseLine {
     pub link: f32,
     pub firewall: f32,
-    pub immunity: f32,
     pub initiative: f32,
     pub plating: f32,
     pub barrier: f32,
     pub damage: f32,
-    /// **Primary attributes** (`docs/stats.md`) — Body / Dexterity / Intellect / Will.
+    /// **Primary attributes** (`docs/stats.md`) — Body / Dexterity / Intellect / Health.
     pub body: f32,
     pub dexterity: f32,
     pub intellect: f32,
-    pub will: f32,
+    pub health: f32,
     pub targeting: TargetingProfile,
     pub movement: MovementProfile,
     /// Innate netrunning doctrine — the digital behavior script; gear overrides it (last-wins).
@@ -569,7 +569,6 @@ impl BaseLine {
         match stat {
             Stat::Link => self.link,
             Stat::Firewall => self.firewall,
-            Stat::Immunity => self.immunity,
             Stat::Initiative => self.initiative,
             Stat::Plating => self.plating,
             Stat::Barrier => self.barrier,
@@ -577,7 +576,7 @@ impl BaseLine {
             Stat::Body => self.body,
             Stat::Dexterity => self.dexterity,
             Stat::Intellect => self.intellect,
-            Stat::Will => self.will,
+            Stat::Health => self.health,
         }
     }
 }
@@ -654,9 +653,6 @@ impl Realized {
     pub fn firewall(&self) -> i32 {
         self.stat(Stat::Firewall).round() as i32
     }
-    pub fn immunity(&self) -> i32 {
-        self.stat(Stat::Immunity).round() as i32
-    }
     /// The realized value of any [`Stat`] as an integer — the attribute lookup a skill's
     /// [`governs`](crate::Skill::governs) drives (effective rating = attribute + tier).
     pub fn attribute(&self, stat: Stat) -> i32 {
@@ -674,8 +670,9 @@ impl Realized {
     pub fn intellect(&self) -> i32 {
         self.stat(Stat::Intellect).round() as i32
     }
-    pub fn will(&self) -> i32 {
-        self.stat(Stat::Will).round() as i32
+    /// **Health** (GURPS HT) — biological resilience; the resist poison/plague/virus roll against.
+    pub fn health(&self) -> i32 {
+        self.stat(Stat::Health).round() as i32
     }
     pub fn initiative(&self) -> f32 {
         self.stat(Stat::Initiative)
@@ -991,7 +988,7 @@ impl Character {
         // Resolve `Amount`s and resist TNs against a snapshot of the pre-dispatch
         // composed view (so every reaction this tick reads the same numbers).
         let view = self.realize();
-        let (max, fw, imm) = (view.max_integrity(), view.firewall(), view.immunity());
+        let (max, fw, ht) = (view.max_integrity(), view.firewall(), view.health());
         let current = self.integrity;
         let resolve = |a: Amount| match a {
             Amount::Flat(v) => v,
@@ -1009,7 +1006,7 @@ impl Character {
                 let tn = match gate.resist {
                     Resist::None => 0,
                     Resist::Firewall => fw,
-                    Resist::Immunity => imm,
+                    Resist::Health => ht,
                 };
                 let skill = gate.power + d.stacks as i32;
                 if !resolve_versus(rng, skill, tn).success {

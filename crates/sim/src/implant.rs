@@ -48,12 +48,13 @@ pub struct Contribution {
     /// skill on it climbs at once: **Body** (Melee/Heavy **and HP** — Integrity is `Body ×
     /// HP_PER_BODY`, so the *actuators* / *decentralized heart* fatten the pool too), **Dexterity**
     /// (Gunnery/Stealth/Evade, so Evasion — *wired reflexes*), **Intellect** (Hacking/Medical/Tech —
-    /// the *neural net*), **Will**. The other combat pools (damage / initiative) are their own fields
-    /// above — *rams* lift `damage`, *speedware* lifts `initiative`.
+    /// the *neural net*), **Health** (GURPS HT — biological resilience; *immuno-chrome* hardens it).
+    /// The other combat pools (damage / initiative) are their own fields above — *rams* lift
+    /// `damage`, *speedware* lifts `initiative`.
     pub body: i32,
     pub dexterity: i32,
     pub intellect: i32,
-    pub will: i32,
+    pub health: i32,
 }
 
 /// A cyberware implant (`docs/cyberware.md` §1): a bundle of stat contributions,
@@ -349,8 +350,8 @@ impl Implant {
         if c.intellect != 0 {
             factors.push(Factor::add(Stat::Intellect, c.intellect as f32));
         }
-        if c.will != 0 {
-            factors.push(Factor::add(Stat::Will, c.will as f32));
+        if c.health != 0 {
+            factors.push(Factor::add(Stat::Health, c.health as f32));
         }
         let mut d = Decorator::gear(Tag::Implant, factors).with_condition(self.condition);
         if let Some(h) = self.grant_hack {

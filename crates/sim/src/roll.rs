@@ -42,7 +42,7 @@ pub fn resolve_check<R: RandomSource + ?Sized>(rng: &mut R, target: i32) -> Roll
 
 /// Resolve a **roll-under** skill check whose opposition is folded in as a **modifier** (the
 /// GURPS pattern — no static TN): roll `2d10 ≤ rating − resist`, where `rating` is the actor's
-/// effective skill (~10) and `resist` is the target's Firewall / Immunity / security rating as
+/// effective skill (~10) and `resist` is the target's Firewall / Health / security rating as
 /// a flat **penalty** (a few points), *not* a number to beat. `margin` is the degree of
 /// success. (Active, two-sided defenses still go through [`resolve_opposed`].)
 pub fn resolve_versus<R: RandomSource + ?Sized>(rng: &mut R, rating: i32, resist: i32) -> RollOutcome {

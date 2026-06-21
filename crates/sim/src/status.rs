@@ -57,7 +57,7 @@ pub enum Behavior {
 #[derive(Clone, Copy, Debug)]
 pub enum Resist {
     None,
-    Immunity,
+    Health,
     Firewall,
 }
 
@@ -208,7 +208,7 @@ impl StatusSpec {
         }
     }
 
-    /// Poison — Internal DoT, *stochastic*, resisted by Immunity, no spread.
+    /// Poison — Internal DoT, *stochastic*, resisted by Health, no spread.
     pub fn poison() -> Self {
         Self {
             name: "Poison",
@@ -219,7 +219,7 @@ impl StatusSpec {
             stacking: Stacking::Refresh,
             behavior: Behavior::Stochastic { power: 10 }, // GURPS-scaled affliction potency
             targeting: Targeting::Enemy,
-            resist: Resist::Immunity,
+            resist: Resist::Health,
         }
     }
 
@@ -350,7 +350,7 @@ impl StatusSpec {
             let resist = match self.resist {
                 Resist::None => GenResist::None,
                 Resist::Firewall => GenResist::Firewall,
-                Resist::Immunity => GenResist::Immunity,
+                Resist::Health => GenResist::Health,
             };
             d = d.with_gate(power, resist);
         }
