@@ -71,12 +71,12 @@ The **inbuilt-identity** presets (§8): chassis + non-removable signature gear +
 | **Rig** | Clan · The Haul | Vehicle | transport bay → **Dust-off** (load downed + exit = **extraction**) + ram | the convoy; pulls your people out |
 | **Mawkin** | Clan · The Maws | Augmented | stim-claws → **Frenzy** (Feral berserk + stim haste) | feral berserker; the discipline-less blade |
 | **Null** | Independent · Runner | Augmented | cyberdeck + antenna → **Spike** (burst Link, one big hack) | console-cowboy; glass-jaw netrunner |
-| **Patch** | Independent · Runner | Augmented | cleanse suite → **Scrub** (code **White-hat**: Worm / Firewall / Link) | the code medic |
+| **Patch** | Independent · Runner | Augmented | cleanse suite → **Scrub** (code **White-hat**: Worm / ICE / Link) | the code medic |
 | **Vector** | Independent · Runner | Augmented | worm-deck → **Spreader** (deploy / boost Worm contagion) | the worm-slinger; contagion offense |
 | **Sweeper** | Independent · Runner | Augmented | killer-program → **Antivirus** (eat enemy Worm stacks) | the worm-hunter (enemy-side suppression) |
 | **Deadzone** | Independent · Runner | Machine | jammer array → **Dead-zone** (collapse AR / beams in area) | ECM drone; anti-net area denial |
 | **Broker** | Independent | Flesh | — → **Streetdeal** (Rep → discounts, slots, intel) | the **Fixer**; run-layer dealmaker |
-| **Ironclad** | Corp · Mil-Ind | Augmented | subdermal Plate + Firewall projector → **Aegis-net** (project +Firewall) | the anchor; physical + digital cover |
+| **Ironclad** | Corp · Mil-Ind | Augmented | subdermal Plate + ICE projector → **Aegis-net** (project +ICE) | the anchor; physical + digital cover |
 | **Hollowpoint** | Corp · Mil-Ind | Machine | smartgun → **Executioner** (Lowest-Integrity targeting) | smartgun drone; spoof its IFF and it guns your line |
 | **Longshot** | Corp · Mil-Ind | Augmented | railgun (armor-ignoring) → **Lock-on** (ignore evasion) | the sniper; reach past the line |
 | **Bulldozer** | Corp · Mil-Ind | Vehicle | siege mount → **Barrage** (blast footprint) | heavy war-mech; the Corp's wallet, weaponized |

@@ -115,7 +115,7 @@ Mirrors the §7I attack matrix:
 |---|---|---|---|---|
 | **Bio** | Integrity (flesh) | **Doctor** | Virus → Vaccinated; Reject | Clan (flesh path) |
 | **Chrome** | Barrier / Plating; un-bricks Offline gear | **Ripperdoc** | EMP / Shed / Lockout damage | back-alley **Independent** ↔ premium **Corp** clinic |
-| **Code** | Firewall, Link; clears corruption | **White-hat** | Worm → Antimalware; spoofs | Runner |
+| **Code** | ICE, Link; clears corruption | **White-hat** | Worm → Antimalware; spoofs | Runner |
 
 (All three names are generic genre / real-world vocabulary — IP-clean.)
 
@@ -128,7 +128,7 @@ Keep the baseline **siloed**, let the **big abilities cross**:
 
 **Four pools** a mender can touch (the biggest reach the fourth):
 
-1. **Integrity** (bio) · 2. **Barrier / Plating + equipment-online** (chrome) · 3. **Firewall / Link + de-corrupt** (code) · 4. **Resolve** (morale, §4)
+1. **Integrity** (bio) · 2. **Barrier / Plating + equipment-online** (chrome) · 3. **ICE / Link + de-corrupt** (code) · 4. **Resolve** (morale, §4)
 
 Marquee cross-pool ult names (original — avoid the *Trauma Team* trademark): **Hard Reset**, **Cold Boot**, **Crash Cart**, **Code Blue**, **Dust-off**.
 
@@ -227,8 +227,8 @@ Archetype { callsign · chassis · faction · link_floor · inbuilt[] · signatu
 | **Anthem** | Clan | Augmented | the leader — projects Resolve / Rally; the morale anchor |
 | **Rig** | Clan (The Haul) | Vehicle | crewed transport — multi-hex, ram, spills crew on death |
 | **Null** | Runner (Indep.) | Augmented | console-cowboy — high-Link, Spike, glass-jaw netrunner |
-| **Patch** | Runner (Indep.) | Augmented | **White-hat** — Worm cleanse, Firewall / Link restore |
-| **Ironclad** | Corp (Mil-Ind.) | Augmented | the anchor — subdermal Plate + Firewall projector |
+| **Patch** | Runner (Indep.) | Augmented | **White-hat** — Worm cleanse, ICE / Link restore |
+| **Ironclad** | Corp (Mil-Ind.) | Augmented | the anchor — subdermal Plate + ICE projector |
 | **Hollowpoint** | Corp (Mil-Ind.) | Machine | smartgun drone — Virus-immune; spoof its IFF and it guns your line |
 | **Broker** | Independent | Flesh | the **Fixer** — run-layer; Rep → discounts, slots, intel |
 
@@ -318,7 +318,7 @@ A dead unit can be **both insured and salvaged** (money + materials), but it's s
 
 The **RPG layer** — what a unit *knows*, separate from what it *is* (chassis) or *carries* (gear). A fourth identity dimension, and the engine behind the character/fungible split.
 
-**Skills modify rolls ◆.** A skill shifts the **stochastic rolls** (§3.5) in its domain — hacking bends the hack-power-vs-Firewall margin, medical the cure / heal roll, a blade the crit / contagion-catch roll. Skills sit beside the resist stats (Immunity / Firewall) as the per-character roll-modifiers; deterministic effects (a flat Burn) ignore them, rolled ones don't.
+**Skills modify rolls ◆.** A skill shifts the **stochastic rolls** (§3.5) in its domain — hacking bends the hack-power-vs-ICE margin, medical the cure / heal roll, a blade the crit / contagion-catch roll. Skills sit beside the resist stats (Body / ICE) as the per-character roll-modifiers; deterministic effects (a flat Burn) ignore them, rolled ones don't.
 
 **Two sources, asymmetric ◆:**
 
@@ -390,9 +390,9 @@ None of it breaks the crate split or phase ordering.
 
 **Roll resolution — the core mechanic: `3d6 + skill + equipment` vs. TN, no stats.** ◆
 - **When you roll:** **contested / stochastic** actions — hacks, spoofs, contagion (tick / build / spread), skill-gated abilities, **and weapon attacks** (to-hit). A weapon rolls `3d6 + weapon skill + accuracy` vs the target's **Evasion** (plus weapon range penalties — **ranged** falloff with distance and an **awkward** weapon's close-quarters bite, discrete, §10.5). **Fast-path:** an **undefended** blow (Evasion 0, melee, no awkward penalty ⇒ TN ≤ 0) **auto-hits with no roll** and burns no RNG — so trivial exchanges stay deterministic and the auto-battler fast; the dice only enter once a defender can actually evade or a long weapon is jammed up close.
-- **The roll:** `3d6 + skill + equipment` vs. a **Target Number**. **Margin = total − TN**; **margin > 0 succeeds**, and the **margin's size = degree of success** (scales the effect — a bigger hack margin trips a stronger effect; a bigger contagion margin pushes a higher tier / harder-to-resist). This **subsumes** the old `margin = hack-power − Firewall` and the contagion **T1/T2/T3** roll into one rule.
-- **Skills attack, stats defend.** The *only* additive bonus to a roll is **skill** (character or chip — take-the-max, chips capped, §10) **+ equipment** (deck hack-rating, weapon mod, …). **No chassis stat is added to a roll.** Instead the defender's stat line *is* the TN: **Firewall** (hacks / Worm / spoof), **Immunity** (Virus), **Evasion** (physical to-hit — weapon **range tags** add on top: **ranged** falloff with distance, **awkward** clumsiness up close; but **nothing** adds to a hack: range can't touch the digital realm), a control-resist — thresholds you roll *against*, never bonuses to your own roll.
-- **Equipment arms both sides.** Just as gear lifts the attacker's roll (a cyberdeck → Hacking), it also lifts the **defender's stat/TN** (a Firewall implant → higher Firewall). So the TN is *base stat + equipment*, the mirror of the attacker's *skill + equipment* — gear buys offense and defense alike. (In the engine the stat field already *is* the TN, so loadout derivation just folds equipment into it.)
+- **The roll:** `3d6 + skill + equipment` vs. a **Target Number**. **Margin = total − TN**; **margin > 0 succeeds**, and the **margin's size = degree of success** (scales the effect — a bigger hack margin trips a stronger effect; a bigger contagion margin pushes a higher tier / harder-to-resist). This **subsumes** the old `margin = hack-power − ICE` and the contagion **T1/T2/T3** roll into one rule.
+- **Skills attack, stats defend.** The *only* additive bonus to a roll is **skill** (character or chip — take-the-max, chips capped, §10) **+ equipment** (deck hack-rating, weapon mod, …). **No chassis stat is added to a roll.** Instead the defender's stat line *is* the TN: **ICE** (hacks / Worm / spoof), **Body** (Virus / Poison — the bio resist folded into the attribute), **Evasion** (physical to-hit — weapon **range tags** add on top: **ranged** falloff with distance, **awkward** clumsiness up close; but **nothing** adds to a hack: range can't touch the digital realm), a control-resist — thresholds you roll *against*, never bonuses to your own roll.
+- **Equipment arms both sides.** Just as gear lifts the attacker's roll (a cyberdeck → Hacking), it also lifts the **defender's stat/TN** (a ICE implant → higher ICE). So the TN is *base stat + equipment*, the mirror of the attacker's *skill + equipment* — gear buys offense and defense alike. (In the engine the stat field already *is* the TN, so loadout derivation just folds equipment into it.)
 - **Why 3d6 — the bell curve.** Mean 10.5, tight spread → **skill dominates, luck is a small nudge**, big upsets rare (~0.5% each extreme). Fits the seeded-RNG, replayable, low-swing feel over d20 randomness.
 - **Defaults ◆ (tunable):** succeed on **≥ TN**; **nat 3 = fumble, nat 18 = crit** (rare, splashy). **Calibration ⏳** — skill ranges, equipment bonuses, and TN bands set so a matched contest (skill + equip ≈ TN − 10.5) sits near 50%. *(Also closes the taxonomy's "resolution math" TBD, §8 #5.)*
 
@@ -444,7 +444,7 @@ So Rep has two inputs: **fielding affiliated units** (the live unit-summation, �
 
 | Shop | Sells | Vendor |
 |---|---|---|
-| **Cyber** | implants (Link / Firewall / Hack-effect) **+ skill chips** (§10) | Cyberware corp / Ripperdoc |
+| **Cyber** | implants (Link / ICE / Hack-effect) **+ skill chips** (§10) | Cyberware corp / Ripperdoc |
 | **Bioware** | bio-augments (no Link, EMP-immune, Reject) | Medical corp / Doctor |
 | **Arms** | **guns + melee/blades + armor/defense** — the whole physical realm | Mil-Industrial / clans |
 | **Programs** | **all software — offense (hacks / worms / spoof) + defense (anti-Worm / firewall / Link-effects)** — the digital realm | Runner |
@@ -506,3 +506,28 @@ Rep cashes out as **shop access**, not battle-board presence. *(Supersedes the e
 **Factoring:** all `atomica-run` — Rep thresholds gate shop spawns; politicking nodes generate Job offers. The `sim` is untouched.
 
 *Open ⏳: which thresholds spawn which shops; politicking Job-offer counts / refresh; whether a rival shop closes or just prices away.*
+
+---
+
+## 17. Stat-model consolidation (v0.27 pass) ◆
+
+*A simplification pass over the stat line and the contagion model. **Supersedes** every earlier mention of `Immunity`, `Firewall`, and a standalone `Health`/HT attribute across the corpus — the canonical statement now lives in [`stats.md`](stats.md) §2/§5/§6. ◆ = decision on the user's call.*
+
+**Three primary attributes (was four).** The GURPS ST/HT split is **collapsed**: the short-lived **Health/HT** attribute is **folded into Body**. One **Body** stat now carries **Integrity/HP** (`Body × K`), **melee damage**, *and* **biological resilience** — the resist that **poison / virus / plague** roll against (`power − Body`). The trade we accept: no fragile-but-hardy or burly-but-sickly build; might, bulk, and constitution move together. The substrate is now **Body · Dexterity · Intellect**.
+
+**`Firewall → ICE` (renamed).** The digital active-defense / digital Internal-resist is **ICE** (all-caps — *Intrusion Countermeasures Electronics*), granted off Intellect + deck. The rename pays off in flavor: a worm **melts** ICE, an attacker's **icebreaker breaks** it, and **Black ICE** is a ready-made lethal-countermeasure tier (🔭). It reads as a *capability rating*, not a device — distinct from **Link** (which owns "installed connectivity").
+
+**`Immunity → Body` (folded).** There is **no standalone bio-resist stat**. The Internal tier still has two flavors, but they now key off:
+- **bio** (Virus, Poison, organic toxins) → the **Body** attribute (a tough frame shrugs off toxins);
+- **digital** (Worm, intrusion, malware) → **ICE**.
+
+This keeps the two-flavor structure of [`status-effects-taxonomy.md`](../status-effects-taxonomy.md) §7A/§7E while dropping a stat: bio resilience is just *Body*, mirroring how the two active defenses (Evasion off Dexterity, ICE off Intellect) hang off attributes.
+
+**Contagion model — virus wastes, poison burns, worm melts ◆.** The bio/digital corruption split is sharpened, with an **intentional asymmetry**:
+- **Virus** (bio) now **attacks Body** — a *wasting* disease that chips Body for its duration. Because Body *is* the HP pool, the attack **drags Integrity/HP down**; because bio-resist *is* Body, it also **softens the host for the next strain**. One effect does the work the old Immunity-rot snowball did *and* bites HP. Keeps its **fever DoT** (Internal, bypasses armor — the immediate sting atop the slow wasting). The contagious **plague** variant contests `virulence` vs **Body**.
+- **Poison** (bio) is the **pure DoT** sibling — it ticks, is resisted (roll-modified) by **Body**, and **attacks no stat**. The burst, not the wasting.
+- **Worm** (digital) **melts ICE** — rots the wall, softening the surface for the next strike; the contagious **worm-swarm** contests `virulence` vs **ICE**.
+
+So **digital corruption snowballs** (thinner ICE → deeper next bite) while **bio splits** into a slow killer (Virus → Body/HP) and a flat burn (Poison). Cleanses unchanged in role: **antivirus** strips Virus, the **ICE patch** strips Worm.
+
+**Factoring note (⏳ code not yet updated).** This section is the **design** consolidation; the `sim` crate still uses the old identifiers (`Stat::Firewall`, `Stat::Health`, the `Immunity` resist, `Corruption::virus` rotting Health). Aligning the engine — renaming the stat, removing the folded attribute, repointing the virus to Body, and splitting out a pure-DoT poison — is a separate implementation pass.

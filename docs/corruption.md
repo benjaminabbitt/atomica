@@ -19,15 +19,18 @@ its family. The three families and their surfaces:
 
 | Family | Tag | Corrupts | Defends / resists | Cleanse |
 |---|---|---|---|---|
-| **Virus** ✅ | `Virus` | the **biological** surface (Immunity) | Immunity | `antivirus` (`Remove::Tag(Virus)`) |
-| **Worm** ✅ | `Worm` | the **digital** surface (Firewall) · trips chrome (§ breach) | Firewall, segment PAN | `firewall_patch` (`Remove::Tag(Worm)`) |
+| **Virus** ✅ | `Virus` | **Body** — a *wasting* attack (drags Integrity/HP with it) | Body | `antivirus` (`Remove::Tag(Virus)`) |
+| **Worm** ✅ | `Worm` | the **digital** surface (**ICE**) · trips chrome (§ breach) | ICE, segment PAN | `ICE patch` (`Remove::Tag(Worm)`) |
 | **Spoof** ✅ | `Spoof` | **behavior** (a `CORRUPTION`-priority targeting override) | — | a counter-spoof ward |
 
 Content lives in `corruption.rs` ([`Corruption`]): `virus` / `worm` (the
-stat-rot debuffs — the **virus** also carries a **fever DoT**, Internal so it bypasses
-armor: the combat bite, while the Immunity rot is the snowball), `plague` /
-`worm_swarm` (their **contagious** variants), and the `antivirus` / `firewall_patch`
-wards. Behavior corruption is
+debuffs — the **Worm** *melts* **ICE** (an icebreaker **breaks** it on the offense
+side); the **Virus** *attacks* **Body** — a wasting bite that drags Integrity/HP
+down *and*, because bio-resist **is** Body, softens the host for the next strain —
+plus a **fever DoT**, Internal so it bypasses armor: the immediate sting on top of
+the slow wasting), `plague` / `worm_swarm` (their **contagious** variants), and the
+`antivirus` / `ICE patch` wards. **Poison** is its sibling-but-simpler bio status —
+a *pure* DoT resisted by Body, attacking nothing (the burst, not the wasting). Behavior corruption is
 [`Unit::spoof`](../crates/sim/src/lib.rs) (already wired). A worm is also a
 **breach vector** — see [`cyberware.md`](cyberware.md) §6 and
 `Battle::worm_breach` (logic-bomb trips one implant; Cascade trips all on a
@@ -53,8 +56,8 @@ the action phase) tries to **jump** every active contagion to fresh victims:
    - `Net` — *digital*: any unit with a live surface (`Link > 0`), **distance-independent**
      (a worm doesn't care where you stand).
 2. **Contest** ◆ — a roll-under check, `2d10 ≤ virulence − resist`, where the
-   victim's **resist** stat (Immunity for a plague, Firewall for a worm) folds in
-   as a flat **penalty** ([`stats.md`](stats.md) §5). A hardened immune system /
+   victim's **resist** stat (**Body** for a plague, **ICE** for a worm) folds in
+   as a flat **penalty** ([`stats.md`](stats.md) §5). A tough frame / hardened
    wall beats a weak strain; a virulent one takes hold. (`resolve_versus`, the same
    modifier mechanic as hacks.)
 3. **Land** — on a win the **whole decorator copies itself** onto the victim

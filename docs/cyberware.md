@@ -41,7 +41,7 @@ Each implant carries six things, plus run-layer tags:
 |---|---|---|
 | **Benefit** | the capability — a stat, a granted ability/loadout, a skill, a profile unlock | ✅ unconditional |
 | **Link** | net-presence contribution: digital initiative **+ the hackable surface** (§7D) | + capability, **+ exposure** |
-| **Firewall** | digital defense it adds to the unit | + defense |
+| **ICE** | digital defense it adds to the unit | + defense |
 | **Weight** | mass → **−physical Initiative** (§7C) | − tempo |
 | **Hack-effect(s)** | one **or more** named liabilities that fire *on the owner* when the implant is breached (loaded chrome carries several) | **conditional risk** |
 | **Condition** | `Online → Degraded → Offline → Destroyed` (delta §3.1) | live state |
@@ -50,7 +50,7 @@ Run-layer tags (engine-blind): **affiliation** (generic / corp / clan, §2.6),
 **illicit** flag (→ Notoriety), **price**, and **removable?** — *inbuilt* implants
 are non-removable and **are the unit's identity** (§7F, the archetype signature).
 
-So a unit's whole digital stat line (Link, Firewall) and much of its physical one
+So a unit's whole digital stat line (Link, ICE) and much of its physical one
 (Plating, Initiative, granted skills/abilities) is the **sum of its installed
 implants** over a chassis base — not hand-authored numbers. That sum *is* the
 loadout (delta §13).
@@ -98,11 +98,11 @@ crit-gated, and a **Cascade**/worm can trip the whole list at once.
 Benefit (unconditional) ↔ hack-effect (on breach). Magnitudes are band-tier
 sketches (TBD); the benefit and its corruption are sized to mirror.
 
-| Implant | Slot | Benefit (always on) | Link | FW | Wt | Hack-effect (on breach) |
+| Implant | Slot | Benefit (always on) | Link | ICE | Wt | Hack-effect (on breach) |
 |---|---|---|---|---|---|---|
 | **Reflex booster** | reflex | +Physical Initiative | low | — | — | **Seizure** — Crash / skip |
 | **Cyberdeck** | deck | grants the **hack loadout** + Hacking + Link | **high** | + | — | **Lockout** — −Link, digital disabled |
-| **Firewall suite** | security | **+Firewall** (the wall) | low | **high** | — | **Breach** — −Firewall, vuln |
+| **ICE suite** | security | **+ICE** (the wall) | low | **high** | — | **Breach** — −ICE, vuln |
 | **Subdermal plating** ✅ | armor | **+Plating** | — | — | **heavy** | **—** *(inert physical — Link 0, unbreachable by any vector)* |
 | **Smartgun link** | targeting | IFF **smart-targeting** profiles + accuracy | mid | — | — | **Misfire** — attack ally / self |
 | **Metabolic pump** | bio-sys | +regen (Adaptive System) | — | — | — | **Overload** — Internal DoT (runs hot) |
@@ -122,7 +122,7 @@ already built (`netrunning.md` §2); its Link is why netrunners are exposed glas
 cannons; its **Lockout** is the cost of having a deck breached.
 
 **Built so far (Phase A/B ✅, `implant.rs`):** Cyberdeck, Subdermal Plating,
-Reflex Booster, Firewall Suite, **Combat Stim** (a multi-effect **Overdose** —
+Reflex Booster, ICE Suite, **Combat Stim** (a multi-effect **Overdose** —
 self-DoT + Crash, exercising the per-effect ladder), Metabolic Pump, **Neural Net**
 (the first **attribute** implant — +Intellect, so every skill on it climbs at once;
 breach **Scramble** = Lag), and the **stat-up suite** (`Contribution` now folds all four
@@ -131,7 +131,7 @@ Heart** (+max Integrity — the HP stat), **Actuators** (+Body), **Rams** (+dama
 benefit↔inverted-liability pair (Crash / Lag / Bleed). **Pending a
 subsystem (🔭):** Smartgun (targeting profiles), Sensor suite (AR), Skill chip
 (the §10 *take-the-max* rule, vs the current additive fold) — each waits on its
-own layer. The `Contribution` folds Link / Firewall / Plating / Initiative /
+own layer. The `Contribution` folds Link / ICE / Plating / Initiative /
 damage / max-Integrity today; regen, targeting, and AR benefits come with those
 systems.
 
@@ -177,7 +177,7 @@ what those points encode.
 | Axis | Cost | Counter / fork |
 |---|---|---|
 | **Link** | the hackable surface (worm-catch, hack channel — `netrunning.md`) — *also* digital capability | Masking / go dark (§7F link-effects) |
-| **EMP** ✅ | **physical, bypasses Firewall, no roll** — fries **every** active implant **Offline** and fires their **degrade-class** liabilities (no stun knockout — EMP is blunt). The hard counter; the more chrome, the more an EMP ruins | hardening; **bioware** (no hardware) |
+| **EMP** ✅ | **physical, bypasses ICE, no roll** — fries **every** active implant **Offline** and fires their **degrade-class** liabilities (no stun knockout — EMP is blunt). The hard counter; the more chrome, the more an EMP ruins | hardening; **bioware** (no hardware) |
 | **Weight** | mass → **−physical Initiative** — heavy chrome = slow body | lean loadouts |
 | **Heat** *(if adopted)* | chrome runs hot → closer to overheat **+ brighter AR signature** (§7D) | vent / coolant |
 
@@ -228,9 +228,9 @@ plating is a hard wall to the runner, soft to a maul. A breach hits one of the t
 
 | Vector | How | Defended by |
 |---|---|---|
-| **Hack** ✅ | a netrunner trips a **digital** implant (a hack success, `netrunning.md` §3) | Firewall, low Link, **going all-physical** |
-| **Worm** ✅ | **Logic-bomb** trips one digital implant · **Cascade** trips all (meshed PAN) | Firewall, segment PAN, all-physical |
-| **EMP** ✅ | a physical pulse (`Attack.emp` → `apply_emp`) — **bypasses Firewall**, fries every active **digital** implant Offline + fires degrade liabilities; **inert physical chrome is EMP-proof** | hardening, **all-physical builds** |
+| **Hack** ✅ | a netrunner's icebreaker trips a **digital** implant (a hack success, `netrunning.md` §3) | ICE, low Link, **going all-physical** |
+| **Worm** ✅ | **Logic-bomb** trips one digital implant · **Cascade** trips all (meshed PAN) — a worm **melts ICE** as it spreads | ICE, segment PAN, all-physical |
+| **EMP** ✅ | a physical pulse (`Attack.emp` → `apply_emp`) — **bypasses ICE**, fries every active **digital** implant Offline + fires degrade liabilities; **inert physical chrome is EMP-proof** | hardening, **all-physical builds** |
 
 ### Breach outcome — severity scales with the roll ◆
 
@@ -285,7 +285,7 @@ mender *unit* (targeting, cross-pool at the high end) is later content.
 
 **Engine shape.** `atomica-sim` gains an `Implant`; a `Unit` composes its stat
 line from a **chassis base + the sum of its Online implants** (the loadout
-derivation delta §13 promised). The flat fields we have today (`link`, `firewall`,
+derivation delta §13 promised). The flat fields we have today (`link`, `ice`,
 `defense.plating`, `initiative`, `skills`, `hack`) become **derived**, not
 hand-set.
 
@@ -294,7 +294,7 @@ pub struct Implant {
     pub name: &'static str,
     pub slot: Slot,                 // Reflex | Deck | Security | Armor | ...
     pub link: i32,                  // folded into Unit.link
-    pub firewall: i32,              // folded into Unit.firewall
+    pub ice: i32,                   // folded into Unit.ice
     pub benefit: Benefit,             // +Plating | +Init | grant Hack | grant Skill | ...
     pub hack_effects: Vec<StatusSpec>,// one or more liabilities; the §6 ladder runs per effect
     pub condition: Condition,         // Online → Degraded → Offline → Destroyed
@@ -312,11 +312,11 @@ crit-gated stun; Cascade fires all). The Ripperdoc reverses the disable.
 
 | Phase | Deliverable | Notes |
 |---|---|---|
-| **A** ✅ | `Implant` + **stat derivation** — `Unit::install` folds a `Contribution` (Link/Firewall/plating/init) into the line; `disable`/`repair` un/refold (the disable floor). Cyberdeck grants the `Hack` loadout | **built** (`implant.rs`): cyberdeck / subdermal-plating / reflex-booster presets; breach *trigger* is Phase C |
-| **B** ✅ | the **benefit roster** as content (§2 table) | **built**: deck · plating · reflex · firewall · stim (multi-effect Overdose) · pump; smartgun / sensor / skill-chip wait on targeting / AR / §10 |
+| **A** ✅ | `Implant` + **stat derivation** — `Unit::install` folds a `Contribution` (Link/ICE/plating/init) into the line; `disable`/`repair` un/refold (the disable floor). Cyberdeck grants the `Hack` loadout | **built** (`implant.rs`): cyberdeck / subdermal-plating / reflex-booster presets; breach *trigger* is Phase C |
+| **B** ✅ | the **benefit roster** as content (§2 table) | **built**: deck · plating · reflex · ICE · stim (multi-effect Overdose) · pump; smartgun / sensor / skill-chip wait on targeting / AR / §10 |
 | **C** ✅ | **trip-on-breach** — a hack success targets an implant (`first_active_implant`) and applies the **severity ladder** (§6): success ⇒ **disable**, margin ⇒ **degrade**, crit ⇒ **knockout** (stun) | **built** (`Battle::apply_breach`): reuses the margin/crit roll outputs; chromeless targets fall back to the deck payload. Closes the netrunning loop |
 | **D** ✅ | **condition + Ripperdoc** — Degraded (half benefit) / Offline / Destroyed (terminal) ladder + `degrade_implant` / `repair_implant` | **built**: condition-scaled fold (round-trips exact); the mender *unit* is later content |
-| **E** ✅ | **EMP** — physical, Firewall-bypassing pulse (`Attack.emp`); fries **all** active implants Offline + fires degrade liabilities (no stun) | **built** (`apply_emp`): reuses `disable_implant`; bioware/flesh immune |
+| **E** ✅ | **EMP** — physical, ICE-bypassing pulse (`Attack.emp`); fries **all** active implants Offline + fires degrade liabilities (no stun) | **built** (`apply_emp`): reuses `disable_implant`; bioware/flesh immune |
 | **F** ✅ | **PAN** mesh/segment + **Cascade** — `Unit.pan`; meshed crit Cascades to all implants + a `mesh_synergy` throughput bonus; segmented contains | **built**: closes the cyberware loop |
 
 Phase **A** is the load-bearing refactor (the stat line becomes derived);

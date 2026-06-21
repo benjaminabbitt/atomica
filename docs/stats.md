@@ -45,18 +45,17 @@ baseline miss (~49% → ~56%) — luck matters more per roll, by design.
 
 ## 2. Primary attributes — the GURPS ~10 scale ✅
 
-Four characteristics, centred on **10 = average human** (range ≈ 8–14; combat
-archetypes 10–13). They are the substrate the four **skill families** are tiers
+**Three** characteristics, centred on **10 = average human** (range ≈ 8–14; combat
+archetypes 10–13). They are the substrate the **skill families** are tiers
 *on*, and the combat/digital stats derive from.
 
 | Attribute | Field | Governs (skills) | Feeds |
 |---|---|---|---|
-| **Body** | `unit.body` | Melee, Heavy | **Integrity = Body × `HP_PER_BODY`** ✅ (toughness *is* HP — one stat), **melee damage** ✅ (signed off 10: heavier swings harder, frail softer) |
+| **Body** | `unit.body` | Melee, Heavy | **Integrity = Body × `HP_PER_BODY`** ✅ (toughness *is* HP — one stat), **melee damage** ✅ (signed off 10: heavier swings harder, frail softer), **biological resilience** ✅ — the resist **poison / plague / virus** afflictions roll against (their attack is `power − Body`), and that a virus *attacks* (§5). A strong, tough frame shrugs off toxins and infection. |
 | **Dexterity** | `unit.dexterity` | Gunnery, Stealth, **Evade** | **Evasion** ✅, **physical Initiative** ✅ — *dragged down by heavy plating (the armor tradeoff)* |
-| **Intellect** | `unit.intellect` | Hacking, Medical, Tech | **digital Initiative** ✅ (net turn order — *speed of thought*) |
-| **Health** (GURPS **HT**) | `unit.health` | — | **biological resilience** ✅ — the resist **poison / plague / virus** afflictions roll against (their attack is `power − Health`), and that a virus *rots* (§5). A tough constitution shrugs off toxins and infection. |
+| **Intellect** | `unit.intellect` | Hacking, Medical, Tech | **ICE** ✅ (digital active defense), **digital Initiative** ✅ (net turn order — *speed of thought*) |
 
-> **Firewall and Link are *granted*, not derived.** They come from gear / chassis (a cyberdeck
+> **ICE and Link are *granted*, not derived.** They come from gear / chassis (a cyberdeck
 > lifts both), not from an attribute — Intellect governs the netrunning *skills* and the digital
 > turn order, but the wall itself is equipment. This is deliberate: the net surface is something
 > you *install*, not something you *are*. (The `Damage` stat is *also* gear — a weapon's base plus
@@ -65,9 +64,9 @@ archetypes 10–13). They are the substrate the four **skill families** are tier
 > Heavy damage is the munition, so it doesn't scale with Body.)
 >
 > **Programs are the digital domain's *skills*.** Where a physical action is `attribute + skill-tier`,
-> a digital one is `granted stat (Link / Firewall) + quality program` — you don't *train* onto the
+> a digital one is `granted stat (Link / ICE) + quality program` — you don't *train* onto the
 > net surface, you *load better software* onto it. A quality program runs **on** the granted stat
-> and acts as its skill-tier: **Ghost** raises net defense on top of Firewall (a defensive program,
+> and acts as its skill-tier: **Ghost** raises net defense on top of ICE (a defensive program,
 > `netrunning.md` §10.8), the offensive riders run on the attacker's Link channel. So a fat granted
 > stat with cheap software, or a thin one with premium programs, are two routes to the same edge —
 > the same attribute-vs-skill trade, in installed form.
@@ -77,9 +76,11 @@ archetypes 10–13). They are the substrate the four **skill families** are tier
 scales Body up to whatever pool it needs). So wounds and toughness aren't tracked separately:
 a heavier unit (more HP) is *also* a harder melee hitter, and a Body stat-up implant (actuators,
 the decentralized heart) fattens the HP pool directly. The cost the design accepts: a very
-high-HP bruiser reliably lands its melee (Evasion, not a to-hit roll, is the defense). (This is
-the GURPS split: **HP scales with Body/ST**, while **constitution is its own attribute, Health/HT** —
-the poison- and disease-resist of §2/§5 — so a big frame and a *hardy* one are different things.)
+high-HP bruiser reliably lands its melee (Evasion, not a to-hit roll, is the defense). (We
+deliberately **collapse the GURPS ST/HT split**: one **Body** stat is *both* the HP pool *and* the
+toxin/disease resist (§2/§5) — a big frame *is* a hardy one. The simplification we accept: there's
+no fragile-but-hardy or burly-but-sickly build; physical might, bulk, and constitution move together
+— and because bio-resist *is* Body, a wasting **virus** that attacks Body shrinks the HP pool with it.)
 
 **Initiative is action-typed ✅.** A unit's turn order derives from the attribute the *action*
 uses — **Dexterity** for a physical activation (reflexes), **Intellect** for a digital one (a
@@ -124,9 +125,9 @@ effective skill = (use-case attribute) + skill tier
 The tier is what you *trained*; the attribute is what the moment *tests*. This is why there's **no
 separate "willpower" attribute**: a resolve / composure check is just a tier rolled off the stat the
 moment tests — **Intellect** for mental grit (spoof-resist, nerve), **Body** for physical strain.
-The four attributes (Body, Dexterity, Intellect, **Health**) stay the substrate; the framework lets a
-skill borrow the one that fits, so we don't need a fifth for every flavor of "resist." (Biological
-affliction has its own primary, **Health** — see §5 — because it's a standing TN, not a trained roll.)
+The three attributes (Body, Dexterity, Intellect) stay the substrate; the framework lets a
+skill borrow the one that fits, so we don't need a fourth for every flavor of "resist." (Biological
+affliction rolls against **Body** itself — see §5 — because it's a standing TN, not a trained roll.)
 
 **Weapons carry this too — the to-hit attribute is a *tag* ✅.** A `FINESSE` weapon (a light blade,
 a pistol) rolls its Melee/Gunnery tier off **Dexterity**; a `BRAWN` weapon (a heavy maul, a braced
@@ -166,8 +167,8 @@ land = attacker succeeds AND defender fails
   deterministic; the dice only matter once the target can actually dodge.
 - **Hacking is opposed too** ◆ — a netrunner's breach has the same shape: the
   runner rolls `2d10 ≤ avg(effective Hacking, channel)` and the target's
-  **Firewall** rolls an *active defense*; the breach lands only if the runner
-  connects **and** the Firewall fails. An **undefended** surface (Firewall ≤ 0)
+  **ICE** rolls an *active defense*; the breach lands only if the runner
+  connects **and** the ICE fails. An **undefended** surface (ICE ≤ 0)
   needs no defense roll. See [`netrunning.md`](netrunning.md).
 
 ---
@@ -183,17 +184,20 @@ target number** ◆ ([`resolve_versus`](../crates/sim/src/roll.rs)):
 ```
 
 - `rating` is the actor's effective skill/potency (~10–15); `resist` is the
-  target's **Firewall / Health / security rating** as a small penalty (a few
-  points), *not* a number to beat. Every point of resist costs the actor a point of
-  target. This is the GURPS skill-check pattern: *roll under your skill, penalized
-  by the difficulty.*
+  target's **ICE / Body / security rating** as a penalty, *not* a number to beat.
+  Every point of resist costs the actor a point of target. This is the GURPS
+  skill-check pattern: *roll under your skill, penalized by the difficulty.*
+  (Bio afflictions resist against **Body** — ~10 for an average frame, more for a
+  bruiser — so a strain's `power` is authored hotter than the old near-zero
+  Immunity baseline to still bite; ⏳.)
 - **No static TN anywhere** — the same `2d10 ≤ target` core; the defense is just a
   term inside `target`. (Hacking, which *does* have an active defender, is an
   opposed roll instead — §4.)
-- Used by: **contagion** spread (`rating = virulence`, `resist = Health`,
-  [`corruption.md`](corruption.md)) and the status **stochastic gate**
-  (`rating = power + stacks`, `resist = the status's Resist`). Afflictions/contagions
-  are authored on the same ~10 scale so the penalty bites meaningfully.
+- Used by: **contagion** spread (`rating = virulence`, `resist = Body` for a
+  plague / `ICE` for a worm, [`corruption.md`](corruption.md)) and the status
+  **stochastic gate** (`rating = power + stacks`, `resist = the status's Resist`).
+  Afflictions/contagions are authored on the same ~10 scale so the penalty bites
+  meaningfully.
 
 ---
 
@@ -202,7 +206,7 @@ target number** ◆ ([`resolve_versus`](../crates/sim/src/roll.rs)):
 | Stat | From | Role |
 |---|---|---|
 | **Evasion** | `Dexterity + Evade-tier` | the active-defense roll (§4) |
-| **Firewall** | `Intellect` + implants | digital **active defense** — rolls back against a hack (opposed, §4); ≤ 0 = undefended |
+| **ICE** | `Intellect` + implants | digital **active defense** — rolls back against a hack (opposed, §4); a worm **melts** it, an icebreaker **breaks** it; ≤ 0 = undefended |
 | **Link** | implants (cyberdeck…) | reachability gate · digital initiative · hack channel · **antenna range** ([`netrunning.md`](netrunning.md)) |
 | **Initiative** | `Dexterity` + gear | physical activation order |
 | **Integrity / Barrier / Plating** | Body + armor | the HP pools ([`combat.md`](combat.md)) — *not* modifiers; clamped pools |
@@ -224,7 +228,9 @@ Illustrative bands on the 2d10 scale:
 - **Attributes** — weak 8 · average 10 · strong 12 · exceptional 13–14.
 - **Skill tiers** — untrained −4 (default) · competent 0 · expert +2 · elite +4.
 - **Effective combat skill** — fodder ~8–10 · professional ~13–15 · master ~16.
-- **Firewall / Health (penalty)** — unprotected 0 · modest 4 · hardened 6–8.
+- **ICE (penalty)** — unprotected 0 · modest 4 · hardened 6–8.
+- **Body as bio-resist (penalty)** — the whole Body value folds in (~8 frail · 10
+  average · 14+ bruiser), so bio afflictions are authored hotter to clear it.
 - **Speed** — melee/thrown ~1 · firearm ~3.
 
 The flatter curve means **bigger skill *gaps*** read as advantage (a +4 effective

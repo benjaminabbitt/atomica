@@ -15,14 +15,14 @@ decision/synthesis. Status legend: **✅ built** (lives in `crates/sim`) ·
 
 A unit's whole netrunning profile is **two stats + one skill** (plus the bio
 parallel). *Skills attack, stats defend* (§13) — so the offense is a **skill**
-(Hacking) and the defenses are **stats** (Link gates, Firewall walls).
+(Hacking) and the defenses are **stats** (Link gates, ICE walls).
 
 | Name | Field | Type | Role | Status |
 |---|---|---|---|---|
 | **Link** | `unit.link` | int◆ | **Four jobs:** ① reachability **gate** both ways (`0` ⇒ immune target / offline attacker); ② **latency → digital initiative** (your own Link orders the digital pass; high = sooner); ③ the **connection channel** (a hack's bandwidth is the *weaker* endpoint's Link, `min`); ④ **antenna range** (`Unit::hack_reach` — a loud, high-Link runner projects far; a dark one barely reaches). The exposure dial. | ✅ (gate/init/channel/range); 🔭 exposure (worm-catch) |
-| **Firewall** | `unit.firewall` | int | The **digital defense** — rolls an *active defense* against a hack (opposed, [`stats.md`](stats.md) §4); also the resist for digital status gates (Crash/Lag/Lockware via `Resist::Firewall`, §5). **Link-blind** on defense. | ✅ |
-| **Hacking** | `unit.skills[Hacking]` | tier | The **offensive skill** (a tier on Intellect, `stats.md` §3). No defensive net-skill exists — you buy Firewall (the stat), not a skill. | ✅ |
-| *Immunity* | `unit.immunity` | int | The **bio** parallel (the Virus resist penalty) — separate track, not digital. | ✅ |
+| **ICE** | `unit.ice` | int | The **digital defense** — Intrusion Countermeasures Electronics rolls an *active defense* against a hack (opposed, [`stats.md`](stats.md) §4); also the resist for digital status gates (Crash/Lag/Lockware via `Resist::ICE`, §5). An attacker's **icebreaker breaks** it. **Link-blind** on defense. | ✅ |
+| **Hacking** | `unit.skills[Hacking]` | tier | The **offensive skill** (a tier on Intellect, `stats.md` §3). No defensive net-skill exists — you buy ICE (the stat), not a skill. | ✅ |
+| *Body (bio-resist)* | `unit.body` | int | The **bio** parallel — biological afflictions (Virus, poison, plague, organic toxins) resist against the **Body** attribute itself, not a separate stat. The bio track, not digital. | ✅ |
 
 **Link is an integer ✅.** It is only ever used as a gate (`> 0`), an ordering
 key, and a channel floor (`min` of the two endpoints) — it carries no fractional
@@ -43,8 +43,8 @@ The core resolution — built in [`crates/sim/src/hack.rs`](../crates/sim/src/ha
 
 ```text
 runner:    2d10 ≤ avg(effective Hacking, channel)     channel = min(Link_a, Link_t)
-Firewall:  2d10 ≤ Firewall                            (active defense; ≤ 0 = undefended)
-breach lands = runner succeeds AND Firewall fails
+ICE:       2d10 ≤ ICE                                 (active defense; ≤ 0 = undefended)
+breach lands = runner succeeds AND ICE fails
 ```
 
 - **The connection channel ◆.** A hack runs over the link *between* the two
@@ -62,21 +62,21 @@ breach lands = runner succeeds AND Firewall fails
   the *attack* (the channel), never the wall, so a **darker target is harder to
   hack** while a **juicy high-Link target is easier**.
 - **Active net defense ✅ — runners parry, and cover nodes** ◆ (`Battle::net_defense`).
-  The defense is the **highest** of: the target's passive **Firewall**; its own
+  The defense is the **highest** of: the target's passive **ICE**; its own
   **Hacking**, if the target is itself a runner (it parries code with code); and the
   **Hacking of any allied runner covering it** — a living ally with a deck whose
   antenna reach spans the target. So netrunners are hard to hack (they defend at
-  skill), and a runner can **actively defend a node it controls** — the "ICE" on a
+  skill), and a runner can **actively defend a node it controls** — the live ICE on a
   [`Datamine`] vault. Kill the guarding runner and the node drops to its own wall.
 - **Equipment arms the roll through the stats, not a separate term** ◆ — a
-  cyberdeck raises **Link**, a skill-chip raises **Hacking**, a Firewall implant
-  raises **Firewall**. There is no separate roll term — the stats *are* the contest
-  (`resolve_opposed(rating, Firewall)`).
+  cyberdeck raises **Link**, a skill-chip raises **Hacking**, an ICE implant
+  raises **ICE**. There is no separate roll term — the stats *are* the contest
+  (`resolve_opposed(rating, ICE)`).
 - **Hard reachability gates** (§7D/§7F): zero-Link **target** ⇒ `NoSurface`
   (immune); zero-Link **attacker** ⇒ `Offline`. The locked immunity cliff —
   distinct from "Link affecting the math."
 - **Margin = degree of success.** The breach lands when the runner rolls under
-  rating **and** the Firewall fails; a natural **2–3 crits**, a natural **19–20
+  rating **and** the ICE fails; a natural **2–3 crits**, a natural **19–20
   fumbles** the runner's leg ([`stats.md`](stats.md) §1). The runner's margin scales
   the payload: `stacks = base + margin / MARGIN_PER_STACK + crit` (placeholder
   `MARGIN_PER_STACK = 3`).
@@ -129,9 +129,9 @@ built and tested:
 | **Lag** | rider (control) | a `Slow` on the target's initiative | solid |
 | **Breach** | rider (soften) | a **vulnerability** — incoming damage amped, so the squad's blows bite harder | solid |
 | **Blind** | rider (soften) | a **Dexterity** debuff — its shots go wide | solid |
-| **Decrypt** | rider (soften) | rots the target's **Firewall** (a `Worm`-tagged corruption — cleansable) | solid |
+| **Decrypt** | rider (soften) | **melts** the target's **ICE** (a `Worm`-tagged corruption — cleansable) | solid |
 | **Leech** | rider (soften) | drains the target's **Link** — thinner channel, slower digital initiative, edges toward dark | solid |
-| **Worm** | rider (spread) | deploys a **contagious** Firewall-rot (`Corruption::worm_swarm`) that rides the net to nearby surfaces | solid |
+| **Worm** | rider (spread) | deploys a **contagious** ICE-melt (`Corruption::worm_swarm`) that rides the net to nearby surfaces | solid |
 | **Cascade** | breach modifier | forces a **meshed** target's breach to trip **every** implant (not just on a crit) | solid + meshed |
 | **Logicbomb** | breach modifier | force-fires the tripped chrome's degrade liabilities **past the disable floor** | success (chrome) |
 | **Spoof** | rider (hijack) | corrupts the target's **targeting** script (`CORRUPTION` override) — it chases the wrong enemy | solid |
@@ -193,8 +193,8 @@ The single highest-leverage unbuilt piece: it turns hacks from "land a DoT" into
 the **chrome-is-liability** core, and simultaneously gives **worms** their
 payloads.
 
-- **Most implants = a `(Link, Firewall, Hack-effect)` bundle** (§7F). An implant's
-  Link/Firewall **sum into** the unit's stats; its **hack-effect** is a benefit
+- **Most implants = a `(Link, ICE, Hack-effect)` bundle** (§7F). An implant's
+  Link/ICE **sum into** the unit's stats; its **hack-effect** is a benefit
   the owner uses **and** a loaded liability that fires *on the owner* when the
   implant is breached (by a hack or a worm). **Exception ✅:** **inert physical
   cyberware** (subdermal plating) has no digital surface — Link 0, **no hack-effect**,
@@ -228,11 +228,11 @@ loadout**, not classes.
 
 | Counter | What | Status |
 |---|---|---|
-| **Firewall** | the digital defense roll — raise it with implants | ✅ |
+| **ICE** | the digital defense roll — raise it with implants | ✅ |
 | **Go dark / zero Link** | total digital immunity, total digital isolation | ✅ (the gate) |
 | **Masking (low Link)** | smaller surface ⇒ harder to hack / lower worm-catch, less throughput | 🔭 (link-effect) |
-| **White-hat mender** | cleanse Worm; restore Firewall / Link | 🔭 |
-| **EMP** | a **physical** attack that hits Link/cyberware and **bypasses Firewall — no hack roll** (a pulse, not a contest); the counter to digital builds | ✅ (`cyberware.md` §6) |
+| **White-hat mender** | cleanse Worm; restore ICE / Link | 🔭 |
+| **EMP** | a **physical** attack that hits Link/cyberware and **bypasses ICE — no hack roll** (a pulse, not a contest); the counter to digital builds | ✅ (`cyberware.md` §6) |
 | **Anti-Worm specialists** | Antivirus (eat stacks), Signals (lock/reverse IFF), Jammer, Honeypot, Quarantine | 🔭 |
 
 **Link-effects** (the Link slot's flavor, §7F): Uplink / Relay·Mesh / Masking /
@@ -245,22 +245,22 @@ Spike / Leech — loadout choices that shape the Link number and its exposure. �
 **`Link` is `i32` ✅** — bandwidth tiers, migrated from `f32`.
 
 **The anchor ◆.** The hack is an **opposed roll** (§2, `stats.md` §4). The runner's
-leg is **2d10 roll-under** its rating (~even at **10–11**); the Firewall rolls its
-own **defense** at `2d10 ≤ Firewall`. The breach lands when the runner connects
+leg is **2d10 roll-under** its rating (~even at **10–11**); the ICE rolls its
+own **defense** at `2d10 ≤ ICE`. The breach lands when the runner connects
 **and** the wall fails:
 
 ```text
-P(breach) = P(2d10 ≤ rating) × P(2d10 > Firewall)     rating = avg(effective Hacking, channel)
+P(breach) = P(2d10 ≤ rating) × P(2d10 > ICE)     rating = avg(effective Hacking, channel)
 ```
 
-So Firewall is a **probabilistic defense**: every point raises the chance it repels
+So ICE is a **probabilistic defense**: every point raises the chance it repels
 the breach, but it can't make the target *unhittable* (the runner's own leg caps it
 near the 2d10 ceiling). A pro runner (rating ~9–10) lands **~30%** through a modest
 wall — viable, not free.
 
 **First-cut bands ◆ (TBD), on the 2d10 scale:**
 
-- **Firewall** (defense roll — its chance to repel) — unprotected **0** (none) ·
+- **ICE** (defense roll — its chance to repel) — unprotected **0** (none) ·
   modest **4** (≈10%) · standard **6** (≈16%) · hardened **8** (≈26%) · bulwark
   **10+** (≈45%+).
 - **effective Hacking** (Intellect + tier) — chip floor ~**10** · competent ~**12**
@@ -276,21 +276,21 @@ one (8+).
 **Link gates *depth* as well as reach ◆.** Because the additive *averages* Hacking
 with the channel (`min` of the two Links), a target's Link caps how much skill can
 be brought against it: against a **dark** target (Link 1) even a master is held to
-`avg(skill, 1) ≈ skill/2`. So **Firewall is the hit-gate, Link is the depth-gate**
-— a soft-but-dark mook (low Firewall *and* low Link) is **easy to land but shallow**
+`avg(skill, 1) ≈ skill/2`. So **ICE is the hit-gate, Link is the depth-gate**
+— a soft-but-dark mook (low ICE *and* low Link) is **easy to land but shallow**
 (small margin ⇒ few payload stacks, little to own), and going dark defends against
 *skill*, not just reach. The two dials give a clean 2×2 of target identities:
 
 | | dark (low Link) | loud (high Link) |
 |---|---|---|
-| **soft** (low FW) | easy, shallow — *mook* | easy, deep — *juicy* |
-| **hard** (high FW) | hard, shallow — *bunker* | hard but deep if cracked — *fortress* |
+| **soft** (low ICE) | easy, shallow — *mook* | easy, deep — *juicy* |
+| **hard** (high ICE) | hard, shallow — *bunker* | hard but deep if cracked — *fortress* |
 
 **Hacking is hard by construction ◆.** Landing a hack is only the *floor* — it
 **disables** the implant. The two outcomes that *matter* are gated: the
 **magnified liability** needs a strong **margin**, and the **knockout** (the stun
 class) needs a **crit** (cyberware §6). So even when a hack lands, the severe
-results are rare, and a stiff Firewall repels a real fraction of breaches outright.
+results are rare, and a stiff ICE repels a real fraction of breaches outright.
 Netrunning rewards the **invested specialist against an exposed target**, not the
 dabbler — soft mooks are easy to poke but shallow (the depth-gate above).
 
@@ -309,7 +309,7 @@ dabbler — soft mooks are easy to poke but shallow (the depth-gate above).
 
 The road from "the contest works" to "the digital realm is whole":
 
-1. ~~**Calibration + `Link → i32`**~~ ✅ — done (§6): Link is `i32`, Firewall 11
+1. ~~**Calibration + `Link → i32`**~~ ✅ — done (§6): Link is `i32`, ICE 11
    is the even-odds baseline, first-cut bands set.
 2. **Implant model → hack-effect roster** 🔭 — the keystone (§4); gives hacks teeth
    and worms their payloads. *(Delta Phase 6/7.)*
