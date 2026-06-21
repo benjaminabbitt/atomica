@@ -37,8 +37,9 @@ Flat-top **hex**. Columns = depth ranks; the **long edge = frontage**. Two board
 | **Physical Initiative** | turn order in the world; lowered by equipment **weight** + multitasking |
 | **Digital Initiative = Link** | turn order on the net (the two tracks **interleave into one woven order**) |
 | **Link** | net presence — digital Initiative + action throughput + Worm exposure + hack surface. Continuous, **equipment-set**; **zero Link = immune to all digital attack** |
-| **Body** | one of the three primary attributes — carries HP/Integrity, melee damage, **and** biological resilience (resist vs **Virus** + bio afflictions). No separate Immunity stat. |
-| **ICE** | resist vs **Worm** + hacks (digital). An attacker's icebreaker **breaks** it; a worm **melts** it. |
+| **Body** | one of the four primary attributes — carries HP/Integrity, melee damage, **and** biological resilience (resist vs **Virus** + bio afflictions). No separate Immunity stat. |
+| **Nerve** | one of the four primary attributes — will / composure / force-of-personality (the genre's *Cool*). Governs **morale, social presence** (intimidation, leadership/Rally, Command), **and composure**. Sizes the **Resolve** pool (`Resolve = Nerve × K`, mirroring `Integrity = Body × K` — *Nerve : Resolve :: Body : Integrity*), and is the **resist** vs **Spoof**, **intimidation**, and **Stress**. 🔭 PLANNED (morale layer unbuilt). |
+| **ICE** | resist vs **Worm** + hacks (digital). An attacker's icebreaker **breaks** it; a worm **melts** it. **ICE guards the system; Nerve guards the self.** |
 | ~~**Heat**~~ *(dropped for now)* | thermal layer — cut from scope, see below |
 
 ## Damage model
@@ -103,6 +104,7 @@ Both branches **enhance the physical body** — the difference is the **digital 
 - Every implant = a **(Link, ICE, Hack-effect)** bundle. The **hack-effect is a loaded liability** — when an enemy breaches the implant, it fires **on the owner**. Pool: Seizure · Misfire · Shed · Overload · Lockout · Blind · Overdose.
 - **Netrunners** attack cyberware **via its Link, against its ICE** — their icebreaker **breaks** it → disable it, deploy a Worm, or trip its hack-effect.
 - **IFF** (friend/foe) makes digital effects selective — but **spoofable** (Flip-hostile · Masquerade · Scramble · Ghost). **Code-only**: physical weapons aren't IFF-gated (the Smartgun mod is the one exception).
+- **Spoof resists off Nerve.** A worm melts ICE to crack your surface; a **spoof** edits your senses to hijack your behavior — so composure (**Nerve**), not your firewall, throws it off. **ICE guards the system; Nerve guards the self.** Both are digital / Link-delivered (immune at zero Link); they differ in **target** (system vs agency) and **resist** (ICE vs Nerve). *(Previously spoof had no resist stat — only a counter-spoof ward.)*
 - **Link-effects** (the Link slot's flavor): Uplink · Relay/Mesh · Masking · Spike · Leech.
 - **Inbuilt equipment**: some units ship with integral (often non-removable) chrome — a unit-identity source.
 
@@ -149,11 +151,13 @@ The answer-half — mostly **loadouts/programs**, not classes. Two philosophies:
 | **Augmented** (cyborg) | both — double-exposed | mid–high |
 | **Machine** (drone) | Virus-immune; Worm only if Link > 0 | varies |
 
+**Machines have Nerve 0** — no Resolve pool, so **morale- and intimidation-proof**; but with no composure they're the **most Spoof-credulous** (digitally exposed) chassis. (Not "spoof-immune" — Nerve 0 means *no* composure to throw a spoof off.)
+
 Units follow **scripted profiles** (auto-resolve), and **move only if not boxed in**:
 - **Movement:** Advance · Hold · Kite/Retreat · Flank · Swarm · Disperse.
 - **Targeting:** Nearest · Lowest-Integrity · Highest-threat · Backline/role · Weakest-armor.
 
-Profiles are **code → hackable**: spoofs/Lockware/worms corrupt *behavior*, not just stats.
+Profiles are **code → hackable**: spoofs/Lockware/worms corrupt *behavior*, not just stats. A **spoof** is thrown off by **Nerve** (composure), not ICE — *Nerve guards the self*.
 
 ## Heat *(dropped for now)*
 
@@ -168,7 +172,7 @@ earned a slot as the *full* layer; as bare overclock it didn't — and for now i
 
 ## Status of the design
 
-**Locked (shapes):** the two realms; board; stat line (Integrity / layered defense / two interwoven Initiative tracks / Link / **Body**-as-bio-resist / ICE); the three primary attributes (Body / Dexterity / Intellect); penetration tiers + armor matrix; types ≠ statuses; the 9-axis status schema + 7 families; both contagion families; cyberware (Link/ICE/Hack-effect) + netrunning + IFF/spoof; anti-Worm specialists; bioware-vs-cyberware; weapons (guns/melee/EMP) + footprints + attack matrix; gun mods (Smartgun); chassis classes; movement + targeting profiles.
+**Locked (shapes):** the two realms; board; stat line (Integrity / layered defense / two interwoven Initiative tracks / Link / **Body**-as-bio-resist / ICE); the four primary attributes (Body / Dexterity / Intellect / **Nerve**, the latter 🔭 PLANNED — sizes Resolve, resists Spoof / intimidation / Stress); penetration tiers + armor matrix; types ≠ statuses; the 9-axis status schema + 7 families; both contagion families; cyberware (Link/ICE/Hack-effect) + netrunning + IFF/spoof; anti-Worm specialists; bioware-vs-cyberware; weapons (guns/melee/EMP) + footprints + attack matrix; gun mods (Smartgun); chassis classes; movement + targeting profiles.
 
 **Open (mostly numbers + roster fills):**
 - All **values** — magnitudes, durations, caps, roll odds, ranges, weights, costs.

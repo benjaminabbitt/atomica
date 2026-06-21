@@ -67,7 +67,7 @@ The **inbuilt-identity** presets (§8): chassis + non-removable signature gear +
 | **Last-Mile** | Clan · Steel Lotus | Augmented | mono-katana (air-gapped) → **Redline** (Initiative burst + extra move) | air-gapped sword-courier; the worm-carrier killer |
 | **Glasshouse** | Clan · Grafted | Flesh | vitreous edge, bioware-only → **Unplugged** (EMP + Worm immune) | all-bio juggernaut — nothing to hack or fry |
 | **Stitch** | Clan | Flesh | trauma kit → **Triage** (bio **Doctor**: Integrity / Virus / Reject) | the flesh medic |
-| **Anthem** | Clan | Augmented | command rig → **Rally** (project +Resolve) | the leader; morale anchor (lose it → cascade) |
+| **Anthem** | Clan | Augmented | command rig → **Rally** (project +Resolve, leans on **Nerve**) | the leader; morale anchor (lose it → cascade) |
 | **Rig** | Clan · The Haul | Vehicle | transport bay → **Dust-off** (load downed + exit = **extraction**) + ram | the convoy; pulls your people out |
 | **Mawkin** | Clan · The Maws | Augmented | stim-claws → **Frenzy** (Feral berserk + stim haste) | feral berserker; the discipline-less blade |
 | **Null** | Independent · Runner | Augmented | cyberdeck + antenna → **Spike** (burst Link, one big hack) | console-cowboy; glass-jaw netrunner |
