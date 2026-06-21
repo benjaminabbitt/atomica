@@ -21,7 +21,15 @@ its family. The three families and their surfaces:
 |---|---|---|---|---|
 | **Virus** ✅ | `Virus` | **Body** — a *wasting* attack (drags Integrity/HP with it) | Body | `antivirus` (`Remove::Tag(Virus)`) |
 | **Worm** ✅ | `Worm` | the **digital** surface (**ICE**) · trips chrome (§ breach) | ICE, segment PAN | `ICE patch` (`Remove::Tag(Worm)`) |
-| **Spoof** ✅ | `Spoof` | **behavior** (a `CORRUPTION`-priority targeting override) | — | a counter-spoof ward |
+| **Spoof** ✅ | `Spoof` | **behavior** (a `CORRUPTION`-priority targeting override) | Nerve 🔭 (composure) | a counter-spoof ward |
+
+Each family now **resists off an attribute** — Virus → **Body**, Worm → **ICE**,
+Spoof → **Nerve** (🔭, [`stats.md`](stats.md) §6). The Worm and Spoof are both
+digital, Link-delivered, and **immune at zero-Link** — but they hit different
+targets: a Worm **melts ICE** to crack your *system*, while a Spoof edits your
+senses to hijack your *behavior*, so **composure (Nerve)**, not your wall, throws it
+off. *ICE guards the system; Nerve guards the self.* (A machine, Nerve 0, has no
+self to guard — morale-proof but utterly spoof-credulous.)
 
 Content lives in `corruption.rs` ([`Corruption`]): `virus` / `worm` (the
 debuffs — the **Worm** *melts* **ICE** (an icebreaker **breaks** it on the offense

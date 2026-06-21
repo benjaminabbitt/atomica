@@ -138,7 +138,7 @@ Marquee cross-pool ult names (original — avoid the *Trauma Team* trademark): *
 
 ## 4. Morale — the Resolve layer ◆
 
-A **second pool**, **Resolve** (the mind's Integrity), built from the existing status schema:
+A **second pool**, **Resolve** (the mind's Integrity), built from the existing status schema and **sized by the new [`Nerve`](stats.md) attribute** (§17): `Resolve = Nerve × K`, the exact mental mirror of `Integrity = Body × K`. **Nerve : Resolve :: Body : Integrity** — Nerve both sizes the pool and *is* the composure resist (spoof / intimidation / Stress).
 
 - **Stress** = a DoT on Resolve (the **Mind / Psychic** damage type §3.1 reserved; Darkest Dungeon's Stress bar is the precedent).
 - **Resolve 0 → Break:** *rout* (forced Kite / Disperse, can't attack) or *berserk* (forced Advance, hits nearest incl. allies).
@@ -148,13 +148,13 @@ A **second pool**, **Resolve** (the mind's Integrity), built from the existing s
 
 A unit's **script can be corrupted from all three realms** — the payoff of adding morale:
 
-| Vector | Corrupts behavior via | Immune chassis |
-|---|---|---|
-| **Digital** | spoof / Lockware / Worm (§7J) | zero-Link / Flesh |
-| **Bio** | **Delirium** virus strain (§7G) | Machine (no flesh) |
-| **Psych** | **morale Break** (rout / berserk) | Machine (no mind) |
+| Vector | Corrupts behavior via | Resisted by | Immune chassis |
+|---|---|---|---|
+| **Digital** | spoof / Lockware (§7J) | **Nerve** (composure) | zero-Link (no AR to edit) |
+| **Bio** | **Delirium** virus strain (§7G) | **Body** | Machine (no flesh) |
+| **Psych** | **morale Break** (rout / berserk) | **Nerve / Resolve** | Machine (no mind) |
 
-→ **Machines don't panic and don't go delirious** but are the most digitally exposed; **Flesh** is mind/bio-fragile but can go air-gapped. Sharpens the chassis rock-paper-scissors.
+→ **Nerve guards behavior on two of the three vectors** — composure throws off both a spoofed feed and raw fear (ICE, by contrast, guards the *system*: a Worm melts ICE but can't make you act). **Machines (Nerve 0)** don't panic and don't go delirious, but with no composure they're the most spoof- and digitally-exposed; **Flesh** is mind/bio-fragile but can go air-gapped. Sharpens the chassis rock-paper-scissors.
 
 **Leaders** project **+Resolve / Rally** to their formation (morale's Bulwark — the *Anthem* archetype); losing the leader → morale cascade.
 
@@ -513,7 +513,9 @@ Rep cashes out as **shop access**, not battle-board presence. *(Supersedes the e
 
 *A simplification pass over the stat line and the contagion model. **Supersedes** every earlier mention of `Immunity`, `Firewall`, and a standalone `Health`/HT attribute across the corpus — the canonical statement now lives in [`stats.md`](stats.md) §2/§5/§6. ◆ = decision on the user's call.*
 
-**Three primary attributes (was four).** The GURPS ST/HT split is **collapsed**: the short-lived **Health/HT** attribute is **folded into Body**. One **Body** stat now carries **Integrity/HP** (`Body × K`), **melee damage**, *and* **biological resilience** — the resist that **poison / virus / plague** roll against (`power − Body`). The trade we accept: no fragile-but-hardy or burly-but-sickly build; might, bulk, and constitution move together. The substrate is now **Body · Dexterity · Intellect**.
+**Four attributes — swap constitution for character.** Two moves that net to four: the GURPS ST/HT split is **collapsed** (the short-lived **Health/HT** attribute **folds into Body**), and a new will/composure attribute, **Nerve**, is **added**. So the substrate is **Body · Dexterity · Intellect · Nerve** — we traded a *constitution* stat for a *character* stat. One **Body** stat now carries **Integrity/HP** (`Body × K`), **melee damage**, *and* **biological resilience** (`power − Body`); the trade we accept there is no fragile-but-hardy build — might, bulk, and constitution move together.
+
+**`Nerve` added — the mind's attribute ◆.** Morale, social presence, and composure had no home attribute (they were borrowing Intellect); the §4 Resolve layer and the spoof vector made them load-bearing, so **Nerve** owns them. It **sizes the Resolve pool** (`Resolve = Nerve × K`, mirroring Integrity) and **is** the composure resist that **spoof / intimidation / Stress** roll against — **Nerve : Resolve :: Body : Integrity**. Genre note: this is Cyberpunk's **Cool**, splitting *smart* (Intellect → ICE, hacking) from *steady* (Nerve → Resolve, presence) so the genius-glass-cannon and the nerves-of-steel solo are different builds. The key payoff: **spoof now resists off Nerve, not ICE** — *ICE guards the system, Nerve guards the self.* A Worm melts ICE to crack your surface; a Spoof edits your senses to hijack your behavior, and composure (Nerve), not your wall, throws it off. **Machines (Nerve 0)** get no Resolve pool — morale- and intimidation-proof, but with no composure they're the most spoof-credulous chassis (consistent with §4.1: machines are the most digitally exposed). Every corruption family now resists off an attribute: **Virus → Body, Worm → ICE, Spoof → Nerve.**
 
 **`Firewall → ICE` (renamed).** The digital active-defense / digital Internal-resist is **ICE** (all-caps — *Intrusion Countermeasures Electronics*), granted off Intellect + deck. The rename pays off in flavor: a worm **melts** ICE, an attacker's **icebreaker breaks** it, and **Black ICE** is a ready-made lethal-countermeasure tier (🔭). It reads as a *capability rating*, not a device — distinct from **Link** (which owns "installed connectivity").
 
@@ -530,4 +532,4 @@ This keeps the two-flavor structure of [`status-effects-taxonomy.md`](../status-
 
 So **digital corruption snowballs** (thinner ICE → deeper next bite) while **bio splits** into a slow killer (Virus → Body/HP) and a flat burn (Poison). Cleanses unchanged in role: **antivirus** strips Virus, the **ICE patch** strips Worm.
 
-**Factoring note (⏳ code not yet updated).** This section is the **design** consolidation; the `sim` crate still uses the old identifiers (`Stat::Firewall`, `Stat::Health`, the `Immunity` resist, `Corruption::virus` rotting Health). Aligning the engine — renaming the stat, removing the folded attribute, repointing the virus to Body, and splitting out a pure-DoT poison — is a separate implementation pass.
+**Factoring note (⏳ code not yet updated).** This section is the **design** consolidation; the `sim` crate still uses the old identifiers (`Stat::Firewall`, `Stat::Health`, the `Immunity` resist, `Corruption::virus` rotting Health), and there is **no `Nerve` attribute, Resolve pool, or Nerve-resisted spoof yet** (morale is unbuilt, §4). Aligning the engine — renaming the stat, removing the folded attribute, **adding Nerve + the Resolve pool**, repointing the virus to Body, splitting out a pure-DoT poison, and pointing spoof-resist at Nerve — is a separate implementation pass.

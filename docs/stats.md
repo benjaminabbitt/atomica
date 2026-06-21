@@ -45,7 +45,7 @@ baseline miss (~49% → ~56%) — luck matters more per roll, by design.
 
 ## 2. Primary attributes — the GURPS ~10 scale ✅
 
-**Three** characteristics, centred on **10 = average human** (range ≈ 8–14; combat
+**Four** characteristics, centred on **10 = average human** (range ≈ 8–14; combat
 archetypes 10–13). They are the substrate the **skill families** are tiers
 *on*, and the combat/digital stats derive from.
 
@@ -54,6 +54,7 @@ archetypes 10–13). They are the substrate the **skill families** are tiers
 | **Body** | `unit.body` | Melee, Heavy | **Integrity = Body × `HP_PER_BODY`** ✅ (toughness *is* HP — one stat), **melee damage** ✅ (signed off 10: heavier swings harder, frail softer), **biological resilience** ✅ — the resist **poison / plague / virus** afflictions roll against (their attack is `power − Body`), and that a virus *attacks* (§5). A strong, tough frame shrugs off toxins and infection. |
 | **Dexterity** | `unit.dexterity` | Gunnery, Stealth, **Evade** | **Evasion** ✅, **physical Initiative** ✅ — *dragged down by heavy plating (the armor tradeoff)* |
 | **Intellect** | `unit.intellect` | Hacking, Medical, Tech | **ICE** ✅ (digital active defense), **digital Initiative** ✅ (net turn order — *speed of thought*) |
+| **Nerve** 🔭 | `unit.nerve` | Social (Command, Intimidate) | **Resolve = Nerve × `K`** 🔭 (composure *is* the morale pool — the mental mirror of Integrity, [`design-delta`](design-delta-v0.26.md) §4), **composure** 🔭 — the resist **spoof / intimidation / Stress** roll against (`power − Nerve`). Force of personality (genre: *Cool*). Machines have **Nerve 0** — no mind to break (morale-proof) and no judgement to override a lie (utterly spoof-credulous). |
 
 > **ICE and Link are *granted*, not derived.** They come from gear / chassis (a cyberdeck
 > lifts both), not from an attribute — Intellect governs the netrunning *skills* and the digital
@@ -81,6 +82,14 @@ deliberately **collapse the GURPS ST/HT split**: one **Body** stat is *both* the
 toxin/disease resist (§2/§5) — a big frame *is* a hardy one. The simplification we accept: there's
 no fragile-but-hardy or burly-but-sickly build; physical might, bulk, and constitution move together
 — and because bio-resist *is* Body, a wasting **virus** that attacks Body shrinks the HP pool with it.)
+
+**Nerve and Resolve are one stat too** 🔭. The morale pool mirrors the physical one:
+`Resolve = Nerve × K`, just as `Integrity = Body × K`. **Nerve : Resolve :: Body :
+Integrity** — the attribute both *sizes* its pool and *is* its resist (Body shrugs
+off toxins; Nerve shrugs off fear, intimidation, and the spoof that edits your
+senses). So a wide-Resolve veteran is *also* harder to spook or fool, the way a
+high-HP bruiser is *also* a harder hitter. (Morale is a [`design-delta`](design-delta-v0.26.md)
+§4 layer — 🔭 planned, not yet built.)
 
 **Initiative is action-typed ✅.** A unit's turn order derives from the attribute the *action*
 uses — **Dexterity** for a physical activation (reflexes), **Intellect** for a digital one (a
@@ -122,12 +131,14 @@ the situation calls for** — `effective_skill_off(skill, stat)`:
 effective skill = (use-case attribute) + skill tier
 ```
 
-The tier is what you *trained*; the attribute is what the moment *tests*. This is why there's **no
-separate "willpower" attribute**: a resolve / composure check is just a tier rolled off the stat the
-moment tests — **Intellect** for mental grit (spoof-resist, nerve), **Body** for physical strain.
-The three attributes (Body, Dexterity, Intellect) stay the substrate; the framework lets a
-skill borrow the one that fits, so we don't need a fourth for every flavor of "resist." (Biological
-affliction rolls against **Body** itself — see §5 — because it's a standing TN, not a trained roll.)
+The tier is what you *trained*; the attribute is what the moment *tests*. The **skill-borrows-attribute**
+rule means we add an attribute only where a domain is load-bearing enough to *own* one: morale, social
+presence, and composure graduated to first-class (the §4 morale layer, the spoof vector), so they get
+**Nerve** — the will/composure stat — rather than borrowing. The four attributes (Body, Dexterity,
+Intellect, Nerve) are the substrate; the framework still lets a skill *borrow* whichever the moment
+tests (a nerve-test made under physical duress can ride **Body**), so we don't multiply attributes for
+every flavor of "resist." (Biological affliction rolls against **Body**, and spoof / intimidation /
+Stress against **Nerve** — see §5/§6 — standing TNs, not trained rolls.)
 
 **Weapons carry this too — the to-hit attribute is a *tag* ✅.** A `FINESSE` weapon (a light blade,
 a pistol) rolls its Melee/Gunnery tier off **Dexterity**; a `BRAWN` weapon (a heavy maul, a braced
@@ -184,7 +195,7 @@ target number** ◆ ([`resolve_versus`](../crates/sim/src/roll.rs)):
 ```
 
 - `rating` is the actor's effective skill/potency (~10–15); `resist` is the
-  target's **ICE / Body / security rating** as a penalty, *not* a number to beat.
+  target's **ICE / Body / Nerve / security rating** as a penalty, *not* a number to beat.
   Every point of resist costs the actor a point of target. This is the GURPS
   skill-check pattern: *roll under your skill, penalized by the difficulty.*
   (Bio afflictions resist against **Body** — ~10 for an average frame, more for a
@@ -194,7 +205,8 @@ target number** ◆ ([`resolve_versus`](../crates/sim/src/roll.rs)):
   term inside `target`. (Hacking, which *does* have an active defender, is an
   opposed roll instead — §4.)
 - Used by: **contagion** spread (`rating = virulence`, `resist = Body` for a
-  plague / `ICE` for a worm, [`corruption.md`](corruption.md)) and the status
+  plague / `ICE` for a worm, [`corruption.md`](corruption.md)), a **spoof** /
+  intimidation landing (`resist = Nerve` — composure 🔭), and the status
   **stochastic gate** (`rating = power + stacks`, `resist = the status's Resist`).
   Afflictions/contagions are authored on the same ~10 scale so the penalty bites
   meaningfully.
@@ -210,6 +222,7 @@ target number** ◆ ([`resolve_versus`](../crates/sim/src/roll.rs)):
 | **Link** | implants (cyberdeck…) | reachability gate · digital initiative · hack channel · **antenna range** ([`netrunning.md`](netrunning.md)) |
 | **Initiative** | `Dexterity` + gear | physical activation order |
 | **Integrity / Barrier / Plating** | Body + armor | the HP pools ([`combat.md`](combat.md)) — *not* modifiers; clamped pools |
+| **Resolve** 🔭 | `Nerve × K` | the **morale pool** — Stress depletes it; at 0 a unit **Breaks** (rout / berserk); the mental mirror of Integrity ([`design-delta`](design-delta-v0.26.md) §4) |
 
 ---
 
@@ -231,6 +244,8 @@ Illustrative bands on the 2d10 scale:
 - **ICE (penalty)** — unprotected 0 · modest 4 · hardened 6–8.
 - **Body as bio-resist (penalty)** — the whole Body value folds in (~8 frail · 10
   average · 14+ bruiser), so bio afflictions are authored hotter to clear it.
+- **Nerve as composure (penalty)** 🔭 — folds in the same way for spoof /
+  intimidation / Stress; a machine (Nerve 0) is a wide-open behavioral surface.
 - **Speed** — melee/thrown ~1 · firearm ~3.
 
 The flatter curve means **bigger skill *gaps*** read as advantage (a +4 effective
