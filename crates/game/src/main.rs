@@ -61,7 +61,7 @@ fn demo_battle() -> Battle {
         mk(3, "SMG", Team::B, 5, 2, 8.0, 6.0, 3, Piercing, External, Mail),
     ];
     // Wire the Runner as a netrunner by **installing a cyberdeck** — the implant grants the hack
-    // loadout and folds in its Link (5) + Firewall. A sharp Intellect (the derived Hacking) so the
+    // loadout and folds in its Link (5) + Ice. A sharp Intellect (the derived Hacking) so the
     // breaches actually land on first run, and a **Burner doctrine** flying a coherent loadout: it
     // dives heat-prone chrome and leads with the burns, falling through to a softener.
     units[1].character.base_mut().intellect = 10.0; // eff Hacking 14
@@ -78,7 +78,7 @@ fn demo_battle() -> Battle {
     // "fortress" (deep if cracked) running **heat-prone** chrome — a juicy mark for the Runner's
     // burns — and swinging an EMP maul that fries the deck on contact (the physical counter).
     units[2].character.base_mut().link = 5.0;
-    units[2].character.base_mut().firewall = 8.0; // hardened, but crackable on first run
+    units[2].character.base_mut().ice = 8.0; // hardened, but crackable on first run
     units[2].install(Implant::reflex_booster()); // heat-prone digital chrome (the Burner's target)
     // A chromed-up heavy — the stat-up suite: a fat HP buffer, raw strength, harder strikes.
     units[2].install(Implant::decentralized_heart()); // +max Integrity (the HP stat)
@@ -90,7 +90,7 @@ fn demo_battle() -> Battle {
     // doctrine that **Spoofs** the Runner's script and a **Ghost** that keeps it harder to crack.
     units[3].character.base_mut().intellect = 9.0;
     units[3].character.base_mut().link = 2.0;
-    units[3].character.base_mut().firewall = 6.0;
+    units[3].character.base_mut().ice = 6.0;
     units[3].skills.set(Skill::Hacking, 2);
     units[3].install(Implant::cyberdeck());
     units[3].install(Implant::neural_net()); // the enemy breaker matches the cognition edge

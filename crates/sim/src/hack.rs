@@ -6,13 +6,13 @@
 //! channel:
 //!
 //! ```text
-//! 2d10 ≤ avg(Hacking, min(Link_attacker, Link_target)) − Firewall
+//! 2d10 ≤ avg(Hacking, min(Link_attacker, Link_target)) − Ice
 //! ```
 //!
 //! — skill and channel each pull half the weight (a master runner on a thin pipe
 //! is dragged down but not gutted). The target's Link feeds the **channel**, not
 //! the wall, so a darker target is harder to hack while **defense stays the
-//! Firewall alone** (Link-blind). Both ends are still hard-gated by reachability —
+//! Ice alone** (Link-blind). Both ends are still hard-gated by reachability —
 //! **zero Link** means *no surface to reach* (immune target) or *no presence to
 //! reach with* (dark attacker), §7F. Equipment arms the roll through the stats
 //! (cyberdeck → Link, skill chip → Hacking, §7D/§13), so there is no separate roll
@@ -23,7 +23,7 @@
 //! Link's *other* job is **latency → digital initiative**: a unit's own Link sets
 //! when it acts on the net (high Link = sooner), independent of the channel.
 //!
-//! The roll lives in [`resolve_versus`](crate::resolve_versus) (roll-under, Firewall as the
+//! The roll lives in [`resolve_versus`](crate::resolve_versus) (roll-under, Ice as the
 //! resist TN); the channel / rating and payload application happen in
 //! [`Battle::resolve_hack`](crate::Battle::resolve_hack).
 
@@ -111,13 +111,13 @@ pub enum Program {
     /// **Blind** — corrupts the target's targeting optics: a **Dexterity** debuff (its shots go
     /// wide) on a solid breach.
     Blind,
-    /// **Decrypt** — rots the target's **Firewall** (a `Worm`-tagged corruption) on a solid
+    /// **Decrypt** — rots the target's **Ice** (a `Worm`-tagged corruption) on a solid
     /// breach, softening it for the next dive.
     Decrypt,
     /// **Leech** — drains the target's **Link** on a solid breach: a thinner channel and slower
     /// digital initiative, and it edges toward going dark (unreachable).
     Leech,
-    /// **Worm** — deploys a **contagious** Firewall-rot ([`Corruption::worm_swarm`](crate::Corruption))
+    /// **Worm** — deploys a **contagious** Ice-rot ([`Corruption::worm_swarm`](crate::Corruption))
     /// that rides the net to nearby surfaces; the spreader, on a solid breach.
     Worm,
     /// **Cascade** — a *breach modifier*: forces a meshed target's breach to trip **every** implant
@@ -259,7 +259,7 @@ mod tests {
 
     #[test]
     fn margin_scales_the_stacks() {
-        // Versus (resist as a modifier): target = rating 14 − firewall 4 = 10; 2d10 = 7 ⇒ margin 3.
+        // Versus (resist as a modifier): target = rating 14 − ice 4 = 10; 2d10 = 7 ⇒ margin 3.
         let mut rng = ScriptedRng::from_d10([3, 4]);
         let o = resolve_versus(&mut rng, 14, 4);
         assert_eq!(o.margin, 3);
@@ -268,7 +268,7 @@ mod tests {
 
     #[test]
     fn deeper_margin_lands_more() {
-        // Lower dice ⇒ deeper margin under target 15 (rating 15, no firewall); 2d10 = 5 ⇒ margin 10.
+        // Lower dice ⇒ deeper margin under target 15 (rating 15, no ice); 2d10 = 5 ⇒ margin 10.
         let mut rng = ScriptedRng::from_d10([2, 3]);
         let o = resolve_versus(&mut rng, 15, 0);
         assert_eq!(o.margin, 10);

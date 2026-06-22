@@ -15,8 +15,8 @@
 //! - the [`armor`] matrix (damage type vs armor class);
 //! - the [`status`] pool on the design's 9-axis schema (DoTs, Crash/Lag, Breach,
 //!   Corrode), processed each tick;
-//! - [`hack`]ing — the netrunning digital attack (`2d10 ≤ avg(Hacking, channel) − Firewall`
-//!   vs `Firewall`; the channel is the weaker endpoint's Link, §7F/§13);
+//! - [`hack`]ing — the netrunning digital attack (`2d10 ≤ avg(Hacking, channel) − Ice`
+//!   vs `Ice`; the channel is the weaker endpoint's Link, §7F/§13);
 //! - an initiative-ordered tick loop with a minimal "attack nearest / step toward"
 //!   resolution plus a digital pass.
 //!
@@ -307,7 +307,7 @@ pub struct Attack {
     /// e.g. `2..=6` (no point-blank); a polearm's **reach** is `2..=2`.
     pub min_range: i32,
     /// EMP weapon: a *physical* pulse that also fries the target's cyberware,
-    /// **bypassing Firewall** (§7I) — the physical counter to digital builds.
+    /// **bypassing Ice** (§7I) — the physical counter to digital builds.
     pub emp: bool,
     /// The area struck (§7G) — `Single` by default; `Blast`/`Beam` hit allies too.
     pub footprint: Footprint,
@@ -631,9 +631,9 @@ impl Unit {
     fn hack_reach(&self) -> i32 {
         self.link().max(0)
     }
-    /// Effective **Firewall** (the digital TN, §13).
-    pub fn firewall(&self) -> i32 {
-        self.realized().firewall()
+    /// Effective **Ice** (the digital TN, §13).
+    pub fn ice(&self) -> i32 {
+        self.realized().ice()
     }
     /// Effective **Health** (GURPS HT) — biological resilience; the bio TN poison / plague / virus
     /// roll against (`docs/stats.md`).
@@ -728,7 +728,7 @@ impl Unit {
     pub fn intellect(&self) -> i32 {
         self.realized().intellect()
     }
-    // Health (the fourth primary, GURPS HT) is `health()` above, beside Firewall — it's the bio
+    // Health (the fourth primary, GURPS HT) is `health()` above, beside Ice — it's the bio
     // resist TN as much as a primary attribute.
 
     /// This unit's **effective rating** at `skill` rolled **off a chosen attribute** — the standard
@@ -973,13 +973,13 @@ const BREACH_DURATION: u32 = 3;
 /// **Blind** — Dexterity bleed (its shots go wide) and how long it lasts.
 const BLIND_AMOUNT: f32 = 3.0;
 const BLIND_DURATION: u32 = 3;
-/// **Decrypt** — Firewall rot (a `Worm` corruption) and its duration.
+/// **Decrypt** — Ice rot (a `Worm` corruption) and its duration.
 const DECRYPT_AMOUNT: f32 = 4.0;
 const DECRYPT_DURATION: u32 = 3;
 /// **Leech** — Link drain and its duration.
 const LEECH_AMOUNT: f32 = 2.0;
 const LEECH_DURATION: u32 = 3;
-/// **Worm** program — the contagious Firewall-rot it deploys (rot / virulence / turns).
+/// **Worm** program — the contagious Ice-rot it deploys (rot / virulence / turns).
 const WORM_PROGRAM_FIREWALL: f32 = 3.0;
 const WORM_PROGRAM_VIRULENCE: i32 = 10;
 const WORM_PROGRAM_TURNS: u32 = 4;
@@ -1777,7 +1777,7 @@ impl<R: RandomSource> Battle<R> {
     }
 
     /// An **EMP** pulse on `target` (§7I) — a *physical* breach that **bypasses
-    /// Firewall** (no roll): fries **every** active implant (→ Offline) and fires
+    /// Ice** (no roll): fries **every** active implant (→ Offline) and fires
     /// its **degrade-class** liabilities at a fixed magnitude. The stun-class
     /// knockout is the hacker's finesse — EMP is blunt. Flesh / bioware (no chrome)
     /// are immune, and the more implants a target runs, the more an EMP ruins.
@@ -1790,7 +1790,7 @@ impl<R: RandomSource> Battle<R> {
 
     /// The **contagion phase** (`docs/corruption.md`) — every contagious corruption tries
     /// to **jump** to fresh victims along its [`Vector`]: a *contested* roll of the
-    /// carrier's `virulence` vs the victim's resist stat (Health / Firewall). A win
+    /// carrier's `virulence` vs the victim's resist stat (Health / Ice). A win
     /// **copies the whole decorator** onto the victim; a unit already carrying that
     /// corruption is skipped (no re-infection / stacking), and jumps land *after* the
     /// scan, so a contagion spreads at most one hop per round (controlled exponential).
@@ -1841,11 +1841,11 @@ impl<R: RandomSource> Battle<R> {
     /// Can unit `j` **host** this contagion — carry it *and re-spread* it? "Target those
     /// who can spread it": a contagion only takes in a unit with the matching surface — a
     /// **bio** strain (Health-resisted) needs a biological body; a **digital** one
-    /// (Firewall-resisted) needs a live net surface (`Link > 0`). A unit that can't host
+    /// (Ice-resisted) needs a live net surface (`Link > 0`). A unit that can't host
     /// it is a dead end, so it's never infected.
     fn can_host(&self, j: usize, c: Contagion) -> bool {
         match c.resist {
-            Stat::Firewall => self.units[j].link() > 0,
+            Stat::Ice => self.units[j].link() > 0,
             Stat::Health => self.units[j].chassis.is_biological(),
             _ => true,
         }
@@ -1859,10 +1859,10 @@ impl<R: RandomSource> Battle<R> {
         }
     }
 
-    /// Unit `j`'s value of a contagion-resist stat (only Health / Firewall defend a jump).
+    /// Unit `j`'s value of a contagion-resist stat (only Health / Ice defend a jump).
     fn resist_of(&self, j: usize, resist: Stat) -> i32 {
         match resist {
-            Stat::Firewall => self.units[j].firewall(),
+            Stat::Ice => self.units[j].ice(),
             _ => self.units[j].health(),
         }
     }
@@ -1934,7 +1934,7 @@ impl<R: RandomSource> Battle<R> {
     /// activation.
     /// **Ward phase** (`netrunning.md` §10.8): every unit running an **Antivirus** program strips
     /// the **worm** corruption off itself each tick — the standing digital counterplay, loaded as a
-    /// program rather than a gear ward. (Decrypt's Firewall-rot is `Tag::Worm`, so this also un-pries
+    /// program rather than a gear ward. (Decrypt's Ice-rot is `Tag::Worm`, so this also un-pries
     /// a decrypted wall; the contagious Worm program likewise.)
     fn ward_phase(&mut self) {
         for u in &mut self.units {
@@ -2011,14 +2011,14 @@ impl<R: RandomSource> Battle<R> {
     }
 
     /// The best **net defense** available to `target`'s side (`netrunning.md` §2) — the value
-    /// a hack is opposed by. It's the highest of: the target's passive **Firewall**; its own
+    /// a hack is opposed by. It's the highest of: the target's passive **Ice**; its own
     /// **Hacking**, if the target is itself a runner (it parries code with code); and the
     /// **Hacking of any allied netrunner covering it** — a living ally with a deck (Link > 0)
     /// whose antenna reach spans the target, so a runner can actively defend a **node it
     /// controls**. `≤ 0` ⇒ an undefended surface (no active defense, no defender roll).
     fn net_defense(&self, target: usize) -> i32 {
         let t = &self.units[target];
-        let mut d = t.firewall();
+        let mut d = t.ice();
         if t.hack().is_some() {
             d = d.max(t.effective_skill(Skill::Hacking));
         }
@@ -2058,14 +2058,14 @@ impl<R: RandomSource> Battle<R> {
         // The connection runs at the weaker endpoint's bandwidth (the channel); the rating
         // averages the attacker's **effective Hacking** (Intellect + tier, GURPS-scaled) with
         // it. The hack is an **opposed roll** (`docs/stats.md` §4, like combat): the runner
-        // rolls to crack while the target's **Firewall** rolls an active defense — the breach
-        // lands only if the runner connects **and** the Firewall fails to repel it. A darker
-        // target (lower channel) is harder to crack; a stiffer Firewall defends more often.
+        // rolls to crack while the target's **Ice** rolls an active defense — the breach
+        // lands only if the runner connects **and** the Ice fails to repel it. A darker
+        // target (lower channel) is harder to crack; a stiffer Ice defends more often.
         let channel = self.units[attacker].digital_band().min(self.units[target].digital_band());
         let rating = hack_rating(self.units[attacker].effective_skill(Skill::Hacking), channel)
             + self.units[attacker].mesh_synergy(); // meshed PAN throughput (§5)
         // **Active net defense** (`netrunning.md` §2): the breach is opposed by whichever
-        // defense is **favorable** — the target's passive Firewall, its own Hacking if it is a
+        // defense is **favorable** — the target's passive Ice, its own Hacking if it is a
         // runner, or the Hacking of an **allied netrunner covering it** (so a runner defends a
         // node it controls). See [`Battle::net_defense`].
         let defense = self.net_defense(target);
@@ -2182,7 +2182,7 @@ impl<R: RandomSource> Battle<R> {
                     vec![Factor::add(Stat::Dexterity, -BLIND_AMOUNT)],
                 ));
             }
-            // A `Worm`-tagged Firewall rot (cleansable by an Antivirus / firewall patch).
+            // A `Worm`-tagged Ice rot (cleansable by an Antivirus / ice patch).
             Program::Decrypt => {
                 t.apply_modifier(Corruption::worm(DECRYPT_AMOUNT, DECRYPT_DURATION));
             }
@@ -2387,12 +2387,12 @@ mod tests {
         u
     }
 
-    /// A unit with a hackable digital surface: Link > 0 and a Firewall security rating
+    /// A unit with a hackable digital surface: Link > 0 and a Ice security rating
     /// (now a flat penalty on a hacker's roll, `docs/stats.md` — not a TN).
-    fn networked(id: u32, team: Team, q: i32, firewall: i32) -> Unit {
+    fn networked(id: u32, team: Team, q: i32, ice: i32) -> Unit {
         let mut u = unit(id, team, q);
         u.character.base_mut().link = 2.0;
-        u.character.base_mut().firewall = firewall as f32;
+        u.character.base_mut().ice = ice as f32;
         u
     }
 
@@ -2841,23 +2841,23 @@ mod tests {
     }
 
     #[test]
-    fn firewall_rolls_an_active_defense() {
-        // The hack is **opposed** (stats.md §4): the runner rolls to crack, the Firewall rolls
-        // back, and the breach lands only if the runner connects *and* the Firewall fails.
+    fn ice_rolls_an_active_defense() {
+        // The hack is **opposed** (stats.md §4): the runner rolls to crack, the Ice rolls
+        // back, and the breach lands only if the runner connects *and* the Ice fails.
         let setup = || {
             let mut atk = runner(0, Team::A, 0, 1);
             atk.character.base_mut().link = 4.0;
             atk.skills.set(Skill::Hacking, 6); // eff Hacking 16; channel min(4,4)=4 ⇒ rating 10
-            let mut tgt = networked(1, Team::B, 0, 4); // Firewall 4
+            let mut tgt = networked(1, Team::B, 0, 4); // Ice 4
             tgt.character.base_mut().link = 4.0;
             (atk, tgt)
         };
-        // Runner rolls 5 ≤ rating 10 (margin 5); Firewall 4 rolls 18 > 4 (fails) ⇒ breach lands.
+        // Runner rolls 5 ≤ rating 10 (margin 5); Ice 4 rolls 18 > 4 (fails) ⇒ breach lands.
         let (atk, tgt) = setup();
         let mut b = Battle::with_rng(vec![atk, tgt], ScriptedRng::from_d10([2, 3, 9, 9]));
         let HackResult::Rolled { outcome, .. } = b.resolve_hack(0, 1) else { panic!() };
         assert!(outcome.success && outcome.margin == 5);
-        // Same runner roll, but the Firewall makes its defense (rolls 3 ≤ 4) ⇒ repelled.
+        // Same runner roll, but the Ice makes its defense (rolls 3 ≤ 4) ⇒ repelled.
         let (atk, tgt) = setup();
         let mut b = Battle::with_rng(vec![atk, tgt], ScriptedRng::from_d10([2, 3, 1, 2]));
         assert!(!b.resolve_hack(0, 1).landed());
@@ -2870,7 +2870,7 @@ mod tests {
         atk.skills.set(Skill::Hacking, 6); // eff Hacking 16; channel min(8,8)=8 → rating avg(16,8)=12
         let mut tgt = networked(1, Team::B, 0, 0);
         tgt.character.base_mut().link = 8.0;
-        // target = rating 12 − Firewall 0 = 12; dice 5 ⇒ margin 7 → 1 + 7/3 = 3 stacks.
+        // target = rating 12 − Ice 0 = 12; dice 5 ⇒ margin 7 → 1 + 7/3 = 3 stacks.
         let mut b = Battle::with_rng(vec![atk, tgt], ScriptedRng::from_d10([2, 3]));
         assert!(b.resolve_hack(0, 1).landed());
         assert_eq!(b.units[1].statuses()[0].0, "Lockware");
@@ -2927,12 +2927,12 @@ mod tests {
 
     #[test]
     fn installing_a_cyberdeck_grants_the_hack_and_folds_the_surface() {
-        let mut u = unit(0, Team::A, 0); // base: no deck, Link 0, Firewall 0
+        let mut u = unit(0, Team::A, 0); // base: no deck, Link 0, Ice 0
         assert!(u.hack().is_none());
         u.install(Implant::cyberdeck());
         assert!(u.hack().is_some()); // benefit: the unit can now hack
         assert_eq!(u.link(), 5); // folded surface
-        assert_eq!(u.firewall(), 2); // folded wall
+        assert_eq!(u.ice(), 2); // folded wall
     }
 
     #[test]
@@ -2942,11 +2942,11 @@ mod tests {
         atk.skills.set(Skill::Hacking, 4);
         let mut tgt = unit(1, Team::B, 1);
         tgt.character.base_mut().link = 3.0;
-        tgt.character.base_mut().firewall = 4.0;
+        tgt.character.base_mut().ice = 4.0;
         tgt.install(Implant::combat_stim());
         tgt.install(Implant::reflex_booster());
         assert_eq!(tgt.pan, Pan::Meshed); // the default
-        let mut b = Battle::with_rng(vec![atk, tgt], ScriptedRng::from_d10([1, 2, 9, 9])); // crit (3); Firewall 4 fails its defense (18)
+        let mut b = Battle::with_rng(vec![atk, tgt], ScriptedRng::from_d10([1, 2, 9, 9])); // crit (3); Ice 4 fails its defense (18)
         b.resolve_hack(0, 1);
         assert!((0..b.units[1].implants.len()).all(|i| b.units[1].implant_condition(i) == Condition::Offline));
     }
@@ -2958,11 +2958,11 @@ mod tests {
         atk.skills.set(Skill::Hacking, 4);
         let mut tgt = unit(1, Team::B, 1);
         tgt.character.base_mut().link = 3.0;
-        tgt.character.base_mut().firewall = 4.0;
+        tgt.character.base_mut().ice = 4.0;
         tgt.pan = Pan::Segmented;
         tgt.install(Implant::combat_stim()); // idx 0 — the targeted (digital) slot
         tgt.install(Implant::reflex_booster()); // idx 1 — contained
-        let mut b = Battle::with_rng(vec![atk, tgt], ScriptedRng::from_d10([1, 2, 9, 9])); // crit (3); Firewall 4 fails its defense (18)
+        let mut b = Battle::with_rng(vec![atk, tgt], ScriptedRng::from_d10([1, 2, 9, 9])); // crit (3); Ice 4 fails its defense (18)
         b.resolve_hack(0, 1);
         assert_eq!(b.units[1].implant_condition(0), Condition::Offline);
         assert_eq!(b.units[1].implant_condition(1), Condition::Online); // contained
@@ -3082,7 +3082,7 @@ mod tests {
         // The digital vector ignores distance but needs a surface: a wired unit catches
         // it across the map; a fleshy one (Link 0) is untouchable however close.
         let mut carrier = unit(0, Team::A, 0);
-        carrier.apply_modifier(Corruption::worm_swarm(3.0, 18, 5)); // virulent (18) vs Firewall 0
+        carrier.apply_modifier(Corruption::worm_swarm(3.0, 18, 5)); // virulent (18) vs Ice 0
         let wired = runner(1, Team::B, 6, 4); // Link 3, far away
         let fleshy = unit(2, Team::B, 1); // adjacent but Link 0
         let mut b = Battle::new(vec![carrier, wired, fleshy], 7);
@@ -3135,10 +3135,10 @@ mod tests {
 
     #[test]
     fn emp_fries_digital_chrome_but_not_inert_plating() {
-        // EMP bypasses Firewall to brick **digital** chrome — but inert physical armor
+        // EMP bypasses Ice to brick **digital** chrome — but inert physical armor
         // (subdermal plating, no circuitry) is EMP-proof and keeps its benefit.
         let mut tgt = unit(1, Team::B, 0);
-        tgt.character.base_mut().firewall = 99.0; // EMP ignores the wall entirely
+        tgt.character.base_mut().ice = 99.0; // EMP ignores the wall entirely
         tgt.install(Implant::subdermal_plating()); // idx 0 — inert physical: EMP-proof
         tgt.install(Implant::cyberdeck()); // idx 1 — digital: fried
         assert!(tgt.hack().is_some());
@@ -3297,10 +3297,10 @@ mod tests {
     }
 
     #[test]
-    fn firewall_suite_folds_the_wall() {
-        let mut u = unit(0, Team::A, 0); // base Firewall 0
-        u.install(Implant::firewall_suite());
-        assert_eq!(u.firewall(), 4);
+    fn ice_suite_folds_the_wall() {
+        let mut u = unit(0, Team::A, 0); // base Ice 0
+        u.install(Implant::ice_suite());
+        assert_eq!(u.ice(), 4);
         assert_eq!(u.link(), 1); // a little surface comes with it
     }
 
@@ -3334,7 +3334,7 @@ mod tests {
         atk.skills.set(Skill::Hacking, 6); // eff Hacking 16; channel 8 → rating 12
         let mut tgt = unit(1, Team::B, 1);
         tgt.character.base_mut().link = 8.0;
-        tgt.character.base_mut().firewall = 0.0; // target 12; dice 9 ⇒ margin 3, no crit
+        tgt.character.base_mut().ice = 0.0; // target 12; dice 9 ⇒ margin 3, no crit
         tgt.install(Implant::combat_stim());
         let mut b = Battle::with_rng(vec![atk, tgt], ScriptedRng::from_d10([4, 5]));
         b.resolve_hack(0, 1);
@@ -3402,7 +3402,7 @@ mod tests {
         let mut tgt = unit(1, Team::B, 1);
         tgt.character.base_mut().link = 4.0;
         tgt.install(Implant::reflex_booster()); // Seizure liability (stun)
-        tgt.character.base_mut().firewall = 0.0; // target = rating 9; dice 9 ⇒ margin 0
+        tgt.character.base_mut().ice = 0.0; // target = rating 9; dice 9 ⇒ margin 0
         let mut b = Battle::with_rng(vec![atk, tgt], ScriptedRng::from_d10([4, 5]));
         assert!(b.resolve_hack(0, 1).landed());
         assert_eq!(b.units[1].implant_condition(0), Condition::Offline); // disabled
@@ -3427,9 +3427,9 @@ mod tests {
             let mut tgt = unit(1, Team::B, 1);
             tgt.character.base_mut().link = 8.0;
             if volatile {
-                tgt.install(Implant::combat_stim()); // runs hot (VOLATILE); adds no Firewall
+                tgt.install(Implant::combat_stim()); // runs hot (VOLATILE); adds no Ice
             }
-            tgt.character.base_mut().firewall = 0.0; // undefended ⇒ a clean attacker-only roll
+            tgt.character.base_mut().ice = 0.0; // undefended ⇒ a clean attacker-only roll
             // rating 12, dice 4 ⇒ margin 8 (a solid breach, not a crit).
             let mut b = Battle::with_rng(vec![atk, tgt], ScriptedRng::from_d10([1, 3]));
             b.resolve_hack(0, 1);
@@ -3449,7 +3449,7 @@ mod tests {
         let mut tgt = unit(1, Team::B, 1);
         tgt.character.base_mut().link = 8.0;
         tgt.install(Implant::combat_stim()); // digital; Bleed (degrade, non-stun) fires
-        tgt.character.base_mut().firewall = 0.0; // target = rating 12; dice 6 → margin 6
+        tgt.character.base_mut().ice = 0.0; // target = rating 12; dice 6 → margin 6
         let mut b = Battle::with_rng(vec![atk, tgt], ScriptedRng::from_d10([3, 3]));
         b.resolve_hack(0, 1);
         assert_eq!(b.units[1].implant_condition(0), Condition::Offline);
@@ -3464,9 +3464,9 @@ mod tests {
         atk.skills.set(Skill::Hacking, 4);
         let mut tgt = unit(1, Team::B, 1);
         tgt.character.base_mut().link = 3.0;
-        tgt.character.base_mut().firewall = 12.0;
+        tgt.character.base_mut().ice = 12.0;
         tgt.install(Implant::reflex_booster()); // Seizure (stun)
-        let mut b = Battle::with_rng(vec![atk, tgt], ScriptedRng::from_d10([1, 2, 9, 9])); // crit (3); Firewall 12 fails its defense (18)
+        let mut b = Battle::with_rng(vec![atk, tgt], ScriptedRng::from_d10([1, 2, 9, 9])); // crit (3); Ice 12 fails its defense (18)
         b.resolve_hack(0, 1);
         assert_eq!(b.units[1].implant_condition(0), Condition::Offline);
         assert!(b.units[1].is_stunned());
@@ -3492,7 +3492,7 @@ mod tests {
         tgt.skills.set(Skill::Hacking, 4);
         tgt.install(Implant::cyberdeck()); // grants the hack + Link 5
         assert!(tgt.hack().is_some());
-        // Opposed: runner rolls 6 ≤ rating 9 (margin 3); the deck's own Firewall 2 fails (18) ⇒ lands.
+        // Opposed: runner rolls 6 ≤ rating 9 (margin 3); the deck's own Ice 2 fails (18) ⇒ lands.
         let mut b = Battle::with_rng(vec![atk, tgt], ScriptedRng::from_d10([3, 3, 9, 9]));
         b.resolve_hack(0, 1);
         assert!(b.units[1].hack().is_none()); // deck bricked → no hacking back
@@ -3504,25 +3504,25 @@ mod tests {
     #[test]
     fn a_modifier_composes_into_the_effective_stat() {
         let mut u = unit(0, Team::A, 0);
-        u.character.base_mut().firewall = 9.0;
-        assert_eq!(u.firewall(), 9); // base
-        u.apply_modifier(Decorator::gear(Tag::Gear, vec![Factor::add(Stat::Firewall, 4.0)]));
-        assert_eq!(u.firewall(), 13); // base + flat add
+        u.character.base_mut().ice = 9.0;
+        assert_eq!(u.ice(), 9); // base
+        u.apply_modifier(Decorator::gear(Tag::Gear, vec![Factor::add(Stat::Ice, 4.0)]));
+        assert_eq!(u.ice(), 13); // base + flat add
         // an Increased factor scales the *base* — proof the base is inside the fold.
-        u.apply_modifier(Decorator::gear(Tag::Buff, vec![Factor::increased(Stat::Firewall, 0.5)]));
-        assert_eq!(u.firewall(), 20); // round((9 + 4) × 1.5) = round(19.5)
+        u.apply_modifier(Decorator::gear(Tag::Buff, vec![Factor::increased(Stat::Ice, 0.5)]));
+        assert_eq!(u.ice(), 20); // round((9 + 4) × 1.5) = round(19.5)
     }
 
     #[test]
-    fn a_firewall_debuff_makes_a_hack_land_in_the_loop() {
+    fn a_ice_debuff_makes_a_hack_land_in_the_loop() {
         let mut atk = runner(0, Team::A, 0, 4);
         atk.character.base_mut().link = 4.0;
         atk.skills.set(Skill::Hacking, 4); // rating avg(4, 4) = 4
-        let mut tgt = networked(1, Team::B, 1, 6); // base Firewall 6 (a −6 penalty)
+        let mut tgt = networked(1, Team::B, 1, 6); // base Ice 6 (a −6 penalty)
         tgt.character.base_mut().link = 4.0;
-        // Debuff Firewall by 4 → effective 2; the loop reads firewall() through the gen.
-        tgt.apply_modifier(Decorator::gear(Tag::Debuff, vec![Factor::add(Stat::Firewall, -4.0)]));
-        // Opposed: runner rolls 5 ≤ rating 9; the Firewall rolls 4 — vs base 6 that defends (4 ≤ 6),
+        // Debuff Ice by 4 → effective 2; the loop reads ice() through the gen.
+        tgt.apply_modifier(Decorator::gear(Tag::Debuff, vec![Factor::add(Stat::Ice, -4.0)]));
+        // Opposed: runner rolls 5 ≤ rating 9; the Ice rolls 4 — vs base 6 that defends (4 ≤ 6),
         // but debuffed to 2 it fails (4 > 2), so the debuff is exactly what lets the breach land.
         let mut b = Battle::with_rng(vec![atk, tgt], ScriptedRng::from_d10([2, 3, 2, 2]));
         assert!(b.resolve_hack(0, 1).landed());
@@ -3569,7 +3569,7 @@ mod tests {
         atk.programs = programs;
         let mut tgt = unit(1, Team::B, 1);
         tgt.character.base_mut().link = 8.0;
-        tgt.character.base_mut().firewall = 0.0; // undefended ⇒ a clean attacker-only roll
+        tgt.character.base_mut().ice = 0.0; // undefended ⇒ a clean attacker-only roll
         setup(&mut tgt);
         // rating 12, dice 4 ⇒ margin 8 (a solid breach, not a crit).
         let mut b = Battle::with_rng(vec![atk, tgt], ScriptedRng::from_d10([1, 3]));
@@ -3585,7 +3585,7 @@ mod tests {
     fn meltdown_is_a_heavy_burn_on_volatile_chrome() {
         // Like Overheat, Meltdown cooks heat-prone chrome on a solid breach — the premium DoT.
         let b = solid_breach(Programs::just(Program::Meltdown), |t| {
-            t.install(Implant::combat_stim()); // runs hot (heat-prone); adds no Firewall
+            t.install(Implant::combat_stim()); // runs hot (heat-prone); adds no Ice
         });
         assert!(has_status(&b.units[1], "Meltdown"));
         // No heat-prone chrome ⇒ nothing to melt, like Overheat.
@@ -3620,7 +3620,7 @@ mod tests {
         atk.programs = Programs::just(Program::Crash);
         let mut tgt = unit(1, Team::B, 1);
         tgt.character.base_mut().link = 8.0;
-        tgt.character.base_mut().firewall = 0.0;
+        tgt.character.base_mut().ice = 0.0;
         let mut b = Battle::with_rng(vec![atk, tgt], ScriptedRng::from_d10([1, 2])); // natural 3 ⇒ crit
         b.resolve_hack(0, 1);
         assert!(b.units[1].is_stunned());
@@ -3628,7 +3628,7 @@ mod tests {
 
     #[test]
     fn decrypt_and_leech_drain_the_digital_stats() {
-        // Decrypt rots Firewall as a cleansable Worm corruption.
+        // Decrypt rots Ice as a cleansable Worm corruption.
         let dec = solid_breach(Programs::just(Program::Decrypt), |_| {});
         assert!(has_status(&dec.units[1], "Worm"));
         // Leech drains Link (a thinner channel / slower digital initiative).
@@ -3655,11 +3655,11 @@ mod tests {
 
     #[test]
     fn cascade_trips_every_implant_without_a_crit() {
-        // Two digital implants, meshed (default), no Firewall (undefended). A solid breach with
+        // Two digital implants, meshed (default), no Ice (undefended). A solid breach with
         // Cascade rides to *both*; without it only the first trips.
         let chrome = |t: &mut Unit| {
-            t.install(Implant::reflex_booster()); // digital, no Firewall
-            t.install(Implant::combat_stim()); // digital, no Firewall
+            t.install(Implant::reflex_booster()); // digital, no Ice
+            t.install(Implant::combat_stim()); // digital, no Ice
         };
         let cascade = solid_breach(Programs::just(Program::Cascade), chrome);
         assert_eq!(cascade.units[1].implant_condition(0), Condition::Offline);
@@ -3681,7 +3681,7 @@ mod tests {
             let mut tgt = unit(1, Team::B, 1);
             tgt.character.base_mut().link = 4.0;
             tgt.install(Implant::combat_stim()); // Bleed (degrade) + Crash (stun)
-            tgt.character.base_mut().firewall = 0.0; // target = rating 9; dice 9 ⇒ margin 0
+            tgt.character.base_mut().ice = 0.0; // target = rating 9; dice 9 ⇒ margin 0
             let mut b = Battle::with_rng(vec![atk, tgt], ScriptedRng::from_d10([4, 5]));
             b.resolve_hack(0, 1);
             b
@@ -3698,7 +3698,7 @@ mod tests {
         atk.skills.set(Skill::Hacking, 4); // rating 9
         let mut tgt = unit(1, Team::B, 1);
         tgt.character.base_mut().link = 4.0;
-        tgt.character.base_mut().firewall = 0.0; // undefended, but it carries a trap
+        tgt.character.base_mut().ice = 0.0; // undefended, but it carries a trap
         tgt.programs = Programs::just(Program::Honeypot);
         // rating 9, dice 18 ⇒ a clean miss (not a fumble) — the intruder is repelled.
         let mut b = Battle::with_rng(vec![atk, tgt], ScriptedRng::from_d10([9, 9]));
@@ -3709,9 +3709,9 @@ mod tests {
     #[test]
     fn ghost_stiffens_a_units_net_defense() {
         let mut runner_ghost = unit(1, Team::B, 1);
-        runner_ghost.character.base_mut().firewall = 5.0;
+        runner_ghost.character.base_mut().ice = 5.0;
         let plain = Battle::new(vec![unit(0, Team::A, 0), runner_ghost.clone()], 1);
-        assert_eq!(plain.net_defense(1), 5); // bare Firewall
+        assert_eq!(plain.net_defense(1), 5); // bare Ice
         runner_ghost.grant_hack(Hack::new(4, 1, 5));
         runner_ghost.programs = Programs::just(Program::Ghost);
         let ghosted = Battle::new(vec![unit(0, Team::A, 0), runner_ghost], 1);
@@ -3721,14 +3721,14 @@ mod tests {
     #[test]
     fn antivirus_cleanses_worm_corruption_each_tick() {
         let mut warded = unit(1, Team::B, 1);
-        warded.character.base_mut().firewall = 10.0;
+        warded.character.base_mut().ice = 10.0;
         warded.grant_hack(Hack::new(4, 1, 5)); // a deck to load the program onto
         warded.programs = Programs::just(Program::Antivirus);
         warded.apply_modifier(Corruption::worm(4.0, 5)); // a worm pries the wall to 6
-        assert_eq!(warded.firewall(), 6);
+        assert_eq!(warded.ice(), 6);
         let mut b = Battle::new(vec![unit(0, Team::A, 0), warded], 1);
         b.ward_phase();
-        assert_eq!(b.units[1].firewall(), 10); // the antivirus stripped the worm
+        assert_eq!(b.units[1].ice(), 10); // the antivirus stripped the worm
     }
 
     // -- the netrunning doctrine: scripted hack targeting + program use (§10.8) -----------
@@ -3747,7 +3747,7 @@ mod tests {
         atk.programs = loadout;
         let mut tgt = unit(1, Team::B, 1);
         tgt.character.base_mut().link = 8.0;
-        tgt.character.base_mut().firewall = 0.0;
+        tgt.character.base_mut().ice = 0.0;
         setup(&mut tgt);
         let mut b = Battle::with_rng(vec![atk, tgt], ScriptedRng::from_d10([1, 3])); // margin 8
         b.resolve_hack(0, 1);

@@ -80,7 +80,7 @@ fn blast(mut a: Attack, radius: i32) -> Attack {
 }
 
 /// Builder: an **EMP** weapon — a physical pulse that fries the target's digital chrome
-/// *through* Firewall (§7I), the counter to chromed builds.
+/// *through* Ice (§7I), the counter to chromed builds.
 fn emp(mut a: Attack) -> Attack {
     a.emp = true;
     a
@@ -168,7 +168,7 @@ pub fn marksman(name: &str) -> Unit {
 }
 
 /// A **sapper** — an EMP shock-trooper, the anti-chrome answer. A short-range pulse that
-/// fries digital cyberware *through* Firewall (§7I); it hunts the **biggest threat**, so
+/// fries digital cyberware *through* Ice (§7I); it hunts the **biggest threat**, so
 /// it bee-lines the chromed heavies the rest of the squad struggles to crack.
 pub fn sapper(name: &str) -> Unit {
     let shock = emp(weapon(6.0, DamageType::Bludgeoning, PenTier::Contact, 2));
@@ -199,7 +199,7 @@ pub fn full_squad() -> Vec<Unit> {
 }
 
 /// A **heist team** for a [`datamine`] dive — the core trio plus the **sapper** (its EMP cracks
-/// chrome through Firewall, a second way at the node), but **no marksman**: its `Backline`
+/// chrome through Ice, a second way at the node), but **no marksman**: its `Backline`
 /// targeting would shell the backmost unit (the objective node itself) and slag the data.
 pub fn heist_team() -> Vec<Unit> {
     vec![blade("Katana"), runner("Glitch"), bulwark("Anvil"), sapper("Surge")]
@@ -227,14 +227,14 @@ fn enforcer(name: &str) -> Unit {
         // Evade untrained: Dex 10 − 4 ⇒ Evasion 6
         .with_attack(weapon(5.0, DamageType::Bludgeoning, PenTier::Contact, 1));
     u.character.base_mut().link = 4.0; // a networked surface to hack at
-    u.character.base_mut().firewall = 6.0; // hardened: rolls an active defense vs hackers (stats.md §4)
+    u.character.base_mut().ice = 6.0; // hardened: rolls an active defense vs hackers (stats.md §4)
     u.install(Implant::subdermal_plating()); // physical — bulwark's problem, not the runner's
     u.install(Implant::reflex_booster()); // digital smartware — the runner's breach target
     u
 }
 
 /// A **jammer** — an enemy **EMP** trooper, the anti-deck answer in a netrunning fight. A short
-/// pulse that fries a diver's cyberware *through* Firewall (§7I) — bricking the deck mid-crack —
+/// pulse that fries a diver's cyberware *through* Ice (§7I) — bricking the deck mid-crack —
 /// hunting the **biggest threat** (usually the squad's runner), so a chromed-up dive is a gamble.
 fn jammer(name: &str) -> Unit {
     let shock = emp(weapon(6.0, DamageType::Bludgeoning, PenTier::Contact, 2));
@@ -528,8 +528,8 @@ fn data_node(name: &str) -> Unit {
         .with_speed(0) // bolted to the floor
         .with_movement(MovementProfile::Hold);
     u.character.base_mut().link = 5.0; // a fat surface to dive
-    u.character.base_mut().firewall = 12.0; // a hard own-wall — a real contest even for a neural-netted runner
-    u.install(Implant::firewall_suite()); // a digital implant — breaching it (Offline) cracks the node
+    u.character.base_mut().ice = 12.0; // a hard own-wall — a real contest even for a neural-netted runner
+    u.install(Implant::ice_suite()); // a digital implant — breaching it (Offline) cracks the node
     u.disarm(); // a terminal, not a combatant — it never attacks
     u
 }

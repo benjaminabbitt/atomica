@@ -58,7 +58,7 @@ pub enum Behavior {
 pub enum Resist {
     None,
     Health,
-    Firewall,
+    Ice,
 }
 
 /// Axis: stacking — how a fresh application combines with an existing instance.
@@ -193,7 +193,7 @@ impl StatusSpec {
     /// Meltdown — a hack's **heavy** thermal payload (`netrunning.md`): a premium burn program
     /// that melts a system far harder than [`Self::overheat`] (Flat 4 vs 2, Internal — straight
     /// to Integrity), the runner's *finisher* DoT. Like Overheat it's deterministic and unresisted
-    /// (the breach already paid the Firewall) and stacks with the breach margin.
+    /// (the breach already paid the Ice) and stacks with the breach margin.
     pub fn meltdown() -> Self {
         Self {
             name: "Meltdown",
@@ -234,7 +234,7 @@ impl StatusSpec {
             stacking: Stacking::Refresh,
             behavior: Behavior::Deterministic,
             targeting: Targeting::Enemy,
-            resist: Resist::Firewall,
+            resist: Resist::Ice,
         }
     }
 
@@ -249,7 +249,7 @@ impl StatusSpec {
             stacking: Stacking::Refresh,
             behavior: Behavior::Deterministic,
             targeting: Targeting::Enemy,
-            resist: Resist::Firewall,
+            resist: Resist::Ice,
         }
     }
 
@@ -270,7 +270,7 @@ impl StatusSpec {
 
     /// Lockware — a netrunner's landed payload (§7F/§10.8): a deployed intrusion
     /// that drains the system as an Internal DoT. The hack roll already contested
-    /// Firewall on landing, so it ticks **deterministically**; stacks (scaled by
+    /// Ice on landing, so it ticks **deterministically**; stacks (scaled by
     /// the hack's margin) deepen the drain.
     pub fn lockware() -> Self {
         Self {
@@ -282,7 +282,7 @@ impl StatusSpec {
             stacking: Stacking::Stack { max: 6 },
             behavior: Behavior::Deterministic,
             targeting: Targeting::Enemy,
-            resist: Resist::Firewall,
+            resist: Resist::Ice,
         }
     }
 
@@ -349,7 +349,7 @@ impl StatusSpec {
         if let Behavior::Stochastic { power } = self.behavior {
             let resist = match self.resist {
                 Resist::None => GenResist::None,
-                Resist::Firewall => GenResist::Firewall,
+                Resist::Ice => GenResist::Ice,
                 Resist::Health => GenResist::Health,
             };
             d = d.with_gate(power, resist);

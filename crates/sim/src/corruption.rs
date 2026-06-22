@@ -1,6 +1,6 @@
 //! Corruption — **hostile decorators**, the inverse of buffs (`docs/layers.md` L6).
 //!
-//! A **Worm** rots the *digital* surface (Firewall), a **Virus** the *biological* one
+//! A **Worm** rots the *digital* surface (Ice), a **Virus** the *biological* one
 //! (Health); a **Spoof** corrupts *behavior* (the [`Unit::spoof`](crate::Unit::spoof)
 //! `CORRUPTION`-priority override, already wired). Each is just a decorator with a
 //! hostile `Factor`/`Override` — what makes it *corruption* is its [`Tag`]
@@ -22,10 +22,10 @@ use crate::PenTier;
 pub struct Corruption;
 
 impl Corruption {
-    /// **ICE-breaker worm** — a digital corruption (`Tag::Worm`) that tanks Firewall by
-    /// `firewall` for `turns`, prying the target's wall open so a follow-up hack lands.
-    pub fn worm(firewall: f32, turns: u32) -> Decorator {
-        Decorator::timed(Tag::Worm, turns, vec![Factor::add(Stat::Firewall, -firewall)])
+    /// **ICE-breaker worm** — a digital corruption (`Tag::Worm`) that tanks Ice by
+    /// `ice` for `turns`, prying the target's wall open so a follow-up hack lands.
+    pub fn worm(ice: f32, turns: u32) -> Decorator {
+        Decorator::timed(Tag::Worm, turns, vec![Factor::add(Stat::Ice, -ice)])
             .with_label("Worm")
     }
 
@@ -51,12 +51,12 @@ impl Corruption {
             .with_contagion(Contagion { virulence, resist: Stat::Health, vector: Vector::Proximity(1) })
     }
 
-    /// **Worm swarm** — a *contagious* worm: the [`Self::worm`] Firewall-rot that also
+    /// **Worm swarm** — a *contagious* worm: the [`Self::worm`] Ice-rot that also
     /// **rides the net** to any unit with a live digital surface (`Link > 0`), each jump
-    /// a contest of `virulence` vs the victim's Firewall. The digital pandemic.
-    pub fn worm_swarm(firewall: f32, virulence: i32, turns: u32) -> Decorator {
-        Self::worm(firewall, turns)
-            .with_contagion(Contagion { virulence, resist: Stat::Firewall, vector: Vector::Net })
+    /// a contest of `virulence` vs the victim's Ice. The digital pandemic.
+    pub fn worm_swarm(ice: f32, virulence: i32, turns: u32) -> Decorator {
+        Self::worm(ice, turns)
+            .with_contagion(Contagion { virulence, resist: Stat::Ice, vector: Vector::Net })
     }
 
     /// **Antivirus** — a standing ward (gear) that suppresses every `Tag::Virus`
@@ -65,9 +65,9 @@ impl Corruption {
         Decorator::gear(Tag::Gear, vec![]).with_remove(Remove::Tag(Tag::Virus))
     }
 
-    /// **Firewall patch** — a standing ward that suppresses every `Tag::Worm`
+    /// **Ice patch** — a standing ward that suppresses every `Tag::Worm`
     /// corruption while installed (the digital counterplay).
-    pub fn firewall_patch() -> Decorator {
+    pub fn ice_patch() -> Decorator {
         Decorator::gear(Tag::Gear, vec![]).with_remove(Remove::Tag(Tag::Worm))
     }
 }
@@ -78,20 +78,20 @@ mod tests {
     use crate::chargen::{BaseLine, Character};
 
     fn base() -> BaseLine {
-        BaseLine { firewall: 12.0, health: 10.0, ..BaseLine::default() }
+        BaseLine { ice: 12.0, health: 10.0, ..BaseLine::default() }
     }
 
     #[test]
-    fn a_worm_rots_firewall_until_patched() {
+    fn a_worm_rots_ice_until_patched() {
         let mut c = Character::new(base());
-        assert_eq!(c.realize().firewall(), 12);
+        assert_eq!(c.realize().ice(), 12);
         c.install(Corruption::worm(5.0, 3));
-        assert_eq!(c.realize().firewall(), 7); // wall pried open — a hack lands easier
-        // A firewall patch is a ward: it strips Worm-tagged modifiers while installed.
-        let patch = c.install(Corruption::firewall_patch());
-        assert_eq!(c.realize().firewall(), 12); // worm suppressed
+        assert_eq!(c.realize().ice(), 7); // wall pried open — a hack lands easier
+        // A ice patch is a ward: it strips Worm-tagged modifiers while installed.
+        let patch = c.install(Corruption::ice_patch());
+        assert_eq!(c.realize().ice(), 12); // worm suppressed
         c.remove(patch);
-        assert_eq!(c.realize().firewall(), 7); // worm bites again once the patch is gone
+        assert_eq!(c.realize().ice(), 7); // worm bites again once the patch is gone
     }
 
     #[test]

@@ -1,7 +1,7 @@
 //! Cyberware implants — the augmentation bundle (`docs/cyberware.md`).
 //!
 //! An implant is an unconditional **benefit** + a standing **exposure**
-//! (Link / Firewall / weight) + a conditional **liability** (its
+//! (Link / Ice / weight) + a conditional **liability** (its
 //! [`hack_effects`](Implant::hack_effects), fired on breach — the §6 severity
 //! ladder, wired in a later phase). A unit's effective stat line is its chassis
 //! **base plus the sum of its active implants**: installing an implant *folds*
@@ -33,14 +33,14 @@ pub enum Pan {
 // generic `Decorator` ([`chargen::Condition`], `docs/layers.md` L5) — re-exported by
 // the crate root. An implant's `condition` field is its authored starting state.
 
-/// The stat deltas an implant folds into its owner while active. Link / Firewall
+/// The stat deltas an implant folds into its owner while active. Link / Ice
 /// are the digital surface (exposure + defense); plating / initiative / damage /
 /// max-Integrity the physical benefit. Weight folds in as **negative** initiative
 /// at build time.
 #[derive(Clone, Copy, Debug, Default)]
 pub struct Contribution {
     pub link: i32,
-    pub firewall: i32,
+    pub ice: i32,
     pub plating: f32,
     pub initiative: f32,
     pub damage: f32,
@@ -96,12 +96,12 @@ impl Implant {
     }
 
     /// A **cyberdeck** — grants the hack loadout and raises Link (the surface) +
-    /// Firewall. Breached ⇒ **Lockout** (the deck bricks; the hack drops on the
+    /// Ice. Breached ⇒ **Lockout** (the deck bricks; the hack drops on the
     /// disable). The roster's keystone link to `netrunning.md`.
     pub fn cyberdeck() -> Self {
         Self {
             name: "Cyberdeck",
-            contribution: Contribution { link: 5, firewall: 2, ..Default::default() },
+            contribution: Contribution { link: 5, ice: 2, ..Default::default() },
             grant_hack: Some(Hack::new(6, 1, 6)), // the hack capability; programs load onto the unit
             hack_effects: vec![StatusSpec::lockware()], // Lockout (placeholder)
             condition: Condition::Online,
@@ -165,12 +165,12 @@ impl Implant {
         }
     }
 
-    /// **Firewall suite** — +Firewall (the wall) + a little Link surface. Breached
+    /// **Ice suite** — +Ice (the wall) + a little Link surface. Breached
     /// ⇒ **Breach** (incoming-damage vulnerability).
-    pub fn firewall_suite() -> Self {
+    pub fn ice_suite() -> Self {
         Self {
-            name: "Firewall Suite",
-            contribution: Contribution { firewall: 4, link: 1, ..Default::default() },
+            name: "Ice Suite",
+            contribution: Contribution { ice: 4, link: 1, ..Default::default() },
             grant_hack: None,
             hack_effects: vec![StatusSpec::breach()], // Breach (vuln)
             condition: Condition::Online,
@@ -329,8 +329,8 @@ impl Implant {
         if c.link != 0 {
             factors.push(Factor::add(Stat::Link, c.link as f32));
         }
-        if c.firewall != 0 {
-            factors.push(Factor::add(Stat::Firewall, c.firewall as f32));
+        if c.ice != 0 {
+            factors.push(Factor::add(Stat::Ice, c.ice as f32));
         }
         if c.plating != 0.0 {
             factors.push(Factor::add(Stat::Plating, c.plating));
@@ -377,11 +377,11 @@ mod tests {
         assert_eq!(c.realize().plating(), 3.0);
     }
 
-    /// A blank chassis whose innate Firewall (9) is the netrunning baseline, so a
+    /// A blank chassis whose innate Ice (9) is the netrunning baseline, so a
     /// cyberdeck's +2 lands the unit at the even-odds wall (11).
     fn chassis() -> BaseLine {
         BaseLine {
-            firewall: 9.0,
+            ice: 9.0,
             body: 5.0, // Body 5 ⇒ 30 HP (max Integrity = Body × HP_PER_BODY)
             initiative: 5.0,
             damage: 10.0,
@@ -428,7 +428,7 @@ mod tests {
         c.install(Implant::cyberdeck().to_decorator());
         let r = c.realize();
         assert_eq!(r.link(), 5); // 0 base + 5
-        assert_eq!(r.firewall(), 11); // 9 base + 2
+        assert_eq!(r.ice(), 11); // 9 base + 2
         assert!(r.hack().is_some()); // the deck grants the loadout
     }
 
@@ -440,7 +440,7 @@ mod tests {
         c.set_condition(deck, Condition::Offline);
         let r = c.realize();
         assert_eq!(r.link(), 0); // surface gone
-        assert_eq!(r.firewall(), 9); // wall back to base
+        assert_eq!(r.ice(), 9); // wall back to base
         assert!(r.hack().is_none()); // deck bricked → no hack
     }
 
@@ -493,7 +493,7 @@ mod tests {
         c.fill();
         let r = c.realize();
         assert_eq!(r.link(), 5);
-        assert_eq!(r.firewall(), 11);
+        assert_eq!(r.ice(), 11);
         assert_eq!(r.plating(), 6.0);
         assert_eq!(r.initiative(), 9.0); // 5 base + 3 + 1
         assert_eq!(r.damage(), 14.0); // 10 base + 4

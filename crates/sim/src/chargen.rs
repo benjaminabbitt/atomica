@@ -61,7 +61,7 @@ impl Default for Priority {
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Stat {
     Link,
-    Firewall,
+    Ice,
     Initiative,
     Plating,
     Barrier,
@@ -76,7 +76,7 @@ pub enum Stat {
     /// Agility & coordination — governs Gunnery/Stealth/Evade, feeds Evasion & Initiative.
     /// **Reduced by heavy plating** (the armor tradeoff).
     Dexterity,
-    /// Wits & training — governs Hacking/Medical/Tech, feeds Firewall.
+    /// Wits & training — governs Hacking/Medical/Tech, feeds Ice.
     Intellect,
     /// Vitality & constitution (GURPS **HT**) — **biological resilience**: the stat poison, plague,
     /// and virus afflictions roll against (resist applies as a penalty to their attack), and that a
@@ -281,7 +281,7 @@ pub enum Reaction {
 pub enum Resist {
     #[default]
     None,
-    Firewall,
+    Ice,
     Health,
 }
 
@@ -360,14 +360,14 @@ pub enum Vector {
 
 /// A **contagion** riding a decorator (`docs/corruption.md`): each contagion phase it
 /// attempts to **jump** to fresh victims along its [`Vector`], a *contested* roll of its
-/// `virulence` vs the victim's `resist` stat (Health for a plague, Firewall for a
+/// `virulence` vs the victim's `resist` stat (Health for a plague, Ice for a
 /// worm). On a win the whole decorator **copies itself** onto the victim — so a
 /// contagion is self-replicating. Cleansed by the same tag-ward as any corruption.
 #[derive(Clone, Copy, Debug)]
 pub struct Contagion {
     /// The jump roll's attack rating (`2d10 ≤ virulence − resist`).
     pub virulence: i32,
-    /// The victim stat that defends each jump (`Stat::Health` / `Stat::Firewall`).
+    /// The victim stat that defends each jump (`Stat::Health` / `Stat::Ice`).
     pub resist: Stat,
     /// How it reaches candidates.
     pub vector: Vector,
@@ -546,7 +546,7 @@ impl Decorator {
 #[derive(Clone, Copy, Debug, Default)]
 pub struct BaseLine {
     pub link: f32,
-    pub firewall: f32,
+    pub ice: f32,
     pub initiative: f32,
     pub plating: f32,
     pub barrier: f32,
@@ -568,7 +568,7 @@ impl BaseLine {
     fn of(&self, stat: Stat) -> f32 {
         match stat {
             Stat::Link => self.link,
-            Stat::Firewall => self.firewall,
+            Stat::Ice => self.ice,
             Stat::Initiative => self.initiative,
             Stat::Plating => self.plating,
             Stat::Barrier => self.barrier,
@@ -650,8 +650,8 @@ impl Realized {
     pub fn link(&self) -> i32 {
         self.stat(Stat::Link).round() as i32
     }
-    pub fn firewall(&self) -> i32 {
-        self.stat(Stat::Firewall).round() as i32
+    pub fn ice(&self) -> i32 {
+        self.stat(Stat::Ice).round() as i32
     }
     /// The realized value of any [`Stat`] as an integer — the attribute lookup a skill's
     /// [`governs`](crate::Skill::governs) drives (effective rating = attribute + tier).
@@ -988,7 +988,7 @@ impl Character {
         // Resolve `Amount`s and resist TNs against a snapshot of the pre-dispatch
         // composed view (so every reaction this tick reads the same numbers).
         let view = self.realize();
-        let (max, fw, ht) = (view.max_integrity(), view.firewall(), view.health());
+        let (max, fw, ht) = (view.max_integrity(), view.ice(), view.health());
         let current = self.integrity;
         let resolve = |a: Amount| match a {
             Amount::Flat(v) => v,
@@ -1005,7 +1005,7 @@ impl Character {
             if let Some(gate) = d.gate {
                 let tn = match gate.resist {
                     Resist::None => 0,
-                    Resist::Firewall => fw,
+                    Resist::Ice => fw,
                     Resist::Health => ht,
                 };
                 let skill = gate.power + d.stacks as i32;
@@ -1258,7 +1258,7 @@ mod tests {
     fn base() -> BaseLine {
         BaseLine {
             link: 4.0,
-            firewall: 9.0,
+            ice: 9.0,
             initiative: 5.0,
             body: 5.0, // Body 5 ⇒ 30 max Integrity
             plating: 2.0,
@@ -1272,7 +1272,7 @@ mod tests {
         let c = Character::new(base());
         let r = c.realize();
         assert_eq!(r.link(), 4);
-        assert_eq!(r.firewall(), 9);
+        assert_eq!(r.ice(), 9);
         assert_eq!(r.max_integrity(), 30.0);
         assert_eq!(r.damage(), 10.0);
     }
@@ -1282,11 +1282,11 @@ mod tests {
         let mut c = Character::new(base());
         c.install(Decorator::gear(
             Tag::Implant,
-            vec![Factor::add(Stat::Link, 5.0), Factor::add(Stat::Firewall, 2.0)],
+            vec![Factor::add(Stat::Link, 5.0), Factor::add(Stat::Ice, 2.0)],
         ));
         let r = c.realize();
         assert_eq!(r.link(), 9); // 4 + 5
-        assert_eq!(r.firewall(), 11); // 9 + 2
+        assert_eq!(r.ice(), 11); // 9 + 2
     }
 
     #[test]
@@ -1390,15 +1390,15 @@ mod tests {
         // ward installed FIRST, infection AFTER — the standing ward still cleanses.
         let mut c = Character::new(base());
         c.install(Decorator::gear(Tag::Gear, vec![]).with_remove(Remove::Tag(Tag::Virus)));
-        c.install(Decorator::timed(Tag::Virus, 3, vec![Factor::add(Stat::Firewall, -3.0)]));
-        assert_eq!(c.realize().firewall(), 9); // cleansed despite arriving later
+        c.install(Decorator::timed(Tag::Virus, 3, vec![Factor::add(Stat::Ice, -3.0)]));
+        assert_eq!(c.realize().ice(), 9); // cleansed despite arriving later
 
         // and the other order: infection first, ward after.
         let mut d = Character::new(base());
-        d.install(Decorator::timed(Tag::Virus, 3, vec![Factor::add(Stat::Firewall, -3.0)]));
-        assert_eq!(d.realize().firewall(), 6);
+        d.install(Decorator::timed(Tag::Virus, 3, vec![Factor::add(Stat::Ice, -3.0)]));
+        assert_eq!(d.realize().ice(), 6);
         d.install(Decorator::gear(Tag::Gear, vec![]).with_remove(Remove::Tag(Tag::Virus)));
-        assert_eq!(d.realize().firewall(), 9);
+        assert_eq!(d.realize().ice(), 9);
     }
 
     #[test]
@@ -1489,7 +1489,7 @@ mod tests {
 
     #[test]
     fn a_stochastic_gate_fires_only_on_a_passing_roll() {
-        let mut c = Character::new(BaseLine { firewall: 4.0, body: 5.0, ..Default::default() });
+        let mut c = Character::new(BaseLine { ice: 4.0, body: 5.0, ..Default::default() });
         c.install(
             Decorator::status(Tag::Debuff, 1, Expiration::Duration(3), Wear::ByDuration)
                 .with_hook(
@@ -1500,9 +1500,9 @@ mod tests {
                         can_kill: true,
                     },
                 )
-                .with_gate(10, Resist::Firewall),
+                .with_gate(10, Resist::Ice),
         );
-        // versus (Firewall as a −penalty): target = (power 10 + 1 stack) − Firewall 4 = 7.
+        // versus (Ice as a −penalty): target = (power 10 + 1 stack) − Ice 4 = 7.
         // A high roll (2d10 = 12 > 7) misses → gated out, no reaction.
         let r = c.dispatch(Event::TickStart, 1, &mut crate::ScriptedRng::from_d10([6, 6]));
         assert!(r.is_empty());
