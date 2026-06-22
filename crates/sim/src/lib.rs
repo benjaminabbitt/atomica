@@ -480,8 +480,10 @@ impl Unit {
         self.character.base_mut().intellect = intellect;
         self
     }
-    pub fn with_health(mut self, health: f32) -> Self {
-        self.character.base_mut().health = health;
+    /// Set **Nerve** (will / composure) — feeds the 🔭 Resolve pool and the spoof/intimidation
+    /// resist. (Biological resilience is now **Body**; there is no separate Health/HT stat.)
+    pub fn with_nerve(mut self, nerve: f32) -> Self {
+        self.character.base_mut().nerve = nerve;
         self
     }
 
@@ -631,14 +633,14 @@ impl Unit {
     fn hack_reach(&self) -> i32 {
         self.link().max(0)
     }
-    /// Effective **Ice** (the digital TN, §13).
+    /// Effective **ICE** (the digital TN, §13).
     pub fn ice(&self) -> i32 {
         self.realized().ice()
     }
-    /// Effective **Health** (GURPS HT) — biological resilience; the bio TN poison / plague / virus
-    /// roll against (`docs/stats.md`).
-    pub fn health(&self) -> i32 {
-        self.realized().health()
+    /// Effective **Nerve** (will / composure) — the TN spoof / intimidation / Stress roll against,
+    /// and the stat the 🔭 Resolve pool derives from. (Bio resilience is now **Body**.)
+    pub fn nerve(&self) -> i32 {
+        self.realized().nerve()
     }
     /// Effective **Evasion** — the active-defense target a roll-under attack is opposed by
     /// (`docs/stats.md`): **derived** as `Dexterity + Evade-tier` (a *secondary* save, NOT on
@@ -728,8 +730,8 @@ impl Unit {
     pub fn intellect(&self) -> i32 {
         self.realized().intellect()
     }
-    // Health (the fourth primary, GURPS HT) is `health()` above, beside Ice — it's the bio
-    // resist TN as much as a primary attribute.
+    // Nerve (the fourth primary, will/composure) is `nerve()` above, beside Ice. Biological
+    // resilience is **Body** (`body()`) — there is no separate Health/HT stat any more.
 
     /// This unit's **effective rating** at `skill` rolled **off a chosen attribute** — the standard
     /// framework (`docs/stats.md`): a skill is a trained *tier* that lands on whichever attribute the
@@ -1790,7 +1792,7 @@ impl<R: RandomSource> Battle<R> {
 
     /// The **contagion phase** (`docs/corruption.md`) — every contagious corruption tries
     /// to **jump** to fresh victims along its [`Vector`]: a *contested* roll of the
-    /// carrier's `virulence` vs the victim's resist stat (Health / Ice). A win
+    /// carrier's `virulence` vs the victim's resist stat (Body / Ice). A win
     /// **copies the whole decorator** onto the victim; a unit already carrying that
     /// corruption is skipped (no re-infection / stacking), and jumps land *after* the
     /// scan, so a contagion spreads at most one hop per round (controlled exponential).
@@ -1840,13 +1842,13 @@ impl<R: RandomSource> Battle<R> {
 
     /// Can unit `j` **host** this contagion — carry it *and re-spread* it? "Target those
     /// who can spread it": a contagion only takes in a unit with the matching surface — a
-    /// **bio** strain (Health-resisted) needs a biological body; a **digital** one
+    /// **bio** strain (Body-resisted) needs a biological body; a **digital** one
     /// (Ice-resisted) needs a live net surface (`Link > 0`). A unit that can't host
     /// it is a dead end, so it's never infected.
     fn can_host(&self, j: usize, c: Contagion) -> bool {
         match c.resist {
             Stat::Ice => self.units[j].link() > 0,
-            Stat::Health => self.units[j].chassis.is_biological(),
+            Stat::Body => self.units[j].chassis.is_biological(),
             _ => true,
         }
     }
@@ -1859,11 +1861,11 @@ impl<R: RandomSource> Battle<R> {
         }
     }
 
-    /// Unit `j`'s value of a contagion-resist stat (only Health / Ice defend a jump).
+    /// Unit `j`'s value of a contagion-resist stat (only Body / Ice defend a jump).
     fn resist_of(&self, j: usize, resist: Stat) -> i32 {
         match resist {
             Stat::Ice => self.units[j].ice(),
-            _ => self.units[j].health(),
+            _ => self.units[j].body(),
         }
     }
 
@@ -2443,11 +2445,11 @@ mod tests {
     }
 
     #[test]
-    fn full_health_blocks_poison() {
+    fn high_body_blocks_poison() {
         let mut u = unit(0, Team::A, 0);
-        u.character.base_mut().health = 30.0; // a −30 penalty: target (power − 30) is hopeless
+        u.character.base_mut().body = 30.0; // a −30 penalty: target (power − 30) is hopeless
         // Scripted mid-rolls (no natural crit, which would auto-fire regardless): every tick
-        // the poison gate fails the Health check, so it never bites.
+        // the poison gate fails the Body check, so it never bites.
         let mut b = Battle::with_rng(vec![u], ScriptedRng::from_d10([5, 5, 5, 5, 5, 5, 5, 5, 5, 5]));
         b.units[0].add_status(StatusSpec::poison(), 5, 1);
         let before = b.units[0].character.integrity;
@@ -2504,9 +2506,9 @@ mod tests {
     #[test]
     fn injected_scripted_rng_forces_poison_to_fire() {
         let mut u = unit(0, Team::A, 0);
-        u.character.base_mut().health = 5.0; // a −5 resist penalty
+        u.character.base_mut().body = 5.0; // a −5 resist penalty
         u.add_status(StatusSpec::poison(), 5, 1);
-        // versus: target = (power 10 + 1 stack) − Health 5 = 6; 2d10 = 6 makes it ⇒ fires.
+        // versus: target = (power 10 + 1 stack) − Body 5 = 6; 2d10 = 6 makes it ⇒ fires.
         let mut b = Battle::with_rng(vec![u], ScriptedRng::from_d10([3, 3]));
         let before = b.units[0].character.integrity;
         b.status_phase();
@@ -2516,7 +2518,7 @@ mod tests {
     #[test]
     fn injected_scripted_rng_forces_poison_to_whiff() {
         let mut u = unit(0, Team::A, 0);
-        u.character.base_mut().health = 30.0; // resist TN out of reach
+        u.character.base_mut().body = 30.0; // resist TN out of reach
         u.add_status(StatusSpec::poison(), 5, 1);
         // 2d10 = 6, + power + stack = 10 < TN 30 ⇒ whiffs.
         let mut b = Battle::with_rng(vec![u], ScriptedRng::from_d10([3, 3]));
@@ -3000,11 +3002,11 @@ mod tests {
 
     #[test]
     fn a_plague_jumps_to_an_adjacent_victim() {
-        // Contagion phase: a virulent plague on a low-Health neighbour wins the jump
+        // Contagion phase: a virulent plague on an adjacent neighbour wins the jump
         // and copies itself over — the victim is now both sick *and* contagious.
         let mut carrier = unit(0, Team::B, 0);
-        carrier.apply_modifier(Corruption::plague(4.0, 3.0, 18, 5)); // virulent (18) vs Health 0
-        let victim = unit(1, Team::B, 1); // adjacent, default Health 0
+        carrier.apply_modifier(Corruption::plague(4.0, 3.0, 18, 5)); // virulent (18) — beats a normal Body
+        let victim = unit(1, Team::B, 1); // adjacent
         let bystander = unit(2, Team::B, 5); // far away — out of proximity
         let mut b = Battle::new(vec![carrier, victim, bystander], 7);
         b.contagion_phase();
@@ -3017,7 +3019,7 @@ mod tests {
     fn a_bio_plague_only_takes_those_who_can_host_it() {
         // "Target those who can spread it": a Virus needs a biological body. An adjacent
         // augmented neighbour catches it; an adjacent Machine (no body to carry / re-spread
-        // it) is a dead end and never infected — even at Health 0.
+        // it) is a dead end and never infected — regardless of its Body.
         let mut carrier = unit(0, Team::B, 0);
         carrier.apply_modifier(Corruption::plague(4.0, 3.0, 18, 5)); // virulent (18)
         let bio = unit(1, Team::B, 1); // augmented — a valid host
@@ -3033,7 +3035,7 @@ mod tests {
         // The plague's combat bite: a fever DoT (Internal — bypasses armor) damages the
         // host on the status tick, independent of any attacks.
         let mut tgt = unit(1, Team::B, 6); // far from the attacker — only the fever can hurt it
-        tgt.apply_modifier(Corruption::virus(0.0, 5.0, 5)); // 5/tick, no Health rot
+        tgt.apply_modifier(Corruption::virus(0.0, 5.0, 5)); // 5/tick, no Body attack
         let before = tgt.integrity();
         let mut b = Battle::new(vec![unit(0, Team::A, 0), tgt], 1);
         b.status_phase(); // the tick that fires DoTs
@@ -3065,13 +3067,13 @@ mod tests {
     }
 
     #[test]
-    fn health_resists_the_jump() {
-        // Same proximity, but a hardened constitution (high Health TN) beats the
+    fn body_resists_the_jump() {
+        // Same proximity, but a hardened frame (high Body TN) beats the
         // contest — a weak plague can't take hold.
         let mut carrier = unit(0, Team::B, 0);
         carrier.apply_modifier(Corruption::plague(4.0, 3.0, 2, 5)); // virulence 2 ⇒ target 2, barely ever spreads
         let mut victim = unit(1, Team::B, 1);
-        victim.character.base_mut().health = 30.0; // TN 30 — unbeatable here
+        victim.character.base_mut().body = 30.0; // TN 30 — unbeatable here
         let mut b = Battle::new(vec![carrier, victim], 7);
         b.contagion_phase();
         assert!(!b.units[1].character.carries("Virus")); // resisted

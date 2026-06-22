@@ -71,23 +71,31 @@ pub enum Stat {
     // and the combat stats derive from. ~1-8, competent baseline 5.
     /// Physical power & toughness — governs Melee/Heavy and **is** the unit's **HP**: max
     /// Integrity derives as `Body × HP_PER_BODY` (`docs/stats.md`), so wounds and toughness are one
-    /// stat. Also feeds damage. A heavy build raises Body for the HP, and hits harder for it.
+    /// stat. Also feeds melee damage — **and biological resilience**: the resist poison, plague, and
+    /// virus afflictions roll against (a penalty to their attack), and that a **virus attacks** (a
+    /// wasting bite — lowering Body drags Integrity/HP down with it). A heavy build raises Body for
+    /// the HP, hits harder for it, and shrugs off toxins for it.
     Body,
     /// Agility & coordination — governs Gunnery/Stealth/Evade, feeds Evasion & Initiative.
     /// **Reduced by heavy plating** (the armor tradeoff).
     Dexterity,
-    /// Wits & training — governs Hacking/Medical/Tech, feeds Ice.
+    /// Wits & training — governs Hacking/Medical/Tech, feeds ICE.
     Intellect,
-    /// Vitality & constitution (GURPS **HT**) — **biological resilience**: the stat poison, plague,
-    /// and virus afflictions roll against (resist applies as a penalty to their attack), and that a
-    /// virus *rots*. A tough constitution shrugs off toxins and infection (`docs/stats.md`).
-    Health,
+    /// Will & composure (genre's *Cool*) — feeds the **Resolve** pool (`Nerve × RESOLVE_PER_NERVE`)
+    /// and **is** the composure resist **spoof / intimidation / Stress** roll against. 🔭 The morale
+    /// layer (`docs/design-delta-v0.26.md` §4) is unbuilt; this is the attribute scaffold.
+    Nerve,
 }
 
 /// HP per point of **Body** (`docs/stats.md`) — the merge factor: max Integrity is `Body ×
 /// HP_PER_BODY`. An average build (Body ~10) carries ~60 HP; a bolted-down object scales Body up
 /// to whatever pool it needs. Placeholder tuning value (TBD).
 pub const HP_PER_BODY: f32 = 6.0;
+
+/// Resolve (the morale pool) per point of **Nerve** (`docs/stats.md` §6) — the mental mirror of
+/// [`HP_PER_BODY`]: max Resolve is `Nerve × RESOLVE_PER_NERVE`. 🔭 The Resolve pool / morale loop
+/// (Stress, Break) is unbuilt; this constant scaffolds the derivation. Placeholder tuning (TBD).
+pub const RESOLVE_PER_NERVE: f32 = 6.0;
 
 /// How a [`Factor`] combines with its peers — the **bucket** model (§2). `Add` and
 /// `Increased` are additive-safe (runaway-proof); `More` genuinely multiplies and is
@@ -281,8 +289,12 @@ pub enum Reaction {
 pub enum Resist {
     #[default]
     None,
+    /// Digital — Worm / hack gates (the ICE wall).
     Ice,
-    Health,
+    /// Biological — Virus / Poison / toxin gates roll against the **Body** attribute.
+    Body,
+    /// Behavioral — spoof / intimidation / Stress roll against **Nerve** (composure). 🔭
+    Nerve,
 }
 
 /// A **stochastic gate** (the status `behavior` axis): each tick the decorator rolls
@@ -360,14 +372,14 @@ pub enum Vector {
 
 /// A **contagion** riding a decorator (`docs/corruption.md`): each contagion phase it
 /// attempts to **jump** to fresh victims along its [`Vector`], a *contested* roll of its
-/// `virulence` vs the victim's `resist` stat (Health for a plague, Ice for a
+/// `virulence` vs the victim's `resist` stat (**Body** for a plague, **Ice** for a
 /// worm). On a win the whole decorator **copies itself** onto the victim — so a
 /// contagion is self-replicating. Cleansed by the same tag-ward as any corruption.
 #[derive(Clone, Copy, Debug)]
 pub struct Contagion {
     /// The jump roll's attack rating (`2d10 ≤ virulence − resist`).
     pub virulence: i32,
-    /// The victim stat that defends each jump (`Stat::Health` / `Stat::Ice`).
+    /// The victim stat that defends each jump (`Stat::Body` / `Stat::Ice`).
     pub resist: Stat,
     /// How it reaches candidates.
     pub vector: Vector,
@@ -551,11 +563,13 @@ pub struct BaseLine {
     pub plating: f32,
     pub barrier: f32,
     pub damage: f32,
-    /// **Primary attributes** (`docs/stats.md`) — Body / Dexterity / Intellect / Health.
+    /// **Primary attributes** (`docs/stats.md`) — Body / Dexterity / Intellect / Nerve. Body also
+    /// carries biological resilience (the bio resist; Health/Immunity folded in); Nerve feeds the
+    /// 🔭 Resolve pool and the composure resist.
     pub body: f32,
     pub dexterity: f32,
     pub intellect: f32,
-    pub health: f32,
+    pub nerve: f32,
     pub targeting: TargetingProfile,
     pub movement: MovementProfile,
     /// Innate netrunning doctrine — the digital behavior script; gear overrides it (last-wins).
@@ -576,7 +590,7 @@ impl BaseLine {
             Stat::Body => self.body,
             Stat::Dexterity => self.dexterity,
             Stat::Intellect => self.intellect,
-            Stat::Health => self.health,
+            Stat::Nerve => self.nerve,
         }
     }
 }
@@ -670,9 +684,10 @@ impl Realized {
     pub fn intellect(&self) -> i32 {
         self.stat(Stat::Intellect).round() as i32
     }
-    /// **Health** (GURPS HT) — biological resilience; the resist poison/plague/virus roll against.
-    pub fn health(&self) -> i32 {
-        self.stat(Stat::Health).round() as i32
+    /// **Nerve** — will / composure; the resist spoof / intimidation / Stress roll against, and the
+    /// stat the 🔭 Resolve pool derives from. (Bio resilience now lives on [`Self::body`].)
+    pub fn nerve(&self) -> i32 {
+        self.stat(Stat::Nerve).round() as i32
     }
     pub fn initiative(&self) -> f32 {
         self.stat(Stat::Initiative)
@@ -682,6 +697,12 @@ impl Realized {
     /// build) fattens the HP pool directly.
     pub fn max_integrity(&self) -> f32 {
         self.stat(Stat::Body) * HP_PER_BODY
+    }
+    /// Max **Resolve** (the morale pool) — *derived* from **Nerve**: `Nerve × RESOLVE_PER_NERVE`,
+    /// the mental mirror of [`Self::max_integrity`]. 🔭 The pool/Break loop (`design-delta` §4) is
+    /// unbuilt; this scaffolds the derivation so content can carry Nerve.
+    pub fn max_resolve(&self) -> f32 {
+        self.stat(Stat::Nerve) * RESOLVE_PER_NERVE
     }
     pub fn plating(&self) -> f32 {
         self.stat(Stat::Plating)
@@ -988,7 +1009,8 @@ impl Character {
         // Resolve `Amount`s and resist TNs against a snapshot of the pre-dispatch
         // composed view (so every reaction this tick reads the same numbers).
         let view = self.realize();
-        let (max, fw, ht) = (view.max_integrity(), view.ice(), view.health());
+        let (max, ice, body, nerve) =
+            (view.max_integrity(), view.ice(), view.body(), view.nerve());
         let current = self.integrity;
         let resolve = |a: Amount| match a {
             Amount::Flat(v) => v,
@@ -1005,8 +1027,9 @@ impl Character {
             if let Some(gate) = d.gate {
                 let tn = match gate.resist {
                     Resist::None => 0,
-                    Resist::Ice => fw,
-                    Resist::Health => ht,
+                    Resist::Ice => ice,
+                    Resist::Body => body,
+                    Resist::Nerve => nerve,
                 };
                 let skill = gate.power + d.stacks as i32;
                 if !resolve_versus(rng, skill, tn).success {

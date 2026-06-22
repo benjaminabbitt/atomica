@@ -57,8 +57,12 @@ pub enum Behavior {
 #[derive(Clone, Copy, Debug)]
 pub enum Resist {
     None,
-    Health,
+    /// Biological (Virus / Poison / toxin) — rolls against the **Body** attribute.
+    Body,
+    /// Digital (Worm / hack) — rolls against **ICE**.
     Ice,
+    /// Behavioral (spoof / intimidation / Stress) — rolls against **Nerve** (composure). 🔭
+    Nerve,
 }
 
 /// Axis: stacking — how a fresh application combines with an existing instance.
@@ -208,7 +212,8 @@ impl StatusSpec {
         }
     }
 
-    /// Poison — Internal DoT, *stochastic*, resisted by Health, no spread.
+    /// Poison — Internal DoT, *stochastic*, resisted by **Body**, no spread, **no stat attack**:
+    /// the pure-DoT sibling of the Virus (the burst, not the wasting). A softener (`PctCurrent`).
     pub fn poison() -> Self {
         Self {
             name: "Poison",
@@ -219,7 +224,7 @@ impl StatusSpec {
             stacking: Stacking::Refresh,
             behavior: Behavior::Stochastic { power: 10 }, // GURPS-scaled affliction potency
             targeting: Targeting::Enemy,
-            resist: Resist::Health,
+            resist: Resist::Body,
         }
     }
 
@@ -350,7 +355,8 @@ impl StatusSpec {
             let resist = match self.resist {
                 Resist::None => GenResist::None,
                 Resist::Ice => GenResist::Ice,
-                Resist::Health => GenResist::Health,
+                Resist::Body => GenResist::Body,
+                Resist::Nerve => GenResist::Nerve,
             };
             d = d.with_gate(power, resist);
         }

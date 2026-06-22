@@ -30,11 +30,12 @@ impl Corruption {
     }
 
     /// **Bio virus** — a biological corruption (`Tag::Virus`): a **fever DoT** of `dot`
-    /// each tick (Internal — it bypasses armor) that also rots **Health** by `health`
-    /// for `turns` (softening the host for the next strain). The DoT is the combat bite;
-    /// the Health rot is the snowball.
-    pub fn virus(health: f32, dot: f32, turns: u32) -> Decorator {
-        Decorator::timed(Tag::Virus, turns, vec![Factor::add(Stat::Health, -health)])
+    /// each tick (Internal — it bypasses armor) that **attacks Body** by `body` for `turns` (a
+    /// wasting bite). Because Body *is* the HP pool and the bio-resist, the attack drags Integrity
+    /// down *and* softens the host for the next strain. The DoT is the immediate bite; the Body
+    /// attack is the slow wasting.
+    pub fn virus(body: f32, dot: f32, turns: u32) -> Decorator {
+        Decorator::timed(Tag::Virus, turns, vec![Factor::add(Stat::Body, -body)])
             .with_label("Virus")
             .with_hook(
                 Event::TickStart,
@@ -43,12 +44,12 @@ impl Corruption {
     }
 
     /// **Plague** — a *contagious* virus (`docs/corruption.md`): the [`Self::virus`]
-    /// fever / Health-rot that also **spreads by proximity** (within 1 hex), each jump
-    /// a contest of `virulence` vs the victim's Health. Friend or foe — keep the
+    /// fever / Body-attack that also **spreads by proximity** (within 1 hex), each jump
+    /// a contest of `virulence` vs the victim's **Body**. Friend or foe — keep the
     /// infected isolated, because the fever rides along with it.
-    pub fn plague(health: f32, dot: f32, virulence: i32, turns: u32) -> Decorator {
-        Self::virus(health, dot, turns)
-            .with_contagion(Contagion { virulence, resist: Stat::Health, vector: Vector::Proximity(1) })
+    pub fn plague(body: f32, dot: f32, virulence: i32, turns: u32) -> Decorator {
+        Self::virus(body, dot, turns)
+            .with_contagion(Contagion { virulence, resist: Stat::Body, vector: Vector::Proximity(1) })
     }
 
     /// **Worm swarm** — a *contagious* worm: the [`Self::worm`] Ice-rot that also
@@ -78,7 +79,7 @@ mod tests {
     use crate::chargen::{BaseLine, Character};
 
     fn base() -> BaseLine {
-        BaseLine { ice: 12.0, health: 10.0, ..BaseLine::default() }
+        BaseLine { ice: 12.0, body: 10.0, ..BaseLine::default() }
     }
 
     #[test]
@@ -87,7 +88,7 @@ mod tests {
         assert_eq!(c.realize().ice(), 12);
         c.install(Corruption::worm(5.0, 3));
         assert_eq!(c.realize().ice(), 7); // wall pried open — a hack lands easier
-        // A ice patch is a ward: it strips Worm-tagged modifiers while installed.
+        // An ICE patch is a ward: it strips Worm-tagged modifiers while installed.
         let patch = c.install(Corruption::ice_patch());
         assert_eq!(c.realize().ice(), 12); // worm suppressed
         c.remove(patch);
@@ -99,7 +100,7 @@ mod tests {
         // The contagious variant is the virus debuff plus a Contagion the phase reads.
         let mut c = Character::new(base());
         c.install(Corruption::plague(4.0, 2.0, 6, 5));
-        assert_eq!(c.realize().health(), 6); // still rots Health like a plain virus
+        assert_eq!(c.realize().body(), 6); // attacks Body (10 → 6) — wasting, drags HP with it
         assert_eq!(c.active_contagions().len(), 1); // and it's a spread source
         // The plain virus is *not* contagious — single-target corruption.
         let mut d = Character::new(base());
@@ -110,11 +111,11 @@ mod tests {
     #[test]
     fn an_antivirus_strips_only_viruses_not_buffs() {
         let mut c = Character::new(base());
-        c.install(Corruption::virus(4.0, 2.0, 3)); // Health 10 → 6
+        c.install(Corruption::virus(4.0, 2.0, 3)); // attacks Body 10 → 6
         // a friendly Buff on the same stat — the antivirus must NOT touch it.
-        c.install(Decorator::timed(Tag::Buff, 9, vec![Factor::add(Stat::Health, 3.0)]));
-        assert_eq!(c.realize().health(), 9); // 10 − 4 + 3
+        c.install(Decorator::timed(Tag::Buff, 9, vec![Factor::add(Stat::Body, 3.0)]));
+        assert_eq!(c.realize().body(), 9); // 10 − 4 + 3
         c.install(Corruption::antivirus());
-        assert_eq!(c.realize().health(), 13); // virus gone, buff kept (10 + 3)
+        assert_eq!(c.realize().body(), 13); // virus gone, buff kept (10 + 3)
     }
 }

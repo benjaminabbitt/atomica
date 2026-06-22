@@ -46,15 +46,15 @@ pub struct Contribution {
     pub damage: f32,
     /// **Primary attributes** (`docs/stats.md`) — a *stat-up* implant lifts an attribute, so every
     /// skill on it climbs at once: **Body** (Melee/Heavy **and HP** — Integrity is `Body ×
-    /// HP_PER_BODY`, so the *actuators* / *decentralized heart* fatten the pool too), **Dexterity**
-    /// (Gunnery/Stealth/Evade, so Evasion — *wired reflexes*), **Intellect** (Hacking/Medical/Tech —
-    /// the *neural net*), **Health** (GURPS HT — biological resilience; *immuno-chrome* hardens it).
-    /// The other combat pools (damage / initiative) are their own fields above — *rams* lift
+    /// HP_PER_BODY`, so the *actuators* / *decentralized heart* fatten the pool too — *and* the bio
+    /// resist), **Dexterity** (Gunnery/Stealth/Evade, so Evasion — *wired reflexes*), **Intellect**
+    /// (Hacking/Medical/Tech — the *neural net*), **Nerve** (will/composure; *cortex-steel* steadies
+    /// it). The other combat pools (damage / initiative) are their own fields above — *rams* lift
     /// `damage`, *speedware* lifts `initiative`.
     pub body: i32,
     pub dexterity: i32,
     pub intellect: i32,
-    pub health: i32,
+    pub nerve: i32,
 }
 
 /// A cyberware implant (`docs/cyberware.md` §1): a bundle of stat contributions,
@@ -350,8 +350,8 @@ impl Implant {
         if c.intellect != 0 {
             factors.push(Factor::add(Stat::Intellect, c.intellect as f32));
         }
-        if c.health != 0 {
-            factors.push(Factor::add(Stat::Health, c.health as f32));
+        if c.nerve != 0 {
+            factors.push(Factor::add(Stat::Nerve, c.nerve as f32));
         }
         let mut d = Decorator::gear(Tag::Implant, factors).with_condition(self.condition);
         if let Some(h) = self.grant_hack {

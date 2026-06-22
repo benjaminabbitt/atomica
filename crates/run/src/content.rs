@@ -96,12 +96,13 @@ fn smart(mut a: Attack) -> Attack {
 fn body(name: &str, hp: f32, init: f32) -> Unit {
     // GURPS-10 baseline for the non-toughness attributes; **Body is HP-derived** now (`docs/stats.md`
     // — Integrity = Body × HP_PER_BODY), so `with_integrity(hp)` *is* the Body setter and a heavier
-    // unit (more HP ⇒ more Body) also hits harder in melee. Evasion = Dexterity + Evade-tier (Evade
-    // untrained −4 ⇒ a non-dodger sits at Dex − 4, a secondary save).
+    // unit (more HP ⇒ more Body) also hits harder in melee *and shrugs off toxins harder* (Body is
+    // the bio-resist now — Health folded in). Nerve (will/composure) holds the GURPS-10 baseline for
+    // the 🔭 morale layer. Evasion = Dexterity + Evade-tier (Evade untrained −4 ⇒ Dex − 4).
     Unit::new(0, name, Team::A, Chassis::Augmented)
         .with_dexterity(10.0)
         .with_intellect(10.0)
-        .with_health(10.0)
+        .with_nerve(10.0)
         .with_initiative(init)
         .with_integrity(hp) // sets Body = hp / HP_PER_BODY (last, so it owns Body)
 }
