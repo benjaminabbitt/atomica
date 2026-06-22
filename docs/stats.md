@@ -251,3 +251,8 @@ Illustrative bands on the 2d10 scale:
 The flatter curve means **bigger skill *gaps*** read as advantage (a +4 effective
 edge is ~30 points of hit-rate), where 3d6 rewarded tighter ones. Tuning is now a
 gentle knob rather than a cliff (§1).
+
+> **Beyond per-roll calibration**, the model leans on *emergent* meta-balance
+> (Body-vs-Dex builds, machine-glass, the drone dark/loud trade). Those watch-items —
+> with their healthy bands and probe signals — live in
+> [`balance-watch.md`](balance-watch.md).
