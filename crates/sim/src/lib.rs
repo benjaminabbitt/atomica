@@ -410,6 +410,11 @@ pub struct Unit {
     pub on_death: DeathTrigger,
     /// Has the death trigger already fired? (Set by the reaper so it fires once.)
     pub death_resolved: bool,
+    /// **Active Guard** target (`netrunning.md` §2): the id of the covered ally this runner is
+    /// currently screening, set on its digital activation under the **Sentinel** doctrine and read
+    /// by [`Battle::net_defense`]. `None` ⇒ not guarding. Single-focus (one ally), refreshed each of
+    /// the runner's turns; costs that activation (it doesn't hack while guarding).
+    pub guarding: Option<u32>,
 }
 
 impl Unit {
@@ -434,6 +439,7 @@ impl Unit {
             character,
             on_death: DeathTrigger::None,
             death_resolved: false,
+            guarding: None,
         }
     }
 
@@ -988,6 +994,11 @@ const WORM_PROGRAM_TURNS: u32 = 4;
 /// **Spoof** / **Misfire** scramble durations (targeting vs movement).
 const SPOOF_DURATION: u32 = 3;
 const MISFIRE_DURATION: u32 = 2;
+/// **Composure attack rating** for a behavioral hijack (Spoof / Misfire). The breach already cracked
+/// the **system** (ICE); the hijack must still beat the **self** — a `2d10 ≤ SPOOF_POWER − Nerve`
+/// composure contest (`docs/netrunning.md`: *ICE guards the system, Nerve guards the self*). A
+/// Nerve-0 chassis (a machine) is spoofed freely; a steady mind throws it off. Placeholder (TBD).
+const SPOOF_POWER: i32 = 12;
 /// **Logicbomb** — the floor degrade a planted bomb fires past the disable floor.
 const LOGICBOMB_DEGRADE: u32 = 2;
 /// **Body → melee damage** (`docs/stats.md`): Body above this baseline lends `BODY_MELEE_DAMAGE`
@@ -1895,12 +1906,42 @@ impl<R: RandomSource> Battle<R> {
         }
     }
 
-    /// One unit's **digital** activation (§10.8): hack the nearest reachable enemy.
+    /// One unit's **digital** activation (§10.8). Under the **Sentinel** doctrine (`netrunning.md`
+    /// §3) the runner spends the activation on an active **Guard** — walling its most-exposed covered
+    /// ally instead of hacking (it doesn't dive); if there's no one to cover it falls through to a
+    /// normal hack. Every other doctrine **hacks the most-preferred reachable enemy**.
     /// (Caller has already gated alive / not-stunned and the Link-presence filter.)
     fn digital_activation(&mut self, i: usize) {
+        // Re-decide the Guard each turn (single-focus, refreshed): clear, then re-set if Sentinel.
+        self.units[i].guarding = None;
+        if self.units[i].doctrine() == NetDoctrine::Sentinel {
+            self.units[i].guarding = self.most_threatened_ally(i);
+            if self.units[i].guarding.is_some() {
+                return; // the Guard *is* the activation — no hack this turn
+            }
+        }
         if let Some(target) = self.nearest_hackable_enemy(i) {
             self.resolve_hack(i, target);
         }
+    }
+
+    /// The covered ally a guardian `i` should screen (`netrunning.md` §2) — the **most exposed**
+    /// hackable ally in its antenna reach (lowest own ICE = weakest wall), nearest then by id to
+    /// break ties. `None` if it covers no one. **Single-focus**: a wide swarm forces triage.
+    fn most_threatened_ally(&self, i: usize) -> Option<u32> {
+        let me = &self.units[i];
+        let range = me.hack_reach();
+        self.units
+            .iter()
+            .filter(|u| {
+                u.id != me.id
+                    && u.is_alive()
+                    && u.team == me.team
+                    && u.link() > 0 // only a hackable ally needs (or can use) a wall
+                    && me.pos.distance(u.pos) <= range
+            })
+            .min_by_key(|u| (u.ice(), me.pos.distance(u.pos), u.id.0))
+            .map(|u| u.id.0)
     }
 
     /// The **woven** activation order (§7C/§10.3): every living unit contributes a
@@ -2012,23 +2053,29 @@ impl<R: RandomSource> Battle<R> {
         }
     }
 
-    /// The best **net defense** available to `target`'s side (`netrunning.md` §2) — the value
-    /// a hack is opposed by. It's the highest of: the target's passive **Ice**; its own
-    /// **Hacking**, if the target is itself a runner (it parries code with code); and the
-    /// **Hacking of any allied netrunner covering it** — a living ally with a deck (Link > 0)
-    /// whose antenna reach spans the target, so a runner can actively defend a **node it
-    /// controls**. `≤ 0` ⇒ an undefended surface (no active defense, no defender roll).
+    /// The best **net defense** available to `target` (`netrunning.md` §2) — the value a hack is
+    /// opposed by. The two **passive**, always-free sources: the target's own **Ice**, and — if it
+    /// is itself a runner — its own **Hacking** (it parries code with code, so netrunners are
+    /// innately hard to hack). Projecting a runner's skill onto *someone else* is **not** passive:
+    /// an allied runner only walls this target if it spent an active **Guard** on it
+    /// ([`Unit::guarding`] = this id), single-focus and costing that runner its activation. Kill the
+    /// guardian and the target drops to its own wall. `≤ 0` ⇒ undefended (no defender roll).
     fn net_defense(&self, target: usize) -> i32 {
         let t = &self.units[target];
         let mut d = t.ice();
         if t.hack().is_some() {
             d = d.max(t.effective_skill(Skill::Hacking));
         }
-        for (i, ally) in self.units.iter().enumerate() {
-            if i == target || ally.team != t.team || !ally.is_alive() {
+        for ally in self.units.iter() {
+            if ally.id == t.id || ally.team != t.team || !ally.is_alive() {
                 continue;
             }
-            if ally.hack().is_some() && ally.link() > 0 && ally.pos.distance(t.pos) <= ally.hack_reach() {
+            // Active Guard: the ally is *guarding this target* and can still reach it with a deck.
+            if ally.guarding == Some(t.id.0)
+                && ally.hack().is_some()
+                && ally.link() > 0
+                && ally.pos.distance(t.pos) <= ally.hack_reach()
+            {
                 d = d.max(ally.effective_skill(Skill::Hacking));
             }
         }
@@ -2151,6 +2198,7 @@ impl<R: RandomSource> Battle<R> {
             NetDoctrine::Saboteur => &[Breach, Decrypt, Worm, Blind],
             NetDoctrine::Controller => &[Spoof, Misfire, Lag],
             NetDoctrine::Defender => &[Crash, Lag, Breach],
+            NetDoctrine::Sentinel => &[], // guards, doesn't dive — fallback hack uses REST
         };
         let mut order = [Crash; 11];
         let mut n = 0;
@@ -2170,6 +2218,11 @@ impl<R: RandomSource> Battle<R> {
     /// non-rider programs are handled on their own seams.)
     fn deploy_rider(&mut self, target: usize, rider: Program, outcome: &RollOutcome) {
         let burn = hack::margin_stacks(outcome.margin);
+        // A **behavioral** hijack (Spoof / Misfire) faces a second wall — composure (**Nerve**), not
+        // ICE: the breach cracked the *system*, but corrupting the *self* is its own contest
+        // (`netrunning.md`). Rolled once here; a Nerve-0 chassis folds, a steady mind shrugs it off.
+        let behavioral_holds = matches!(rider, Program::Spoof | Program::Misfire)
+            && !resolve_versus(&mut self.rng, SPOOF_POWER, self.units[target].nerve()).success;
         let t = &mut self.units[target];
         match rider {
             Program::Overheat => t.add_status(StatusSpec::overheat(), OVERHEAT_DURATION, burn),
@@ -2203,18 +2256,21 @@ impl<R: RandomSource> Battle<R> {
                     WORM_PROGRAM_TURNS,
                 ));
             }
-            // Corrupt the targeting script — chase the back line (waste the activation).
-            Program::Spoof => {
+            // Corrupt the targeting script — chase the back line (waste the activation). Composure
+            // (Nerve) can throw it off even after the breach lands.
+            Program::Spoof if !behavioral_holds => {
                 t.spoof(TargetingProfile::Backline, SPOOF_DURATION);
             }
-            // Corrupt the movement routine — back off / break contact for a beat.
-            Program::Misfire => {
+            // Corrupt the movement routine — back off / break contact for a beat. Nerve-resisted.
+            Program::Misfire if !behavioral_holds => {
                 t.apply_modifier(
                     Decorator::timed(Tag::Spoof, MISFIRE_DURATION, vec![])
                         .with_priority(Priority::CORRUPTION)
                         .with_override(Override::Movement(MovementProfile::Kite)),
                 );
             }
+            // Composure held — the hijack cracked the system but not the self (no behavior change).
+            Program::Spoof | Program::Misfire => {}
             // Not a rider — selected only from the rider set, so this is unreachable.
             Program::Lockware
             | Program::Cascade
@@ -2364,6 +2420,7 @@ impl<R: RandomSource> Battle<R> {
                 -(u.weapon_at_any().map_or(0.0, |w| w.damage) as i32) // biggest threat first
             }
             NetDoctrine::Defender => i32::from(u.hack().is_none()), // enemy runners first
+            NetDoctrine::Sentinel => 0, // defensive — only reaches here on the no-one-to-guard fallback
         }
     }
 }
@@ -3573,8 +3630,10 @@ mod tests {
         tgt.character.base_mut().link = 8.0;
         tgt.character.base_mut().ice = 0.0; // undefended ⇒ a clean attacker-only roll
         setup(&mut tgt);
-        // rating 12, dice 4 ⇒ margin 8 (a solid breach, not a crit).
-        let mut b = Battle::with_rng(vec![atk, tgt], ScriptedRng::from_d10([1, 3]));
+        // rating 12, dice 4 ⇒ margin 8 (a solid breach, not a crit). The trailing [1,3] feeds the
+        // Spoof/Misfire composure roll (4 ≤ SPOOF_POWER 12 − Nerve 0 ⇒ the hijack lands); other
+        // riders leave it unconsumed.
+        let mut b = Battle::with_rng(vec![atk, tgt], ScriptedRng::from_d10([1, 3, 1, 3]));
         b.resolve_hack(0, 1);
         b
     }
@@ -3647,12 +3706,59 @@ mod tests {
 
     #[test]
     fn spoof_and_misfire_corrupt_the_behavior_script() {
-        // Spoof flips targeting to Backline (chase the wrong enemy).
+        // Spoof flips targeting to Backline (chase the wrong enemy). Target Nerve 0 ⇒ no composure.
         let spoof = solid_breach(Programs::just(Program::Spoof), |_| {});
         assert_eq!(spoof.units[1].targeting(), TargetingProfile::Backline);
         // Misfire scrambles movement to Kite (break contact for a beat).
         let misfire = solid_breach(Programs::just(Program::Misfire), |_| {});
         assert_eq!(misfire.units[1].movement(), MovementProfile::Kite);
+    }
+
+    #[test]
+    fn composure_nerve_resists_a_spoof_after_the_breach() {
+        // *ICE guards the system, Nerve guards the self*: the breach cracks ICE 0, but a steady
+        // mind (Nerve 12 ⇒ composure target SPOOF_POWER 12 − 12 = 0) throws off the hijack.
+        let mut atk = unit(0, Team::A, 0);
+        atk.character.base_mut().link = 8.0;
+        atk.character.base_mut().intellect = 10.0;
+        atk.skills.set(Skill::Hacking, 6);
+        atk.grant_hack(Hack::new(6, 1, 6));
+        atk.programs = Programs::just(Program::Spoof);
+        let mut tgt = unit(1, Team::B, 1);
+        tgt.character.base_mut().link = 8.0;
+        tgt.character.base_mut().ice = 0.0;
+        tgt.character.base_mut().nerve = 12.0;
+        // hack [1,3]=4 ⇒ solid breach; composure [5,6]=11 > 0 ⇒ the self holds (no spoof lands).
+        let mut b = Battle::with_rng(vec![atk, tgt], ScriptedRng::from_d10([1, 3, 5, 6]));
+        assert!(b.resolve_hack(0, 1).landed()); // system cracked
+        assert_ne!(b.units[1].targeting(), TargetingProfile::Backline); // but behavior intact
+    }
+
+    #[test]
+    fn an_active_guard_walls_a_drone_at_the_guardians_skill() {
+        // A drone's weak own wall (ICE 2) is screened by an allied runner that spent a Guard on it:
+        // net defense reads the guardian's Hacking (10). Drop the guardian and it falls to ICE 2.
+        let enemy = runner(0, Team::A, 0, 6);
+        let drone = networked(1, Team::B, 1, 2); // own ICE 2
+        let mut guardian = runner(2, Team::B, 1, 6); // eff Hacking 11 (Intellect 10 + Augmented 1)
+        guardian.guarding = Some(1); // actively guarding the drone (id 1) — single focus
+        let mut b = Battle::new(vec![enemy, drone, guardian], 1);
+        assert_eq!(b.net_defense(1), 11); // the guardian's skill walls the drone
+        b.units[2].character.alive = false; // guardian down
+        assert_eq!(b.net_defense(1), 2); // the drone drops to its own wall
+    }
+
+    #[test]
+    fn a_sentinel_spends_its_turn_guarding_not_hacking() {
+        // The Sentinel doctrine doesn't dive — its digital activation walls the most-exposed
+        // covered ally instead of hacking the enemy.
+        let enemy = networked(0, Team::A, 0, 0); // undefended — would be hacked if it dived
+        let drone = networked(1, Team::B, 1, 2); // the covered ally to screen
+        let sentinel = runner(2, Team::B, 1, 6).with_doctrine(NetDoctrine::Sentinel);
+        let mut b = Battle::new(vec![enemy, drone, sentinel], 1);
+        b.digital_activation(2); // the sentinel's net turn
+        assert_eq!(b.units[2].guarding, Some(1)); // guarded the drone…
+        assert!(!has_status(&b.units[0], "Lockware")); // …and did NOT hack the enemy
     }
 
     #[test]
@@ -3751,7 +3857,8 @@ mod tests {
         tgt.character.base_mut().link = 8.0;
         tgt.character.base_mut().ice = 0.0;
         setup(&mut tgt);
-        let mut b = Battle::with_rng(vec![atk, tgt], ScriptedRng::from_d10([1, 3])); // margin 8
+        // margin 8; trailing [1,3] feeds a Spoof/Misfire composure roll (vs Nerve 0 ⇒ lands).
+        let mut b = Battle::with_rng(vec![atk, tgt], ScriptedRng::from_d10([1, 3, 1, 3]));
         b.resolve_hack(0, 1);
         b
     }

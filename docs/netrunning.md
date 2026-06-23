@@ -61,20 +61,20 @@ breach lands = runner succeeds AND ICE fails
   ≤ 0) skips the defense roll. **Link-blind on defense** — the target's Link enters
   the *attack* (the channel), never the wall, so a **darker target is harder to
   hack** while a **juicy high-Link target is easier**.
-- **Net defense — passive parry + active Guard** ◆ (`Battle::net_defense`). A unit's
+- **Net defense — passive parry + active Guard** ✅ (`Battle::net_defense`). A unit's
   wall is the **highest** of two *passive*, always-free sources: its own passive
   **ICE**, and — if it is itself a runner — its own **Hacking** (it parries code with
   code, which is why netrunners are innately hard to hack). **Projecting** that skill
   onto *someone else* is **not** free: a runner screens a **covered ally** (a drone, or
-  a [`Datamine`] node in antenna reach) only by spending an active **Guard** — an
-  action that **costs the runner its next initiative** (it doesn't hack that
-  activation) and walls **one focus** until its next turn. So a rigger can shield the
-  swarm *or* attack, never both; merely **threatening** the drones taxes the runner's
-  tempo, and a wide swarm forces triage (one Guard, one drone). Kill the guarding
-  runner and every drone drops to its own (≈zero) wall. *(Engine note: `net_defense`
-  today folds a covering ally's Hacking in **passively** — recasting that as an
-  initiative-costed, single-focus Guard is a 🔭 change pending the reconciliation pass;
-  passive ICE + self-parry stay ✅.)*
+  a [`Datamine`] node in antenna reach) only by spending an active **Guard** — set on
+  its digital activation under the **Sentinel** doctrine ([`Unit::guarding`]), which
+  **costs that activation** (it doesn't hack) and walls **one focus** until its next
+  turn. So a rigger can shield the swarm *or* attack, never both; merely **threatening**
+  the drones taxes the runner's tempo, and a wide swarm forces triage (one Guard, one
+  drone — `Battle::most_threatened_ally` picks the most-exposed). Kill the guarding
+  runner and every drone drops to its own (≈zero) wall. *(Built: the covering ally's
+  skill now counts only while it is actively guarding the target — the old free passive
+  `max()` is gone.)*
 - **Equipment arms the roll through the stats, not a separate term** ◆ — a
   cyberdeck raises **Link**, a skill-chip raises **Hacking**, an ICE implant
   raises **ICE**. There is no separate roll term — the stats *are* the contest
@@ -141,11 +141,17 @@ built and tested:
 | **Worm** | rider (spread) | deploys a **contagious** ICE-melt (`Corruption::worm_swarm`) that rides the net to nearby surfaces | solid |
 | **Cascade** | breach modifier | forces a **meshed** target's breach to trip **every** implant (not just on a crit) | solid + meshed |
 | **Logicbomb** | breach modifier | force-fires the tripped chrome's degrade liabilities **past the disable floor** | success (chrome) |
-| **Spoof** | rider (hijack) | corrupts the target's **targeting** script (`CORRUPTION` override) — it chases the wrong enemy | solid |
-| **Misfire** | rider (hijack) | corrupts the target's **movement** routine — it backs off / scatters for a beat | solid |
+| **Spoof** | rider (hijack) | corrupts the target's **targeting** script (`CORRUPTION` override) — it chases the wrong enemy | solid **+ Nerve** ✅ |
+| **Misfire** | rider (hijack) | corrupts the target's **movement** routine — it backs off / scatters for a beat | solid **+ Nerve** ✅ |
 | **Honeypot** | defensive | counter-ICE: a **repelled** intruder (a hack that fails) gets its deck fried (a lockout DoT) | on a failed hack vs the owner |
 | **Ghost** | defensive | a stealth suite — the owner reads **darker**, a flat bonus to its `net_defense` | passive |
 | **Antivirus** | defensive | a standing ward — strips **worm** corruption off the owner each tick (the `ward_phase`) | passive (per tick) |
+
+**The behavioral hijacks face a second wall — composure (Nerve) ✅.** Spoof and Misfire corrupt the
+*self*, not the system, so after the breach cracks **ICE** they roll a separate composure contest
+(`2d10 ≤ SPOOF_POWER − Nerve`, `deploy_rider`): *ICE guards the system, Nerve guards the self.* A
+steady mind shrugs the hijack off even on a clean breach; a **Nerve-0 machine** is corrupted freely —
+which is exactly why a netrunner's own drones are the juicy target (`docs/balance-watch.md`).
 
 Two **intrinsic** breach effects are always there, program or no:
 
@@ -173,7 +179,7 @@ Datamine node) always outranks the doctrine's own lean.
 | **Saboteur** | the biggest gun | Breach → Decrypt → Worm → Blind |
 | **Controller** | the biggest gun | Spoof → Misfire → Lag |
 | **Defender** | enemy **runners** (kill the active defense) | Crash → Lag → Breach |
-| **Sentinel** 🔭 | doesn't dive — screens the most-threatened **covered ally** | **Guard** (spend init to wall one drone/node) |
+| **Sentinel** ✅ | doesn't dive — screens the most-threatened **covered ally** | **Guard** (spend init to wall one drone/node) |
 
 **Sentinel** is the **defensive** posture — the mirror of **Defender**. Where Defender
 *attacks* the enemy's runner to remove a wall, Sentinel *spends* its own turns walling
@@ -244,7 +250,7 @@ loadout**, not classes.
 | Counter | What | Status |
 |---|---|---|
 | **ICE** | the digital defense roll — raise it with implants | ✅ |
-| **Active Guard** | a runner spends an activation (its **next initiative**) to project its Hacking as **one** covered ally's wall — screen a drone / node at the cost of its own offense; the **Sentinel** doctrine (§3) | 🔭 (recast from passive) |
+| **Active Guard** | a runner spends an activation to project its Hacking as **one** covered ally's wall — screen a drone / node at the cost of its own offense; the **Sentinel** doctrine (§3) | ✅ |
 | **Go dark / zero Link** | total digital immunity, total digital isolation | ✅ (the gate) |
 | **Masking (low Link)** | smaller surface ⇒ harder to hack / lower worm-catch, less throughput | 🔭 (link-effect) |
 | **White-hat mender** | cleanse Worm; restore ICE / Link | 🔭 |

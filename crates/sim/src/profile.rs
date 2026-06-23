@@ -68,4 +68,9 @@ pub enum NetDoctrine {
     /// counter-hacker) and leads with lock-down (Crash / Lag); pairs with the passive wards
     /// (Honeypot / Ghost / Antivirus).
     Defender,
+    /// **Sentinel** — *don't dive, screen*. The defensive posture (`netrunning.md` §3): instead of
+    /// hacking, the runner spends its digital activation on an active **Guard**, walling the most
+    /// exposed **covered ally** (a drone / node) with its own Hacking — single-focus, until its next
+    /// turn. Trades all offense for protection; the mirror of Defender. 🔭
+    Sentinel,
 }
