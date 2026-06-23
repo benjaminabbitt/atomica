@@ -51,7 +51,7 @@ pub use event::{BreachVector, CombatEvent, EventLog, FieldValue, Record};
 pub use hack::{hack_rating, Hack, HackResult, Program, Programs};
 pub use hex::Hex;
 pub use implant::{Contribution, Implant, Pan};
-pub use profile::{MovementProfile, NetDoctrine, TargetingProfile};
+pub use profile::{BreakMode, MovementProfile, NetDoctrine, TargetingProfile};
 pub use objective::{
     FoundAction, Goal, Hold, MarginLoss, Objective, ObjectiveKind, ObjectiveStatus, Objectives,
     Reach, Survive, TimeAttack, WinFight, PLAYER,
@@ -410,6 +410,9 @@ pub struct Unit {
     pub on_death: DeathTrigger,
     /// Has the death trigger already fired? (Set by the reaper so it fires once.)
     pub death_resolved: bool,
+    /// How this unit **breaks** at Resolve 0 (§4): Steadfast → rout, Feral → berserk. Machines
+    /// (Nerve 0) are morale-immune regardless.
+    pub break_mode: BreakMode,
     /// **Active Guard** target (`netrunning.md` §2): the id of the covered ally this runner is
     /// currently screening, set on its digital activation under the **Sentinel** doctrine and read
     /// by [`Battle::net_defense`]. `None` ⇒ not guarding. Single-focus (one ally), refreshed each of
@@ -439,6 +442,7 @@ impl Unit {
             character,
             on_death: DeathTrigger::None,
             death_resolved: false,
+            break_mode: BreakMode::default(),
             guarding: None,
         }
     }
@@ -644,9 +648,31 @@ impl Unit {
         self.realized().ice()
     }
     /// Effective **Nerve** (will / composure) — the TN spoof / intimidation / Stress roll against,
-    /// and the stat the 🔭 Resolve pool derives from. (Bio resilience is now **Body**.)
+    /// and the stat the Resolve pool derives from. (Bio resilience is now **Body**.)
     pub fn nerve(&self) -> i32 {
         self.realized().nerve()
+    }
+    /// Max **Resolve** — the morale pool, `Nerve × RESOLVE_PER_NERVE` (§4). `0` ⇒ morale-immune.
+    pub fn max_resolve(&self) -> f32 {
+        self.realized().max_resolve()
+    }
+    /// Current **Resolve** (the live morale pool).
+    pub fn resolve(&self) -> f32 {
+        self.character.resolve
+    }
+    /// Has this unit **Broken** (Resolve hit 0 — rout / berserk by its [`break_mode`](Unit::break_mode))?
+    pub fn is_broken(&self) -> bool {
+        self.character.broken
+    }
+    /// Apply `amount` **Stress** to Resolve (§4). Morale-immune units (Nerve 0) ignore it. Returns
+    /// whether it **broke** on this call.
+    pub fn apply_stress(&mut self, amount: f32) -> bool {
+        self.character.apply_stress(amount)
+    }
+    /// Builder: set the **break mode** (Steadfast → rout, Feral → berserk).
+    pub fn with_break_mode(mut self, mode: BreakMode) -> Self {
+        self.break_mode = mode;
+        self
     }
     /// Effective **Evasion** — the active-defense target a roll-under attack is opposed by
     /// (`docs/stats.md`): **derived** as `Dexterity + Evade-tier` (a *secondary* save, NOT on
@@ -999,6 +1025,11 @@ const MISFIRE_DURATION: u32 = 2;
 /// composure contest (`docs/netrunning.md`: *ICE guards the system, Nerve guards the self*). A
 /// Nerve-0 chassis (a machine) is spoofed freely; a steady mind throws it off. Placeholder (TBD).
 const SPOOF_POWER: i32 = 12;
+/// **Morale shock** (§4): the Stress nearby allies take when one of them dies, and the radius it
+/// reaches. The seed trigger of the Resolve layer — watching your line fall wears you down.
+/// Placeholder tuning (⏳ — a feel number, `docs/balance-watch.md`).
+const STRESS_ON_ALLY_DEATH: f32 = 6.0;
+const MORALE_SHOCK_RADIUS: i32 = 2;
 /// **Logicbomb** — the floor degrade a planted bomb fires past the disable floor.
 const LOGICBOMB_DEGRADE: u32 = 2;
 /// **Body → melee damage** (`docs/stats.md`): Body above this baseline lends `BODY_MELEE_DAMAGE`
@@ -1322,6 +1353,11 @@ impl<R: RandomSource> Battle<R> {
     /// step spends [`Terrain::move_cost`]; the soft zone edge costs more, so a unit can't
     /// push far past it (the friction that corners a kiter without a wall).
     fn physical_activation(&mut self, i: usize) {
+        // **Broken** (§4): a unit whose Resolve hit 0 no longer follows its script — it routs or
+        // goes berserk (`broken_activation`), not the normal close-and-fire.
+        if self.units[i].is_broken() {
+            return self.broken_activation(i);
+        }
         let enemy = self.select_target(i);
         // Objective pull: the nearest-N designated seekers push the point *through* combat —
         // they flow to it and still fire after moving — while everyone else fights normally.
@@ -1367,6 +1403,85 @@ impl<R: RandomSource> Battle<R> {
                 self.resolve_attack_with(i, target, weapon);
             }
         }
+    }
+
+    /// A **broken** unit's activation (§4) — it has lost the script. **Rout** (Steadfast): flee the
+    /// nearest enemy and don't attack. **Berserk** (Feral): charge the nearest unit of *any* team and
+    /// attack it — friendly fire on. (No recovery in this slice; broken lasts the fight.)
+    fn broken_activation(&mut self, i: usize) {
+        match self.units[i].break_mode {
+            BreakMode::Rout => {
+                let Some(e) = self.nearest_enemy(i) else { return };
+                let mut budget = self.units[i].speed.max(0);
+                while budget > 0 {
+                    let here = self.units[i].pos;
+                    let threat = self.units[e].pos;
+                    // Step to the free, on-board neighbour that maximizes distance from the threat.
+                    let next = here
+                        .neighbors()
+                        .into_iter()
+                        .filter(|h| self.terrain.passable(*h) && !self.occupied_by_other(i, *h))
+                        .chain(std::iter::once(here))
+                        .max_by_key(|h| {
+                            (h.distance(threat), -(self.terrain.hazard(*h).is_some() as i32), -h.q, -h.r)
+                        })
+                        .unwrap_or(here);
+                    if next == here {
+                        break; // cornered against the board edge / boxed in
+                    }
+                    let cost = self.terrain.move_cost(next);
+                    if cost > budget {
+                        break;
+                    }
+                    budget -= cost;
+                    let from = here;
+                    self.units[i].pos = next;
+                    self.emit(CombatEvent::Moved { unit: self.units[i].id, from, to: next });
+                }
+                // routed — it cannot bring itself to attack.
+            }
+            BreakMode::Berserk => {
+                if let Some(target) = self.nearest_any_unit(i) {
+                    let mut budget = self.units[i].speed.max(0);
+                    loop {
+                        if self.units[i].weapon_at(self.reach(i, target)).is_some() {
+                            break; // in range — stop and swing
+                        }
+                        let next = self.close_step(i, self.units[target].pos, false);
+                        if next == self.units[i].pos {
+                            break;
+                        }
+                        let cost = self.terrain.move_cost(next);
+                        if cost > budget {
+                            break;
+                        }
+                        budget -= cost;
+                        let from = self.units[i].pos;
+                        self.units[i].pos = next;
+                        self.emit(CombatEvent::Moved { unit: self.units[i].id, from, to: next });
+                    }
+                }
+                // Re-pick after moving (positions changed) and swing — friend or foe.
+                if let Some(target) = self.nearest_any_unit(i) {
+                    let dist = self.reach(i, target);
+                    if let Some(weapon) = self.units[i].weapon_at(dist) {
+                        self.resolve_attack_with(i, target, weapon);
+                    }
+                }
+            }
+        }
+    }
+
+    /// The nearest **living** unit to `i` of **any** team (excluding itself) — a berserker's
+    /// indiscriminate mark (friendly fire on, §4).
+    fn nearest_any_unit(&self, i: usize) -> Option<usize> {
+        let me = &self.units[i];
+        self.units
+            .iter()
+            .enumerate()
+            .filter(|(j, u)| *j != i && u.is_alive())
+            .min_by_key(|(_, u)| (me.pos.distance(u.pos), u.id))
+            .map(|(j, _)| j)
     }
 
     /// Should player unit `i` chase the objective this activation, and toward which hex?
@@ -1912,6 +2027,9 @@ impl<R: RandomSource> Battle<R> {
     /// normal hack. Every other doctrine **hacks the most-preferred reachable enemy**.
     /// (Caller has already gated alive / not-stunned and the Link-presence filter.)
     fn digital_activation(&mut self, i: usize) {
+        if self.units[i].is_broken() {
+            return; // a routed / berserk mind doesn't calmly run the net (§4)
+        }
         // Re-decide the Guard each turn (single-focus, refreshed): clear, then re-set if Sentinel.
         self.units[i].guarding = None;
         if self.units[i].doctrine() == NetDoctrine::Sentinel {
@@ -2011,6 +2129,21 @@ impl<R: RandomSource> Battle<R> {
             self.units[i].death_resolved = true;
             self.emit(CombatEvent::Died { unit: self.units[i].id });
             self.fire_death_trigger(i);
+            self.morale_shock(i);
+        }
+    }
+
+    /// **Morale shock** (§4): when unit `i` dies, nearby living **allies** take [`STRESS_ON_ALLY_DEATH`]
+    /// Stress — the seed trigger of the Resolve layer. Morale-immune allies (Nerve 0) shrug it off
+    /// (`apply_stress` no-ops). Stress hits Resolve, never Integrity, so this never chains a death.
+    fn morale_shock(&mut self, i: usize) {
+        let (center, team) = (self.units[i].pos, self.units[i].team);
+        for j in 0..self.units.len() {
+            let u = &self.units[j];
+            if j != i && u.is_alive() && u.team == team && center.distance(u.pos) <= MORALE_SHOCK_RADIUS
+            {
+                self.units[j].apply_stress(STRESS_ON_ALLY_DEATH);
+            }
         }
     }
 
@@ -3759,6 +3892,72 @@ mod tests {
         b.digital_activation(2); // the sentinel's net turn
         assert_eq!(b.units[2].guarding, Some(1)); // guarded the drone…
         assert!(!has_status(&b.units[0], "Lockware")); // …and did NOT hack the enemy
+    }
+
+    // -- Morale: the Resolve layer (§4) ---------------------------------------
+
+    #[test]
+    fn stress_breaks_a_unit_when_resolve_hits_zero() {
+        let mut u = unit(0, Team::A, 0);
+        u.character.base_mut().nerve = 2.0; // Resolve = Nerve 2 × RESOLVE_PER_NERVE 6 = 12
+        u.character.fill();
+        assert_eq!(u.resolve(), 12.0);
+        assert!(!u.is_broken());
+        assert!(!u.apply_stress(6.0)); // 12 → 6, holds
+        assert!(u.apply_stress(6.0)); // 6 → 0, breaks (returns true this call)
+        assert!(u.is_broken());
+        assert!(!u.apply_stress(6.0)); // already broken — no re-break
+    }
+
+    #[test]
+    fn a_nerve_zero_unit_is_morale_immune() {
+        let mut u = unit(0, Team::A, 0); // default Nerve 0 (a machine-like line)
+        u.character.fill();
+        assert_eq!(u.max_resolve(), 0.0);
+        assert!(!u.apply_stress(100.0)); // no Resolve to spend — a no-op
+        assert!(!u.is_broken()); // never breaks
+    }
+
+    #[test]
+    fn an_ally_death_stresses_nearby_allies() {
+        let enemy = unit(0, Team::B, 5); // far away
+        let mut ally = unit(1, Team::A, 1);
+        ally.character.base_mut().nerve = 3.0; // Resolve 18
+        ally.character.fill();
+        let dying = unit(2, Team::A, 1); // adjacent ally (same hex column)
+        let mut b = Battle::new(vec![enemy, ally, dying], 1);
+        b.units[2].character.apply_damage(1, 0, 1000.0); // the ally falls
+        b.reap(); // fires the morale shock
+        assert_eq!(b.units[1].resolve(), 18.0 - STRESS_ON_ALLY_DEATH); // nearby ally felt the loss
+    }
+
+    #[test]
+    fn a_routed_unit_flees_and_cannot_attack() {
+        let mut u = unit(0, Team::A, 0).with_break_mode(BreakMode::Rout);
+        u.character.base_mut().nerve = 1.0;
+        u.character.fill();
+        u.apply_stress(6.0); // break it
+        assert!(u.is_broken());
+        let enemy = unit(1, Team::B, 1); // adjacent threat
+        let mut b = Battle::new(vec![u, enemy], 1);
+        let (start, threat) = (b.units[0].pos, b.units[1].pos);
+        let enemy_hp = b.units[1].integrity();
+        b.physical_activation(0); // broken → rout
+        assert!(b.units[0].pos.distance(threat) > start.distance(threat)); // fled the threat
+        assert_eq!(b.units[1].integrity(), enemy_hp); // routed: it did not attack
+    }
+
+    #[test]
+    fn a_berserk_unit_attacks_the_nearest_even_an_ally() {
+        let mut u = unit(0, Team::A, 0).with_break_mode(BreakMode::Berserk);
+        u.character.base_mut().nerve = 1.0;
+        u.character.fill();
+        u.apply_stress(6.0); // break → berserk
+        let ally = unit(1, Team::A, 1); // adjacent **ally** (same team)
+        let mut b = Battle::new(vec![u, ally], 1);
+        let ally_hp = b.units[1].integrity();
+        b.physical_activation(0); // berserk → swings at the nearest unit, friend or foe
+        assert!(b.units[1].integrity() < ally_hp); // friendly fire — it hit its own ally
     }
 
     #[test]

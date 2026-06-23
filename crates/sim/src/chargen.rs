@@ -827,6 +827,13 @@ pub struct Character {
     pub barrier: f32,
     pub plating: f32,
     pub alive: bool,
+    /// **Resolve** — the morale pool (§4), max `Nerve × RESOLVE_PER_NERVE`. Stress depletes it; at 0
+    /// the unit **Breaks** (`broken`). A unit with no Resolve capacity (Nerve 0 — a machine) is
+    /// morale-immune. 🔭 First slice: Stress + Break; Rally / recovery / leaders are follow-ons.
+    pub resolve: f32,
+    /// Latched **Broken** state — set when Resolve crosses to 0 (rout / berserk, by the unit's
+    /// `break_mode`). Stays broken for the fight (no recovery yet).
+    pub broken: bool,
 
     // --- telemetry ---
     log: Vec<DamageEvent>,
@@ -843,6 +850,8 @@ impl Character {
             barrier: base.barrier,
             plating: base.plating,
             alive: true,
+            resolve: base.nerve * RESOLVE_PER_NERVE,
+            broken: false,
             log: Vec::new(),
         }
     }
@@ -1218,6 +1227,21 @@ impl Character {
         self.integrity = r.max_integrity();
         self.plating = r.plating();
         self.barrier = r.barrier();
+        self.resolve = r.max_resolve();
+    }
+
+    /// Apply `amount` **Stress** to the Resolve pool (§4) — the morale equivalent of damage. A unit
+    /// with no Resolve capacity (`max_resolve ≤ 0` — Nerve 0, a machine) is **morale-immune**: a
+    /// no-op. Latches [`broken`](Self::broken) when Resolve reaches 0. Returns whether it **broke on
+    /// this call** (false if already broken or immune).
+    pub fn apply_stress(&mut self, amount: f32) -> bool {
+        if self.broken || self.realize().max_resolve() <= 0.0 {
+            return false;
+        }
+        self.resolve = (self.resolve - amount).max(0.0);
+        let broke = self.resolve <= 0.0;
+        self.broken = broke;
+        broke
     }
 
     /// Heal Integrity, clamped to the **current** composed max (over-heal is wasted).

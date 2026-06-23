@@ -4,6 +4,18 @@
 //! not just stats. The defaults (`Nearest` + `Advance`) are the dumb "attack the
 //! nearest, walk forward" baseline.
 
+/// How a unit **breaks** when its Resolve hits 0 (§4 / §13) — a per-unit trait. Machines (Nerve 0)
+/// are morale-immune and never break.
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
+pub enum BreakMode {
+    /// **Steadfast → rout** (the default): flee the nearest enemy, unable to attack — the
+    /// disciplined break.
+    #[default]
+    Rout,
+    /// **Feral → berserk**: charge the nearest unit of *any* team and attack it — friendly fire on.
+    Berserk,
+}
+
 /// How a unit chooses its target among living enemies (§7J).
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
 pub enum TargetingProfile {
