@@ -1244,6 +1244,21 @@ impl Character {
         broke
     }
 
+    /// **Rally** `amount` Resolve back (§4) — the inverse of [`apply_stress`](Self::apply_stress),
+    /// a leader steadying the formation. Clamped to `max_resolve`. **Preventive only:** a
+    /// morale-immune unit (no pool) and an already-**broken** one are skipped — Rally tops up a
+    /// wavering ally before it breaks; reversing a break (recovery) is a later 🔭 lever.
+    pub fn rally(&mut self, amount: f32) {
+        if self.broken {
+            return;
+        }
+        let max = self.realize().max_resolve();
+        if max <= 0.0 {
+            return;
+        }
+        self.resolve = (self.resolve + amount).min(max);
+    }
+
     /// Heal Integrity, clamped to the **current** composed max (over-heal is wasted).
     pub fn heal(&mut self, amount: f32) {
         let max = self.realize().max_integrity();

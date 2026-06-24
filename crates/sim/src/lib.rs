@@ -413,6 +413,9 @@ pub struct Unit {
     /// How this unit **breaks** at Resolve 0 (§4): Steadfast → rout, Feral → berserk. Machines
     /// (Nerve 0) are morale-immune regardless.
     pub break_mode: BreakMode,
+    /// **Leadership** (§4, the *Anthem* archetype): the Resolve a leader **Rallies** into nearby
+    /// allies each round. `0` ⇒ not a leader. Losing a leader hits the formation harder (cascade).
+    pub leadership: f32,
     /// **Active Guard** target (`netrunning.md` §2): the id of the covered ally this runner is
     /// currently screening, set on its digital activation under the **Sentinel** doctrine and read
     /// by [`Battle::net_defense`]. `None` ⇒ not guarding. Single-focus (one ally), refreshed each of
@@ -443,6 +446,7 @@ impl Unit {
             on_death: DeathTrigger::None,
             death_resolved: false,
             break_mode: BreakMode::default(),
+            leadership: 0.0,
             guarding: None,
         }
     }
@@ -669,9 +673,24 @@ impl Unit {
     pub fn apply_stress(&mut self, amount: f32) -> bool {
         self.character.apply_stress(amount)
     }
+    /// **Rally** `amount` Resolve back (§4) — a leader steadying this unit (preventive; skips broken
+    /// and morale-immune units).
+    pub fn rally(&mut self, amount: f32) {
+        self.character.rally(amount);
+    }
+    /// Is this unit a **leader** (projects Rally, §4)?
+    pub fn is_leader(&self) -> bool {
+        self.leadership > 0.0
+    }
     /// Builder: set the **break mode** (Steadfast → rout, Feral → berserk).
     pub fn with_break_mode(mut self, mode: BreakMode) -> Self {
         self.break_mode = mode;
+        self
+    }
+    /// Builder: make this unit a **leader** that Rallies `amount` Resolve into nearby allies each
+    /// round (§4, the *Anthem* archetype).
+    pub fn with_leadership(mut self, amount: f32) -> Self {
+        self.leadership = amount;
         self
     }
     /// Effective **Evasion** — the active-defense target a roll-under attack is opposed by
@@ -1030,6 +1049,11 @@ const SPOOF_POWER: i32 = 12;
 /// Placeholder tuning (⏳ — a feel number, `docs/balance-watch.md`).
 const STRESS_ON_ALLY_DEATH: f32 = 6.0;
 const MORALE_SHOCK_RADIUS: i32 = 2;
+/// **Leader-death cascade** (§4): extra Stress nearby allies take when the unit that fell was a
+/// **leader** — the formation reels when its anchor drops. Added on top of [`STRESS_ON_ALLY_DEATH`].
+const STRESS_ON_LEADER_DEATH: f32 = 6.0;
+/// How far a **leader**'s Rally reaches (§4, the *Anthem* projection) — same shape as the shock.
+const RALLY_RADIUS: i32 = 2;
 /// **Logicbomb** — the floor degrade a planted bomb fires past the disable floor.
 const LOGICBOMB_DEGRADE: u32 = 2;
 /// **Body → melee damage** (`docs/stats.md`): Body above this baseline lends `BODY_MELEE_DAMAGE`
@@ -1221,6 +1245,7 @@ impl<R: RandomSource> Battle<R> {
         self.status_phase();
         self.terrain_phase(); // hazard hexes burn whoever stands on them
         self.reap(); // DoTs / hazards can kill — fire their death triggers
+        self.rally_phase(); // leaders steady the formation (§4) before it acts
         self.woven_phase();
         self.contagion_phase(); // corruption jumps to fresh victims (contested)
         self.ward_phase(); // Antivirus programs cleanse worm corruption
@@ -2133,16 +2158,38 @@ impl<R: RandomSource> Battle<R> {
         }
     }
 
-    /// **Morale shock** (§4): when unit `i` dies, nearby living **allies** take [`STRESS_ON_ALLY_DEATH`]
-    /// Stress — the seed trigger of the Resolve layer. Morale-immune allies (Nerve 0) shrug it off
-    /// (`apply_stress` no-ops). Stress hits Resolve, never Integrity, so this never chains a death.
+    /// **Morale shock** (§4): when unit `i` dies, nearby living **allies** take Stress — the seed
+    /// trigger of the Resolve layer. A fallen **leader** hits harder (`STRESS_ON_LEADER_DEATH` on
+    /// top — the cascade). Morale-immune allies (Nerve 0) shrug it off (`apply_stress` no-ops).
+    /// Stress hits Resolve, never Integrity, so this never chains a death.
     fn morale_shock(&mut self, i: usize) {
         let (center, team) = (self.units[i].pos, self.units[i].team);
+        let stress = STRESS_ON_ALLY_DEATH
+            + if self.units[i].is_leader() { STRESS_ON_LEADER_DEATH } else { 0.0 };
         for j in 0..self.units.len() {
             let u = &self.units[j];
             if j != i && u.is_alive() && u.team == team && center.distance(u.pos) <= MORALE_SHOCK_RADIUS
             {
-                self.units[j].apply_stress(STRESS_ON_ALLY_DEATH);
+                self.units[j].apply_stress(stress);
+            }
+        }
+    }
+
+    /// **Rally phase** (§4): every living **leader** projects its `leadership` Resolve into living
+    /// allies within [`RALLY_RADIUS`], steadying the formation each round (the *Anthem* archetype).
+    /// Preventive — `rally` tops up the wavering but won't reverse a break or touch the immune.
+    fn rally_phase(&mut self) {
+        let leaders: Vec<(Hex, Team, f32)> = self
+            .units
+            .iter()
+            .filter(|u| u.is_alive() && u.is_leader())
+            .map(|u| (u.pos, u.team, u.leadership))
+            .collect();
+        for (center, team, amount) in leaders {
+            for u in &mut self.units {
+                if u.is_alive() && u.team == team && center.distance(u.pos) <= RALLY_RADIUS {
+                    u.rally(amount);
+                }
             }
         }
     }
@@ -3958,6 +4005,34 @@ mod tests {
         let ally_hp = b.units[1].integrity();
         b.physical_activation(0); // berserk → swings at the nearest unit, friend or foe
         assert!(b.units[1].integrity() < ally_hp); // friendly fire — it hit its own ally
+    }
+
+    #[test]
+    fn a_leader_rallies_resolve_into_nearby_allies() {
+        let mut leader = unit(0, Team::A, 0).with_leadership(4.0);
+        leader.character.base_mut().nerve = 3.0;
+        let mut ally = unit(1, Team::A, 1); // adjacent (within RALLY_RADIUS)
+        ally.character.base_mut().nerve = 3.0; // Resolve 18
+        ally.character.fill();
+        let _ = ally.apply_stress(10.0); // worn down to 8
+        assert_eq!(ally.resolve(), 8.0);
+        let mut b = Battle::new(vec![leader, ally], 1);
+        b.rally_phase(); // the leader steadies the line
+        assert_eq!(b.units[1].resolve(), 12.0); // 8 + leadership 4, clamped to max 18
+    }
+
+    #[test]
+    fn losing_the_leader_cascades_the_formation() {
+        // A leader's fall stresses allies harder than a rank-and-file death (the cascade).
+        let leader = unit(0, Team::A, 0).with_leadership(4.0);
+        let mut ally = unit(1, Team::A, 1);
+        ally.character.base_mut().nerve = 5.0; // Resolve 30 — a wide buffer
+        ally.character.fill();
+        let mut b = Battle::new(vec![leader, ally], 1);
+        b.units[0].character.apply_damage(1, 1, 1000.0); // the leader falls
+        b.reap();
+        // base 6 + leader cascade 6 = 12 off the buffer (vs 6 for a normal ally).
+        assert_eq!(b.units[1].resolve(), 30.0 - (STRESS_ON_ALLY_DEATH + STRESS_ON_LEADER_DEATH));
     }
 
     #[test]
