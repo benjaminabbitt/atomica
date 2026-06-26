@@ -426,6 +426,7 @@ fn deploy(template: &Unit, next_id: &mut u32, team: Team, pos: Hex) -> Unit {
     u.team = team;
     u.pos = pos;
     u.character.clear_statuses(); // transient combat effects don't carry between combats
+    u.character.reset_morale(); // composure is per-engagement: full Resolve, un-broken (§4)
     u
 }
 

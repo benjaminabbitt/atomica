@@ -1054,6 +1054,15 @@ const MORALE_SHOCK_RADIUS: i32 = 2;
 const STRESS_ON_LEADER_DEATH: f32 = 6.0;
 /// How far a **leader**'s Rally reaches (§4, the *Anthem* projection) — same shape as the shock.
 const RALLY_RADIUS: i32 = 2;
+/// **Flanked** Stress (§4): a unit with ≥ [`FLANK_THRESHOLD`] living enemies **adjacent** takes this
+/// much Stress each round — being surrounded wears on the nerve. Placeholder tuning (⏳).
+const FLANK_THRESHOLD: usize = 2;
+const FLANK_STRESS: f32 = 3.0;
+/// **Heavy-hit** Stress (§4): a single weapon blow that wounds the flesh for ≥ this **fraction of
+/// max Integrity** also bruises Resolve by [`HEAVY_HIT_STRESS`] — a brutal hit rattles you. (DoTs
+/// and chip damage don't count — only a landed attack.) Placeholder tuning (⏳).
+const HEAVY_HIT_FRACTION: f32 = 0.33;
+const HEAVY_HIT_STRESS: f32 = 4.0;
 /// **Logicbomb** — the floor degrade a planted bomb fires past the disable floor.
 const LOGICBOMB_DEGRADE: u32 = 2;
 /// **Body → melee damage** (`docs/stats.md`): Body above this baseline lends `BODY_MELEE_DAMAGE`
@@ -1245,7 +1254,8 @@ impl<R: RandomSource> Battle<R> {
         self.status_phase();
         self.terrain_phase(); // hazard hexes burn whoever stands on them
         self.reap(); // DoTs / hazards can kill — fire their death triggers
-        self.rally_phase(); // leaders steady the formation (§4) before it acts
+        self.flank_stress(); // §4: being surrounded wears the nerve down…
+        self.rally_phase(); // …and leaders steady the formation before it acts
         self.woven_phase();
         self.contagion_phase(); // corruption jumps to fresh victims (contested)
         self.ward_phase(); // Antivirus programs cleanse worm corruption
@@ -1835,6 +1845,12 @@ impl<R: RandomSource> Battle<R> {
                 amount: before - self.units[t].integrity(),
                 killed: was_alive && !self.units[t].is_alive(),
             });
+            // Heavy-hit Stress (§4): a brutal blow — ≥ a third of max Integrity in one wound —
+            // rattles a survivor's nerve (morale-immune / dead targets no-op).
+            let wound = before - self.units[t].integrity();
+            if self.units[t].is_alive() && wound >= HEAVY_HIT_FRACTION * self.units[t].max_integrity() {
+                self.units[t].apply_stress(HEAVY_HIT_STRESS);
+            }
             if atk.emp && self.units[t].is_alive() {
                 self.apply_emp(t);
             }
@@ -2171,6 +2187,26 @@ impl<R: RandomSource> Battle<R> {
             if j != i && u.is_alive() && u.team == team && center.distance(u.pos) <= MORALE_SHOCK_RADIUS
             {
                 self.units[j].apply_stress(stress);
+            }
+        }
+    }
+
+    /// **Flank Stress** (§4): a unit hemmed in by ≥ [`FLANK_THRESHOLD`] adjacent enemies takes
+    /// [`FLANK_STRESS`] each round — being surrounded grinds the nerve down. Morale-immune / broken
+    /// units no-op (`apply_stress`). Read at round start (positions from the prior round).
+    fn flank_stress(&mut self) {
+        for i in 0..self.units.len() {
+            if !self.units[i].is_alive() {
+                continue;
+            }
+            let (pos, foe) = (self.units[i].pos, self.units[i].team.enemy());
+            let adjacent_foes = self
+                .units
+                .iter()
+                .filter(|u| u.is_alive() && u.team == foe && pos.distance(u.pos) <= 1)
+                .count();
+            if adjacent_foes >= FLANK_THRESHOLD {
+                self.units[i].apply_stress(FLANK_STRESS);
             }
         }
     }
@@ -4033,6 +4069,40 @@ mod tests {
         b.reap();
         // base 6 + leader cascade 6 = 12 off the buffer (vs 6 for a normal ally).
         assert_eq!(b.units[1].resolve(), 30.0 - (STRESS_ON_ALLY_DEATH + STRESS_ON_LEADER_DEATH));
+    }
+
+    #[test]
+    fn being_flanked_stresses_a_unit() {
+        let mut victim = unit(0, Team::A, 0);
+        victim.character.base_mut().nerve = 3.0; // Resolve 18
+        victim.character.fill();
+        // Two adjacent enemies (a flank) — the neighbours of (0,0).
+        let flanked = Battle::new(
+            vec![victim.clone(), unit(1, Team::B, 1), unit(2, Team::B, -1)],
+            1,
+        );
+        let mut flanked = flanked;
+        flanked.flank_stress();
+        assert_eq!(flanked.units[0].resolve(), 18.0 - FLANK_STRESS); // surrounded → stressed
+        // One adjacent enemy is below the threshold — no flank, no stress.
+        let mut lone = Battle::new(vec![victim, unit(1, Team::B, 1)], 1);
+        lone.flank_stress();
+        assert_eq!(lone.units[0].resolve(), 18.0); // unchanged
+    }
+
+    #[test]
+    fn a_heavy_hit_bruises_resolve() {
+        let mut atk = unit(0, Team::A, 0);
+        atk.character.base_mut().body = 10.0; // baseline Body ⇒ no melee bump (predictable damage)
+        let mut tgt = unit(1, Team::B, 1); // adjacent (melee reach 1)
+        tgt.character.base_mut().body = 10.0; // max Integrity 60 ⇒ heavy threshold 20
+        tgt.character.base_mut().nerve = 3.0; // Resolve 18
+        tgt.character.fill();
+        let mut b = Battle::new(vec![atk, tgt], 1);
+        // Piercing/Internal melee vs Mail = ×1.0: a 30 wound ≥ threshold 20, sublethal (60 → 30).
+        b.resolve_attack_with(0, 1, Attack::melee(30.0));
+        assert!(b.units[1].is_alive());
+        assert_eq!(b.units[1].resolve(), 18.0 - HEAVY_HIT_STRESS); // a brutal blow rattled it
     }
 
     #[test]

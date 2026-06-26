@@ -1228,6 +1228,7 @@ impl Character {
         self.plating = r.plating();
         self.barrier = r.barrier();
         self.resolve = r.max_resolve();
+        self.broken = false; // a full deploy / R&R restores composure too (§4)
     }
 
     /// Apply `amount` **Stress** to the Resolve pool (§4) — the morale equivalent of damage. A unit
@@ -1242,6 +1243,14 @@ impl Character {
         let broke = self.resolve <= 0.0;
         self.broken = broke;
         broke
+    }
+
+    /// **Reset morale** (§4) — restore Resolve to full and clear [`broken`](Self::broken). Composure
+    /// is **per-engagement**: a unit re-forms steady for each battle, even if its physical wounds
+    /// (Integrity / chrome) persist across a run. Called at deploy and R&R.
+    pub fn reset_morale(&mut self) {
+        self.resolve = self.realize().max_resolve();
+        self.broken = false;
     }
 
     /// **Rally** `amount` Resolve back (§4) — the inverse of [`apply_stress`](Self::apply_stress),
