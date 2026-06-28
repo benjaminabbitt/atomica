@@ -20,9 +20,9 @@
 
 use crate::{Encounter, GamePlan, RunPlan};
 use atomica_sim::{
-    ArmorClass, Attack, Chassis, DamageType, DeathTrigger, Footprint, FoundAction, Hex, Implant,
-    MovementProfile, NetDoctrine, ObjectiveKind, PenTier, Program, Skill, Team, TargetingProfile,
-    Terrain, Tile, Unit, EquipmentTag, EquipmentTags,
+    ArmorClass, Attack, BreakMode, Chassis, DamageType, DeathTrigger, Footprint, FoundAction, Hex,
+    Implant, MovementProfile, NetDoctrine, ObjectiveKind, PenTier, Program, Skill, Team,
+    TargetingProfile, Terrain, Tile, Unit, EquipmentTag, EquipmentTags,
 };
 
 fn weapon(damage: f32, dtype: DamageType, pen: PenTier, range: i32) -> Attack {
@@ -117,6 +117,7 @@ pub fn blade(name: &str) -> Unit {
         .with_dexterity(11.0)
         .with_skill(Skill::Melee, 3) // master duelist; finesse off Dex 11 ⇒ effective Melee 14
         .with_skill(Skill::Evade, 1) // nimble, but no acrobat ⇒ Evasion 11 + 1 = 12
+        .with_break_mode(BreakMode::Berserk) // a frenzied duelist — breaks *forward* (§4)
         .with_attack(finesse(weapon(14.0, DamageType::Slashing, PenTier::Internal, 1)));
     u.install(Implant::skin_weave());
     u
@@ -148,9 +149,11 @@ pub fn bulwark(name: &str) -> Unit {
     body(name, 94.0, 5.0)
         .with_armor(ArmorClass::Plate)
         .with_dexterity(9.0)
+        .with_nerve(12.0) // a stolid anchor — a deeper Resolve buffer than the line
         .with_skill(Skill::Melee, 1) // a seasoned maul; Body 16 (HP 94) ⇒ effective 17
         // heavy and slow: Evade untrained, Dex 9 − 4 ⇒ Evasion 5, easy to hit
         .with_attack(weapon(12.0, DamageType::Bludgeoning, PenTier::Contact, 1))
+    // break_mode defaults to Rout — the disciplined hold-the-line break
 }
 
 /// A **marksman** — a glass-cannon sharpshooter. A smartlinked long rifle (IFF, so it
@@ -181,14 +184,30 @@ pub fn sapper(name: &str) -> Unit {
         .with_targeting(TargetingProfile::HighestThreat)
 }
 
+/// An **anthem** — the squad's leader and morale anchor (§4). It hangs back with a sidearm and
+/// projects **Rally** into the formation each round (`leadership`), topping up nerves so the line
+/// holds when allies fall. High Nerve and disciplined (Rout) — hard to break itself, and its death
+/// **cascades** extra Stress through the squad, so it's a unit worth protecting.
+pub fn anthem(name: &str) -> Unit {
+    body(name, 64.0, 6.0)
+        .with_dexterity(10.0)
+        .with_nerve(14.0) // a steady command presence — the deepest Resolve buffer
+        .with_leadership(5.0) // Rallies +5 Resolve into nearby allies each round (the Anthem buff)
+        .with_skill(Skill::Gunnery, 1) // competent sidearm ⇒ effective 11
+        // Evade untrained: Dex 10 − 4 ⇒ Evasion 6
+        .with_attack(weapon(8.0, DamageType::Piercing, PenTier::Contact, 3)) // a backline sidearm
+        .with_targeting(TargetingProfile::HighestThreat)
+        .with_movement(MovementProfile::Hold) // holds central so its Rally radius covers the squad
+}
+
 /// The **starter roster** — the core trio (one melee, one runner, one tank). The probe
 /// tunes against this loadout, so it stays fixed.
 pub fn starter_roster() -> Vec<Unit> {
     vec![blade("Katana"), runner("Glitch"), bulwark("Anvil")]
 }
 
-/// A **full strike team** — the core trio plus the two specialists (marksman, sapper), a
-/// five-unit squad for the larger [`campaign`] scenarios.
+/// A **full strike team** — the core trio plus the two specialists (marksman, sapper) and the
+/// **Anthem** leader, a six-unit squad for the larger [`campaign`] scenarios.
 pub fn full_squad() -> Vec<Unit> {
     vec![
         blade("Katana"),
@@ -196,6 +215,7 @@ pub fn full_squad() -> Vec<Unit> {
         bulwark("Anvil"),
         marksman("Hawkeye"),
         sapper("Surge"),
+        anthem("Chorus"),
     ]
 }
 
@@ -672,6 +692,19 @@ mod tests {
             // sane band runs from a heavy (Dex 9 − 4) up to a trained, agile dodger.
             assert!((4..=12).contains(&ev), "{} evasion {ev} out of band", u.name);
         }
+    }
+
+    /// The morale archetypes wire the §4 systems: the Anthem is a high-Resolve **leader**, and the
+    /// break-mode flavor lands (the frenzied blade goes berserk, the stolid bulwark routs).
+    #[test]
+    fn the_morale_archetypes_are_wired() {
+        let lead = anthem("Chorus");
+        assert!(lead.is_leader()); // projects Rally
+        assert!(lead.max_resolve() > bulwark("Anvil").max_resolve()); // the deepest nerve in the squad
+        assert_eq!(blade("Katana").break_mode, BreakMode::Berserk); // frenzied — breaks forward
+        assert_eq!(bulwark("Anvil").break_mode, BreakMode::Rout); // disciplined — holds / flees
+        // The line is morale-capable (a Resolve pool to defend), the Anthem most of all.
+        assert!(full_squad().iter().all(|u| u.max_resolve() > 0.0));
     }
 
     /// The whole campaign (every new archetype, AoE / on-death / netrunning, the Survive
