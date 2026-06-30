@@ -826,7 +826,14 @@ pub struct Character {
     pub integrity: f32,
     pub barrier: f32,
     pub plating: f32,
+    /// In the fight — `false` once **Downed** (Integrity ≤ 0) *or* truly dead. Targeting / outcome /
+    /// activation all read this, so a downed unit is "out" like a dead one.
     pub alive: bool,
+    /// **Downed** — a Death's-Door grace state (§9.4): Integrity has hit 0 (and rides **negative**),
+    /// the unit is out of the fight but **not yet truly dead** — each round it rolls **Grit** off Body
+    /// to cling on (`Battle::death_door_phase`), bleeds deeper on a lesser failure, succumbs on a bad
+    /// one, and **revives** if healed back above 0. Cleared (truly dead) by `succumb`.
+    pub downed: bool,
     /// **Resolve** — the morale pool (§4), max `Nerve × RESOLVE_PER_NERVE`. Stress depletes it; at 0
     /// the unit **Breaks** (`broken`). A unit with no Resolve capacity (Nerve 0 — a machine) is
     /// morale-immune. 🔭 First slice: Stress + Break; Rally / recovery / leaders are follow-ons.
@@ -850,6 +857,7 @@ impl Character {
             barrier: base.barrier,
             plating: base.plating,
             alive: true,
+            downed: false,
             resolve: base.nerve * RESOLVE_PER_NERVE,
             broken: false,
             log: Vec::new(),
@@ -1154,10 +1162,11 @@ impl Character {
     /// the event.
     pub fn apply_damage(&mut self, tick: u32, source: u32, amount: f32) -> DamageEvent {
         let before = self.integrity;
-        self.integrity = (self.integrity - amount).max(0.0);
-        let lethal = before > 0.0 && self.integrity <= 0.0;
-        if lethal {
+        self.integrity = before - amount; // rides **negative** once Downed (the Death's-Door penalty)
+        let lethal = before > 0.0 && self.integrity <= 0.0; // the down-crossing
+        if self.integrity <= 0.0 {
             self.alive = false;
+            self.downed = true;
         }
         let ev = DamageEvent { tick, source, amount, lethal };
         self.log.push(ev);
@@ -1207,11 +1216,13 @@ impl Character {
         let mut lethal = false;
         if after <= 0.0 {
             if can_kill {
-                after = 0.0;
+                // **Down**, don't kill (§9.4): Integrity rides negative — the overkill seeds the
+                // Death's-Door penalty (`Battle::death_door_phase`). The blow that *crosses* 0 downs.
                 lethal = before > 0.0;
                 self.alive = false;
+                self.downed = true;
             } else {
-                after = 1.0_f32.min(before); // softener never kills
+                after = 1.0_f32.min(before); // softener never downs
             }
         }
         self.integrity = after;
@@ -1229,6 +1240,8 @@ impl Character {
         self.barrier = r.barrier();
         self.resolve = r.max_resolve();
         self.broken = false; // a full deploy / R&R restores composure too (§4)
+        self.alive = true; // …and stands a downed unit back up (a fresh deploy is whole)
+        self.downed = false;
     }
 
     /// Apply `amount` **Stress** to the Resolve pool (§4) — the morale equivalent of damage. A unit
@@ -1269,10 +1282,22 @@ impl Character {
         self.resolve = (self.resolve + amount).min(max);
     }
 
-    /// Heal Integrity, clamped to the **current** composed max (over-heal is wasted).
+    /// Heal Integrity, clamped to the **current** composed max (over-heal is wasted). A heal that
+    /// climbs a **Downed** unit back **above 0 revives it** (§9.4) — back in the fight (a mender /
+    /// extraction must out-pace the bleed; a deeper hole needs a bigger heal).
     pub fn heal(&mut self, amount: f32) {
         let max = self.realize().max_integrity();
         self.integrity = (self.integrity + amount).min(max);
+        if self.downed && self.integrity > 0.0 {
+            self.downed = false;
+            self.alive = true;
+        }
+    }
+
+    /// The downed unit **bleeds out** — truly dead (it was already out of the fight; this just makes
+    /// it un-revivable). Called by `Battle::death_door_phase` on a save failed by a degree.
+    pub fn succumb(&mut self) {
+        self.downed = false; // `alive` is already false
     }
 
     /// Re-clamp current Integrity to the composed max after a max change (§3a): a
@@ -1588,17 +1613,21 @@ mod tests {
     // -- pools (§3c) --
 
     #[test]
-    fn damage_clamps_at_zero_and_latches_death() {
+    fn a_lethal_hit_downs_and_rides_integrity_negative() {
         let mut c = Character::new(base()); // 30 integrity
         let ev = c.apply_damage(1, 7, 12.0);
         assert_eq!(c.integrity, 18.0);
-        assert!(!ev.lethal && c.alive);
+        assert!(!ev.lethal && c.alive && !c.downed);
+        // The blow that crosses 0 **downs** (Death's Door, §9.4) — out of the fight, but Integrity
+        // rides **negative** (the overkill seeds the death-save penalty), not clamped to 0.
         let ev = c.apply_damage(2, 7, 25.0);
-        assert_eq!(c.integrity, 0.0);
-        assert!(ev.lethal && !c.alive);
-        // a later heal cannot un-fire death; the pool is latched.
+        assert_eq!(c.integrity, -7.0); // 18 − 25
+        assert!(ev.lethal && !c.alive && c.downed);
         assert_eq!(c.log().len(), 2);
         assert_eq!(c.log()[1].source, 7);
+        // A big enough heal climbs back above 0 and **revives** it.
+        c.heal(10.0); // −7 + 10 = 3
+        assert!(c.alive && !c.downed && c.integrity == 3.0);
     }
 
     #[test]

@@ -668,6 +668,11 @@ impl Unit {
     pub fn is_broken(&self) -> bool {
         self.character.broken
     }
+    /// Is this unit **Downed** — at Integrity 0 on Death's Door (out of the fight, not yet truly
+    /// dead; clinging on via Grit saves, §9.4)? Revivable by a heal back above 0.
+    pub fn is_downed(&self) -> bool {
+        self.character.downed
+    }
     /// Apply `amount` **Stress** to Resolve (§4). Morale-immune units (Nerve 0) ignore it. Returns
     /// whether it **broke** on this call.
     pub fn apply_stress(&mut self, amount: f32) -> bool {
@@ -1072,6 +1077,12 @@ const HEAVY_HIT_STRESS: f32 = 4.0;
 const RESOLVE_REVIVE_FRACTION: f32 = 0.3;
 const RESILIENCE_PENALTY_MAX: i32 = 8;
 const RESOLVE_CALM: f32 = 3.0;
+/// **Death's Door** (§9.4): a **Downed** unit (Integrity ≤ 0) rolls **Grit** off Body each round to
+/// cling on — `2d10 ≤ effective(Grit, Body) + Integrity` (Integrity ≤ 0 *is* the bleed penalty). A
+/// pass **holds**; a *lesser* failure **bleeds** (Integrity drops by the miss — deeper next round); a
+/// failure **by ≥ `DEATH_SAVE_MARGIN`** (or a fumble) **succumbs** (truly dead). A heal back above 0
+/// revives. Placeholder tuning (⏳ — the permadeath-rate dial, §12 #16).
+const DEATH_SAVE_MARGIN: i32 = 5;
 /// **Logicbomb** — the floor degrade a planted bomb fires past the disable floor.
 const LOGICBOMB_DEGRADE: u32 = 2;
 /// **Body → melee damage** (`docs/stats.md`): Body above this baseline lends `BODY_MELEE_DAMAGE`
@@ -1265,7 +1276,8 @@ impl<R: RandomSource> Battle<R> {
         self.reap(); // DoTs / hazards can kill — fire their death triggers
         self.flank_stress(); // §4: being surrounded wears the nerve down…
         self.rally_phase(); // …leaders steady the formation…
-        self.recovery_phase(); // …and the broken roll Grit to pull back, before anyone acts
+        self.recovery_phase(); // …the broken roll Grit to pull back…
+        self.death_door_phase(); // …and the downed roll Grit to cling on (or bleed out), §9.4
         self.woven_phase();
         self.contagion_phase(); // corruption jumps to fresh victims (contested)
         self.ward_phase(); // Antivirus programs cleanse worm corruption
@@ -2280,6 +2292,30 @@ impl<R: RandomSource> Battle<R> {
                 let comeback = (floor + outcome.margin.max(0) as f32).min(max);
                 self.units[i].character.resolve = self.units[i].character.resolve.max(comeback);
             }
+        }
+    }
+
+    /// **Death's-Door phase** (§9.4): every **Downed** unit rolls **Grit** off Body to cling on —
+    /// `2d10 ≤ effective(Grit, Body) + Integrity`, where the (negative) Integrity *is* the bleed
+    /// penalty. A **pass holds**; a *lesser* failure **bleeds** (Integrity drops by the degree of the
+    /// miss, so the hole deepens and the next roll is harder); a failure **by ≥ `DEATH_SAVE_MARGIN`**
+    /// (or a fumble) **succumbs** (truly dead). A heal back above 0 (a mender / extraction, 🔭)
+    /// revives — so Body × Grit is the clock that *buys time* to be pulled out.
+    fn death_door_phase(&mut self) {
+        for i in 0..self.units.len() {
+            if !self.units[i].character.downed {
+                continue;
+            }
+            let target = self.units[i].effective_skill_off(Skill::Grit, Stat::Body)
+                + self.units[i].character.integrity.round() as i32;
+            let o = resolve_check(&mut self.rng, target);
+            if o.fumble || (!o.success && -o.margin >= DEATH_SAVE_MARGIN) {
+                self.units[i].character.succumb(); // bled out
+            } else if !o.success {
+                // a lesser failure deepens the wound by the degree of the miss (the bleed penalty)
+                self.units[i].character.integrity -= (-o.margin) as f32;
+            }
+            // pass / crit: hold — clinging on, still revivable if a heal out-paces the bleed
         }
     }
 
@@ -4218,6 +4254,48 @@ mod tests {
         b.recovery_phase();
         assert_eq!(b.units[0].resolve(), 0.0); // no calm — pinned in the scrum
         assert!(b.units[0].is_broken()); // target 10 − 8 = 2; it rages on
+    }
+
+    // -- Death's Door: the Grit-off-Body bleed-out (§9.4) ----------------------
+
+    #[test]
+    fn a_lethal_hit_downs_rather_than_kills() {
+        let mut u = unit(0, Team::A, 0);
+        u.character.base_mut().body = 10.0; // max Integrity 60
+        u.character.fill();
+        u.character.apply_damage(0, 0, 70.0); // a 10-overkill blow
+        assert!(u.is_downed() && !u.is_alive()); // out of the fight, but on Death's Door
+        assert_eq!(u.integrity(), -10.0); // Integrity rides negative — the overkill is the penalty
+    }
+
+    #[test]
+    fn a_death_save_pass_holds_but_a_lesser_fail_bleeds() {
+        let mut u = unit(0, Team::A, 0);
+        u.character.base_mut().body = 10.0;
+        u.skills.set(Skill::Grit, 0); // effective Grit off Body = 10
+        u.character.fill();
+        u.character.apply_damage(0, 0, 60.0); // downed exactly at 0
+        // Pass: target 10 + 0 = 10; roll 8 ≤ 10 ⇒ holds, no bleed.
+        let mut b = Battle::with_rng(vec![u], ScriptedRng::from_d10([4, 4]));
+        b.death_door_phase();
+        assert!(b.units[0].is_downed() && b.units[0].integrity() == 0.0);
+        // Lesser fail: roll 13 ⇒ miss by 3 (< DEATH_SAVE_MARGIN) ⇒ bleeds 3 (the hole deepens).
+        b.rng = ScriptedRng::from_d10([7, 6]);
+        b.death_door_phase();
+        assert!(b.units[0].is_downed() && b.units[0].integrity() == -3.0);
+    }
+
+    #[test]
+    fn a_death_save_failed_by_a_degree_succumbs() {
+        let mut u = unit(0, Team::A, 0);
+        u.character.base_mut().body = 10.0;
+        u.skills.set(Skill::Grit, 0); // effective 10
+        u.character.fill();
+        u.character.apply_damage(0, 0, 65.0); // downed at −5 (a deep hole)
+        // target 10 + (−5) = 5; roll 11 ⇒ miss by 6 (≥ DEATH_SAVE_MARGIN) ⇒ bleeds out.
+        let mut b = Battle::with_rng(vec![u], ScriptedRng::from_d10([6, 5]));
+        b.death_door_phase();
+        assert!(!b.units[0].is_downed() && !b.units[0].is_alive()); // succumbed — truly dead
     }
 
     #[test]

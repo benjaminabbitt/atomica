@@ -67,6 +67,12 @@ per-engagement. The knobs are coupled, so watch the *loop*, not any single numbe
 | **Degenerate** | units break every battle (Stress too hot / Resolve too thin) **OR** Break never fires (too cold) · recovery is automatic (no tension) **OR** impossible (a break = a dead unit for the fight) |
 | **Knobs** | Stress per trigger (ally/leader death, `FLANK_STRESS`, heavy-hit) · `RESOLVE_PER_NERVE` (buffer depth) · `RESOLVE_REVIVE_FRACTION` + `RESILIENCE_PENALTY_MAX` (how hard recovery is) · `RESOLVE_CALM` + leader `leadership` (recovery assist) · Grit baseline/training |
 
+**Death's Door (§9.4) — the permadeath-rate dial.** A downed unit bleeds out via a **Grit-off-Body**
+save; `DEATH_SAVE_MARGIN` sets the down→dead window. This is the §12 #16 *permadeath-rate* knob and
+is **untunable on paper** — it needs the built game *and* the revive sources (menders/extraction, 🔭)
+to mean anything. Watch: how many rounds a typical downed unit clings (too few = no rescue window;
+too many = death feels cheap), once a heal source exists to exploit the window.
+
 ---
 
 ## Also watching (lower priority)
