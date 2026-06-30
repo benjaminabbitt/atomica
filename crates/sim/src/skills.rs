@@ -27,10 +27,14 @@ pub enum Skill {
     Heavy,
     /// Gadgets, repair, demolitions (Intellect).
     Tech,
+    /// **Grit** — pull yourself back from a 0-state (§4): the roll to **recover** from a Break
+    /// (rolled off **Nerve**) or, when it lands, to cling on while **Downed** (off **Body**). One
+    /// skill, the capacity attribute picked by which pool zeroed (`Unit::effective_skill_off`).
+    Grit,
 }
 
 impl Skill {
-    pub const ALL: [Skill; 8] = [
+    pub const ALL: [Skill; 9] = [
         Skill::Melee,
         Skill::Gunnery,
         Skill::Hacking,
@@ -39,6 +43,7 @@ impl Skill {
         Skill::Stealth,
         Skill::Heavy,
         Skill::Tech,
+        Skill::Grit,
     ];
     pub const COUNT: usize = Self::ALL.len();
 
@@ -53,6 +58,7 @@ impl Skill {
             Skill::Melee | Skill::Heavy => Stat::Body,
             Skill::Gunnery | Skill::Stealth | Skill::Evade => Stat::Dexterity,
             Skill::Hacking | Skill::Medical | Skill::Tech => Stat::Intellect,
+            Skill::Grit => Stat::Nerve, // morale-recovery home; rolls off Body when Downed instead
         }
     }
 }
@@ -166,8 +172,12 @@ impl Chassis {
     /// recruit is competent-but-unremarkable; the gap to a veteran is earned.
     pub fn baseline_skills(self) -> Skills {
         match self {
-            Chassis::Flesh => Skills::new().with(Skill::Melee, 2),
-            Chassis::Augmented => Skills::new().with(Skill::Melee, 1).with(Skill::Hacking, 1),
+            // Biological chassis carry baseline **Grit** (Competent) — a mind that can steady itself
+            // and recover from a Break (§4); Machine / Vehicle have no Resolve to recover, so none.
+            Chassis::Flesh => Skills::new().with(Skill::Melee, 2).with(Skill::Grit, 0),
+            Chassis::Augmented => {
+                Skills::new().with(Skill::Melee, 1).with(Skill::Hacking, 1).with(Skill::Grit, 0)
+            }
             Chassis::Machine => Skills::new().with(Skill::Gunnery, 2),
             Chassis::Vehicle => Skills::new().with(Skill::Gunnery, 1),
         }

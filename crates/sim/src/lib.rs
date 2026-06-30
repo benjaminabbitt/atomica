@@ -1063,6 +1063,15 @@ const FLANK_STRESS: f32 = 3.0;
 /// and chip damage don't count — only a landed attack.) Placeholder tuning (⏳).
 const HEAVY_HIT_FRACTION: f32 = 0.33;
 const HEAVY_HIT_STRESS: f32 = 4.0;
+/// **Recovery** (§4): a **broken** unit rolls **Grit** off Nerve each round to pull back —
+/// `2d10 ≤ effective(Grit, Nerve) − penalty`. The penalty scales with how deep below the **revive
+/// floor** (`RESOLVE_REVIVE_FRACTION × max_resolve`) its Resolve sits: full `RESILIENCE_PENALTY_MAX`
+/// at the bottom (pinned at 0), easing to 0 at the floor — so Rally / calming both make the roll
+/// land. On a pass it un-breaks at the floor (+ margin). A broken unit not currently flanked also
+/// **calms** by `RESOLVE_CALM` (it settles once out of the press). Placeholder tuning (⏳).
+const RESOLVE_REVIVE_FRACTION: f32 = 0.3;
+const RESILIENCE_PENALTY_MAX: i32 = 8;
+const RESOLVE_CALM: f32 = 3.0;
 /// **Logicbomb** — the floor degrade a planted bomb fires past the disable floor.
 const LOGICBOMB_DEGRADE: u32 = 2;
 /// **Body → melee damage** (`docs/stats.md`): Body above this baseline lends `BODY_MELEE_DAMAGE`
@@ -1255,7 +1264,8 @@ impl<R: RandomSource> Battle<R> {
         self.terrain_phase(); // hazard hexes burn whoever stands on them
         self.reap(); // DoTs / hazards can kill — fire their death triggers
         self.flank_stress(); // §4: being surrounded wears the nerve down…
-        self.rally_phase(); // …and leaders steady the formation before it acts
+        self.rally_phase(); // …leaders steady the formation…
+        self.recovery_phase(); // …and the broken roll Grit to pull back, before anyone acts
         self.woven_phase();
         self.contagion_phase(); // corruption jumps to fresh victims (contested)
         self.ward_phase(); // Antivirus programs cleanse worm corruption
@@ -2226,6 +2236,49 @@ impl<R: RandomSource> Battle<R> {
                 if u.is_alive() && u.team == team && center.distance(u.pos) <= RALLY_RADIUS {
                     u.rally(amount);
                 }
+            }
+        }
+    }
+
+    /// **Recovery phase** (§4): every **broken** unit rolls **Grit** off Nerve to pull itself back —
+    /// `2d10 ≤ effective(Grit, Nerve) − penalty`, the penalty scaling with how far below the revive
+    /// floor its Resolve sits (max at 0, none at the floor — so Rally and calming both ease it). A
+    /// broken unit **not currently flanked** also *calms* (a small trickle, settling out of the
+    /// press) — so a routed unit that fled climbs and recovers, while a berserker pinned in the
+    /// scrum stays down. On a pass it un-breaks at the floor (+ margin); run **after** `rally_phase`
+    /// and before the action, so a recovered unit acts normally that round.
+    fn recovery_phase(&mut self) {
+        for i in 0..self.units.len() {
+            if !self.units[i].is_alive() || !self.units[i].is_broken() {
+                continue;
+            }
+            let max = self.units[i].max_resolve();
+            if max <= 0.0 {
+                continue; // morale-immune (shouldn't be broken, but guard)
+            }
+            // Calm trickle when not under the press (fewer than a flank's worth of adjacent foes).
+            let (pos, foe) = (self.units[i].pos, self.units[i].team.enemy());
+            let pinned = self
+                .units
+                .iter()
+                .filter(|u| u.is_alive() && u.team == foe && pos.distance(u.pos) <= 1)
+                .count()
+                >= FLANK_THRESHOLD;
+            if !pinned {
+                self.units[i].rally(RESOLVE_CALM);
+            }
+            // The Grit roll: target = effective(Grit, Nerve) − a deficit penalty (eased toward the
+            // floor). A deeper hole is harder to climb out of; Rally / calm shrink it.
+            let floor = RESOLVE_REVIVE_FRACTION * max;
+            let deficit_frac = ((floor - self.units[i].resolve()) / floor).clamp(0.0, 1.0);
+            let penalty = (deficit_frac * RESILIENCE_PENALTY_MAX as f32).round() as i32;
+            let target = self.units[i].effective_skill_off(Skill::Grit, Stat::Nerve) - penalty;
+            let outcome = resolve_check(&mut self.rng, target);
+            if outcome.success {
+                // Recovered: un-break, standing back up at the floor (+ a margin-scaled steadiness).
+                self.units[i].character.broken = false;
+                let comeback = (floor + outcome.margin.max(0) as f32).min(max);
+                self.units[i].character.resolve = self.units[i].character.resolve.max(comeback);
             }
         }
     }
@@ -4103,6 +4156,68 @@ mod tests {
         b.resolve_attack_with(0, 1, Attack::melee(30.0));
         assert!(b.units[1].is_alive());
         assert_eq!(b.units[1].resolve(), 18.0 - HEAVY_HIT_STRESS); // a brutal blow rattled it
+    }
+
+    // -- Morale: recovery — the Grit roll (§4) --------------------------------
+
+    #[test]
+    fn a_broken_unit_rolls_grit_to_recover() {
+        let mut u = unit(0, Team::A, 0);
+        u.character.base_mut().nerve = 12.0; // max Resolve 72, floor 21.6
+        u.skills.set(Skill::Grit, 2); // trained ⇒ effective Grit off Nerve = 12 + 2 = 14
+        u.character.fill();
+        u.apply_stress(72.0); // break it
+        assert!(u.is_broken());
+        // Alone ⇒ not pinned ⇒ calm +3 (Resolve 3); deficit penalty 7 ⇒ target 14 − 7 = 7; 5 ≤ 7.
+        let mut b = Battle::with_rng(vec![u], ScriptedRng::from_d10([2, 3]));
+        b.recovery_phase();
+        assert!(!b.units[0].is_broken()); // pulled itself back together
+        assert!(b.units[0].resolve() >= RESOLVE_REVIVE_FRACTION * 72.0); // stands up at the floor
+    }
+
+    #[test]
+    fn a_low_grit_unit_stays_broken() {
+        let mut u = unit(0, Team::A, 0);
+        u.character.base_mut().nerve = 8.0; // max 48, floor 14.4
+        u.skills.set(Skill::Grit, -4); // untrained ⇒ effective 8 − 4 = 4
+        u.character.fill();
+        u.apply_stress(48.0); // break
+        // calm +3; penalty ~6 ⇒ target 4 − 6 = −2 ⇒ a mid roll can't make it (no crit).
+        let mut b = Battle::with_rng(vec![u], ScriptedRng::from_d10([5, 5]));
+        b.recovery_phase();
+        assert!(b.units[0].is_broken()); // too rattled — stays down
+    }
+
+    #[test]
+    fn rally_eases_the_grit_roll_but_only_the_roll_recovers() {
+        let mut u = unit(0, Team::A, 0);
+        u.character.base_mut().nerve = 10.0; // max 60, floor 18
+        u.skills.set(Skill::Grit, 0); // effective 10
+        u.character.fill();
+        u.apply_stress(60.0); // break, Resolve 0
+        u.rally(18.0); // a leader pulls it up to the floor — but rally alone doesn't un-break
+        assert!(u.is_broken());
+        // At/above the floor the deficit penalty is 0 ⇒ a clean Grit roll off Nerve: 8 ≤ 10.
+        let mut b = Battle::with_rng(vec![u], ScriptedRng::from_d10([4, 4]));
+        b.recovery_phase();
+        assert!(!b.units[0].is_broken()); // the roll lands once rally cleared the deficit
+    }
+
+    #[test]
+    fn a_pinned_unit_gets_no_calm_and_holds_broken() {
+        let mut u = unit(0, Team::A, 0).with_break_mode(BreakMode::Berserk);
+        u.character.base_mut().nerve = 10.0; // max 60, floor 18
+        u.skills.set(Skill::Grit, 0);
+        u.character.fill();
+        u.apply_stress(60.0); // break, Resolve 0
+        // Surrounded (two adjacent foes) ⇒ pinned ⇒ no calm trickle; penalty maxes the roll out.
+        let mut b = Battle::with_rng(
+            vec![u, unit(1, Team::B, 1), unit(2, Team::B, -1)],
+            ScriptedRng::from_d10([5, 5]),
+        );
+        b.recovery_phase();
+        assert_eq!(b.units[0].resolve(), 0.0); // no calm — pinned in the scrum
+        assert!(b.units[0].is_broken()); // target 10 − 8 = 2; it rages on
     }
 
     #[test]

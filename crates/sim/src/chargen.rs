@@ -1233,16 +1233,19 @@ impl Character {
 
     /// Apply `amount` **Stress** to the Resolve pool (§4) — the morale equivalent of damage. A unit
     /// with no Resolve capacity (`max_resolve ≤ 0` — Nerve 0, a machine) is **morale-immune**: a
-    /// no-op. Latches [`broken`](Self::broken) when Resolve reaches 0. Returns whether it **broke on
-    /// this call** (false if already broken or immune).
+    /// no-op. Latches [`broken`](Self::broken) when Resolve reaches 0. A **broken** unit still drains
+    /// (kept under fire → pinned at 0 → recovery stays hard). Returns whether it **broke on this
+    /// call** (the 0-crossing transition; false if already broken or immune).
     pub fn apply_stress(&mut self, amount: f32) -> bool {
-        if self.broken || self.realize().max_resolve() <= 0.0 {
+        if self.realize().max_resolve() <= 0.0 {
             return false;
         }
         self.resolve = (self.resolve - amount).max(0.0);
-        let broke = self.resolve <= 0.0;
-        self.broken = broke;
-        broke
+        let broke_now = self.resolve <= 0.0 && !self.broken;
+        if self.resolve <= 0.0 {
+            self.broken = true;
+        }
+        broke_now
     }
 
     /// **Reset morale** (§4) — restore Resolve to full and clear [`broken`](Self::broken). Composure
@@ -1254,13 +1257,11 @@ impl Character {
     }
 
     /// **Rally** `amount` Resolve back (§4) — the inverse of [`apply_stress`](Self::apply_stress),
-    /// a leader steadying the formation. Clamped to `max_resolve`. **Preventive only:** a
-    /// morale-immune unit (no pool) and an already-**broken** one are skipped — Rally tops up a
-    /// wavering ally before it breaks; reversing a break (recovery) is a later 🔭 lever.
+    /// a leader (or mender) steadying the formation. Clamped to `max_resolve`; morale-immune units
+    /// (no pool) are skipped. It **raises a broken unit's Resolve too** (shrinking the deficit so its
+    /// Grit recovery roll eases) but **never clears `broken` itself** — leaving the 0-state is gated
+    /// by the Grit roll (`Battle::recovery_phase`), not by crossing a threshold.
     pub fn rally(&mut self, amount: f32) {
-        if self.broken {
-            return;
-        }
         let max = self.realize().max_resolve();
         if max <= 0.0 {
             return;

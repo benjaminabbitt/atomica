@@ -54,7 +54,7 @@ archetypes 10–13). They are the substrate the **skill families** are tiers
 | **Body** | `unit.body` | Melee, Heavy | **Integrity = Body × `HP_PER_BODY`** ✅ (toughness *is* HP — one stat), **melee damage** ✅ (signed off 10: heavier swings harder, frail softer), **biological resilience** ✅ — the resist **poison / plague / virus** afflictions roll against (their attack is `power − Body`), and that a virus *attacks* (§5). A strong, tough frame shrugs off toxins and infection. |
 | **Dexterity** | `unit.dexterity` | Gunnery, Stealth, **Evade** | **Evasion** ✅, **physical Initiative** ✅ — *dragged down by heavy plating (the armor tradeoff)* |
 | **Intellect** | `unit.intellect` | Hacking, Medical, Tech | **ICE** ✅ (digital active defense), **digital Initiative** ✅ (net turn order — *speed of thought*) |
-| **Nerve** 🔭 | `unit.nerve` | Social (Command, Intimidate) | **Resolve = Nerve × `K`** 🔭 (composure *is* the morale pool — the mental mirror of Integrity, [`design-delta`](design-delta-v0.26.md) §4), **composure** 🔭 — the resist **spoof / intimidation / Stress** roll against (`power − Nerve`). Force of personality (genre: *Cool*). Machines have **Nerve 0** — no mind to break (morale-proof) and no judgement to override a lie (utterly spoof-credulous). |
+| **Nerve** | `unit.nerve` | Social (Command, Intimidate), **Grit** | **Resolve = Nerve × `K`** ✅ (composure *is* the morale pool — the mental mirror of Integrity, [`design-delta`](design-delta-v0.26.md) §4), **composure** ✅ — the resist **spoof / intimidation / Stress** roll against (`power − Nerve`). Force of personality (genre: *Cool*). Machines have **Nerve 0** — no mind to break (morale-proof) and no judgement to override a lie (utterly spoof-credulous). |
 
 > **ICE and Link are *granted*, not derived.** They come from gear / chassis (a cyberdeck
 > lifts both), not from an attribute — Intellect governs the netrunning *skills* and the digital
@@ -222,7 +222,7 @@ target number** ◆ ([`resolve_versus`](../crates/sim/src/roll.rs)):
 | **Link** | implants (cyberdeck…) | reachability gate · digital initiative · hack channel · **antenna range** ([`netrunning.md`](netrunning.md)) |
 | **Initiative** | `Dexterity` + gear | physical activation order |
 | **Integrity / Barrier / Plating** | Body + armor | the HP pools ([`combat.md`](combat.md)) — *not* modifiers; clamped pools |
-| **Resolve** 🔭 | `Nerve × K` | the **morale pool** — Stress depletes it; at 0 a unit **Breaks** (rout / berserk); the mental mirror of Integrity ([`design-delta`](design-delta-v0.26.md) §4) |
+| **Resolve** ✅ | `Nerve × K` | the **morale pool** — Stress depletes it; at 0 a unit **Breaks** (rout / berserk). A broken unit rolls **Grit** off Nerve each round to **recover** (`2d10 ≤ effective(Grit, Nerve) − deficit`); the mental mirror of Integrity ([`design-delta`](design-delta-v0.26.md) §4) |
 
 ---
 

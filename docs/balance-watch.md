@@ -54,6 +54,19 @@ drone to its own ≈zero wall. The drone-fielder's outs: **Guard** the key unit,
 | **Degenerate** | air-gapping is painless ⇒ drones never expose ⇒ digital meta dies · **OR** any runner hard-counters drones ⇒ drone-builds unviable |
 | **Master dial** | **the cost of going dark** (AR-blindness → dumb targeting) vs **the cost of staying loud** (spoof/worm/EMP hit-rate). One slider moves the whole "is a runner worth bringing?" question. |
 
+## 3. Morale — does the break/recover loop swing right? ◆
+
+**The property.** A unit Breaks at Resolve 0 (rout/berserk) and claws back via a **Grit** roll (§4).
+The whole loop is placeholder ⏳ numbers, and the campaign already showed how **sensitive content
+balance is to it** — too-hot Stress made the baseline unwinnable until morale was made
+per-engagement. The knobs are coupled, so watch the *loop*, not any single number.
+
+| | |
+|---|---|
+| **Healthy** | Break is an occasional, dramatic swing in a hard fight; routed units mostly recover if pulled to safety / rallied; berserkers rage then settle as the field thins |
+| **Degenerate** | units break every battle (Stress too hot / Resolve too thin) **OR** Break never fires (too cold) · recovery is automatic (no tension) **OR** impossible (a break = a dead unit for the fight) |
+| **Knobs** | Stress per trigger (ally/leader death, `FLANK_STRESS`, heavy-hit) · `RESOLVE_PER_NERVE` (buffer depth) · `RESOLVE_REVIVE_FRACTION` + `RESILIENCE_PENALTY_MAX` (how hard recovery is) · `RESOLVE_CALM` + leader `leadership` (recovery assist) · Grit baseline/training |
+
 ---
 
 ## Also watching (lower priority)
