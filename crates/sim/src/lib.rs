@@ -354,6 +354,33 @@ fn weapon_grant(attack: Attack) -> Decorator {
     Decorator::gear(Tag::Weapon, vec![]).with_grant(Capability::Weapon(attack))
 }
 
+/// A **mend** — a medic's heal profile (`docs/design-delta` §3, the Doctor / cross-pool sustain).
+/// Restores `amount` to each pool it touches on an **ally**: `integrity` (which **revives** a Downed
+/// ally when it climbs back above 0) and/or `resolve` (a **Rally** that steadies a shaken one and
+/// eases its Grit recovery). Cross-pool *scope* is just which flags are set (§3.3). `range` is the
+/// reach (like a weapon's).
+#[derive(Clone, Copy, Debug)]
+pub struct Heal {
+    pub amount: f32,
+    pub range: i32,
+    /// Restores **Integrity** (bio) — revives a Downed ally past 0.
+    pub integrity: bool,
+    /// Restores **Resolve** (morale) — Rallies a shaken ally toward recovery.
+    pub resolve: bool,
+}
+
+impl Heal {
+    /// A **Doctor's kit** — the bio+morale mend: heals Integrity (revive) and Resolve (rally).
+    pub fn doctor(amount: f32, range: i32) -> Self {
+        Self { amount, range, integrity: true, resolve: true }
+    }
+}
+
+/// A mend decorator: a `Tag::Gear` grant of a [`Heal`] on the gen (the medkit).
+fn mend_grant(heal: Heal) -> Decorator {
+    Decorator::gear(Tag::Gear, vec![]).with_grant(Capability::Mend(heal))
+}
+
 /// An installed implant: the authored [`Implant`] (its `Contribution`, granted hack,
 /// and breach `hack_effects`) paired with the [`GenId`] of its decorator on the unit's
 /// `character`. The **live condition** lives on the decorator (`docs/layers.md` L5);
@@ -569,6 +596,17 @@ impl Unit {
     /// The unit's composed **weapon loadout** (every active `Capability::Weapon` grant).
     pub fn weapons(&self) -> Vec<Attack> {
         self.realized().weapons()
+    }
+
+    /// The unit's **mend** profile if it carries a medkit (a `Capability::Mend` grant) — a medic.
+    pub fn mend(&self) -> Option<Heal> {
+        self.realized().mend()
+    }
+
+    /// Builder: grant a **mend** — make this unit a medic (`docs/design-delta` §3).
+    pub fn with_mend(mut self, heal: Heal) -> Self {
+        self.character.install(mend_grant(heal));
+        self
     }
 
     /// The highest-damage weapon ignoring range (a threat proxy) — `None` if unarmed.
@@ -1083,6 +1121,9 @@ const RESOLVE_CALM: f32 = 3.0;
 /// failure **by ≥ `DEATH_SAVE_MARGIN`** (or a fumble) **succumbs** (truly dead). A heal back above 0
 /// revives. Placeholder tuning (⏳ — the permadeath-rate dial, §12 #16).
 const DEATH_SAVE_MARGIN: i32 = 5;
+/// A medic **mends** an ally that is Downed, Broken, or below this fraction of max Integrity
+/// (`docs/design-delta` §3) — otherwise it fights. Keeps the Doctor from fussing over scratches.
+const MEND_INTEGRITY_FRACTION: f32 = 0.5;
 /// **Logicbomb** — the floor degrade a planted bomb fires past the disable floor.
 const LOGICBOMB_DEGRADE: u32 = 2;
 /// **Body → melee damage** (`docs/stats.md`): Body above this baseline lends `BODY_MELEE_DAMAGE`
@@ -1415,6 +1456,13 @@ impl<R: RandomSource> Battle<R> {
         if self.units[i].is_broken() {
             return self.broken_activation(i);
         }
+        // **Medic** (§3): a unit with a mend tends the most-in-need ally (revive / heal / rally)
+        // instead of fighting — but only when the line actually needs it, else it fights.
+        if self.units[i].mend().is_some() {
+            if let Some(t) = self.mend_target(i) {
+                return self.mend_activation(i, t);
+            }
+        }
         let enemy = self.select_target(i);
         // Objective pull: the nearest-N designated seekers push the point *through* combat —
         // they flow to it and still fire after moving — while everyone else fights normally.
@@ -1525,6 +1573,65 @@ impl<R: RandomSource> Battle<R> {
                         self.resolve_attack_with(i, target, weapon);
                     }
                 }
+            }
+        }
+    }
+
+    /// The ally a medic `i` should **mend** (`docs/design-delta` §3): one that's **Downed** (revive
+    /// — most urgent), **badly wounded** (< [`MEND_INTEGRITY_FRACTION`] of max Integrity), or
+    /// **Broken** (rally). Ranks downed first (deepest bleed first), then most-wounded, then broken,
+    /// then nearest. `None` if the line is healthy — the medic fights instead.
+    fn mend_target(&self, i: usize) -> Option<usize> {
+        let me = &self.units[i];
+        self.units
+            .iter()
+            .enumerate()
+            .filter(|(j, u)| {
+                *j != i
+                    && u.team == me.team
+                    && (u.character.downed
+                        || (u.is_alive()
+                            && (u.integrity() < MEND_INTEGRITY_FRACTION * u.max_integrity()
+                                || u.is_broken())))
+            })
+            .min_by_key(|(_, u)| {
+                let ratio = (u.integrity() / u.max_integrity().max(1.0) * 1000.0) as i32;
+                (
+                    !u.character.downed as i32, // downed first
+                    ratio,                      // then most-wounded (deepest bleed ⇒ negative ⇒ first)
+                    !u.is_broken() as i32,      // then broken
+                    me.pos.distance(u.pos),
+                    u.id.0,
+                )
+            })
+            .map(|(j, _)| j)
+    }
+
+    /// A medic's activation (`docs/design-delta` §3): close to heal range of its `mend_target`, then
+    /// **mend** it — restore Integrity (reviving a Downed ally past 0) and Rally its Resolve.
+    fn mend_activation(&mut self, i: usize, t: usize) {
+        let heal = self.units[i].mend().expect("mend_activation without a mend");
+        let mut budget = self.units[i].speed.max(0);
+        while self.units[i].pos.distance(self.units[t].pos) > heal.range {
+            let next = self.close_step(i, self.units[t].pos, false);
+            if next == self.units[i].pos {
+                break;
+            }
+            let cost = self.terrain.move_cost(next);
+            if cost > budget {
+                break;
+            }
+            budget -= cost;
+            let from = self.units[i].pos;
+            self.units[i].pos = next;
+            self.emit(CombatEvent::Moved { unit: self.units[i].id, from, to: next });
+        }
+        if self.units[i].pos.distance(self.units[t].pos) <= heal.range {
+            if heal.integrity {
+                self.units[t].character.heal(heal.amount); // revives a Downed ally past 0
+            }
+            if heal.resolve {
+                self.units[t].rally(heal.amount); // steadies a shaken one toward Grit recovery
             }
         }
     }
@@ -4296,6 +4403,32 @@ mod tests {
         let mut b = Battle::with_rng(vec![u], ScriptedRng::from_d10([6, 5]));
         b.death_door_phase();
         assert!(!b.units[0].is_downed() && !b.units[0].is_alive()); // succumbed — truly dead
+    }
+
+    // -- The mender (the Doctor, §3) -------------------------------------------
+
+    #[test]
+    fn a_medic_revives_a_downed_ally() {
+        let medic = unit(0, Team::A, 0).with_mend(Heal::doctor(20.0, 1));
+        let mut ally = unit(1, Team::A, 1); // adjacent (heal range 1)
+        ally.character.base_mut().body = 10.0; // max Integrity 60
+        ally.character.fill();
+        ally.character.apply_damage(0, 0, 65.0); // downed at −5
+        assert!(ally.is_downed());
+        let mut b = Battle::new(vec![medic, ally, unit(2, Team::B, 5)], 1);
+        b.physical_activation(0); // the medic tends the downed ally instead of fighting
+        assert!(!b.units[1].is_downed() && b.units[1].is_alive()); // back on its feet
+        assert_eq!(b.units[1].integrity(), 15.0); // −5 + 20
+    }
+
+    #[test]
+    fn a_medic_fights_when_the_line_is_whole() {
+        let medic = unit(0, Team::A, 0).with_mend(Heal::doctor(20.0, 1));
+        let enemy = unit(2, Team::B, 1); // adjacent, undefended ⇒ auto-hit
+        let mut b = Battle::new(vec![medic, unit(1, Team::A, 3), enemy], 1);
+        let ehp = b.units[2].integrity();
+        b.physical_activation(0); // nobody needs mending ⇒ the medic attacks
+        assert!(b.units[2].integrity() < ehp);
     }
 
     #[test]

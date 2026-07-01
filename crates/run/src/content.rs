@@ -20,8 +20,8 @@
 
 use crate::{Encounter, GamePlan, RunPlan};
 use atomica_sim::{
-    ArmorClass, Attack, BreakMode, Chassis, DamageType, DeathTrigger, Footprint, FoundAction, Hex,
-    Implant, MovementProfile, NetDoctrine, ObjectiveKind, PenTier, Program, Skill, Team,
+    ArmorClass, Attack, BreakMode, Chassis, DamageType, DeathTrigger, Footprint, FoundAction, Heal,
+    Hex, Implant, MovementProfile, NetDoctrine, ObjectiveKind, PenTier, Program, Skill, Team,
     TargetingProfile, Terrain, Tile, Unit, EquipmentTag, EquipmentTags,
 };
 
@@ -200,6 +200,19 @@ pub fn anthem(name: &str) -> Unit {
         .with_movement(MovementProfile::Hold) // holds central so its Rally radius covers the squad
 }
 
+/// A **medic** — the squad's Doctor (§3). Carries a kit that **revives** a downed ally (heals
+/// Integrity back above 0) and **rallies** a shaken one (Resolve), tending the most-in-need each
+/// round instead of fighting unless the line is whole. A light backline sidearm for when it must.
+pub fn medic(name: &str) -> Unit {
+    body(name, 58.0, 6.0)
+        .with_dexterity(10.0)
+        .with_intellect(11.0)
+        .with_skill(Skill::Medical, 2) // trained field medicine
+        .with_mend(Heal::doctor(18.0, 1)) // 18 Integrity/Resolve to an adjacent ally (revive / rally)
+        .with_attack(weapon(6.0, DamageType::Piercing, PenTier::Contact, 3)) // a light sidearm
+        .with_targeting(TargetingProfile::HighestThreat)
+}
+
 /// The **starter roster** — the core trio (one melee, one runner, one tank). The probe
 /// tunes against this loadout, so it stays fixed.
 pub fn starter_roster() -> Vec<Unit> {
@@ -216,6 +229,7 @@ pub fn full_squad() -> Vec<Unit> {
         marksman("Hawkeye"),
         sapper("Surge"),
         anthem("Chorus"),
+        medic("Stitch"),
     ]
 }
 
@@ -705,6 +719,9 @@ mod tests {
         assert_eq!(bulwark("Anvil").break_mode, BreakMode::Rout); // disciplined — holds / flees
         // The line is morale-capable (a Resolve pool to defend), the Anthem most of all.
         assert!(full_squad().iter().all(|u| u.max_resolve() > 0.0));
+        // The medic carries a mend kit (the Doctor — revive / rally, §3); the others don't.
+        assert!(medic("Stitch").mend().is_some());
+        assert!(blade("Katana").mend().is_none());
     }
 
     /// The whole campaign (every new archetype, AoE / on-death / netrunning, the Survive

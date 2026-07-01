@@ -158,6 +158,9 @@ pub enum Capability {
     Hack(crate::Hack),
     /// A weapon profile (`docs/combat.md`) — granted by a weapon / a chrome arm.
     Weapon(crate::Attack),
+    /// A **mend** profile (`docs/design-delta` §3) — a medkit / Doctor's heal that restores
+    /// ally pools (Integrity revives a downed ally; Resolve rallies a shaken one).
+    Mend(crate::Heal),
 }
 
 /// A non-numeric passive **flag** a status imposes — read by other phases, not a
@@ -756,6 +759,15 @@ impl Realized {
     pub fn hack(&self) -> Option<crate::Hack> {
         self.capabilities.iter().rev().find_map(|c| match c {
             Capability::Hack(h) => Some(*h),
+            _ => None,
+        })
+    }
+
+    /// The unit's **mend** profile, if it carries a medkit / Doctor's kit (the highest-priority
+    /// [`Capability::Mend`] grant). `None` ⇒ no healer.
+    pub fn mend(&self) -> Option<crate::Heal> {
+        self.capabilities.iter().rev().find_map(|c| match c {
+            Capability::Mend(h) => Some(*h),
             _ => None,
         })
     }
