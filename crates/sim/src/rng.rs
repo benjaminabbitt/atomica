@@ -38,10 +38,16 @@ pub trait RandomSource {
         (self.next_u64() % 6) as i32 + 1
     }
 
-    /// The core mechanic's dice: **3d6** (`3..=18`) — a tight bell curve so skill
-    /// dominates and luck is a small nudge (design-delta §13).
-    fn roll_3d6(&mut self) -> i32 {
-        self.d6() + self.d6() + self.d6()
+    /// A single d10, `1..=10`.
+    fn d10(&mut self) -> i32 {
+        (self.next_u64() % 10) as i32 + 1
+    }
+
+    /// The core mechanic's dice: **2d10** (`2..=20`) — a flatter (triangular) curve than
+    /// 3d6, so luck swings harder, skill is less deterministic, and the balance is far less
+    /// sensitive to any single stat (no roll exceeds ~90%, so no unit is a linchpin).
+    fn roll_2d10(&mut self) -> i32 {
+        self.d10() + self.d10()
     }
 }
 
@@ -80,9 +86,15 @@ impl ScriptedRng {
         Self { queue: values.into_iter().collect() }
     }
 
-    /// Queue d6 **faces** (`1..=6`) directly — e.g. `from_d6([6, 6, 6])` forces 3d6 = 18.
+    /// Queue d6 **faces** (`1..=6`) directly — e.g. `from_d6([6, 6, 6])` forces three d6 = 18.
     pub fn from_d6(faces: impl IntoIterator<Item = i32>) -> Self {
         Self::new(faces.into_iter().map(|f| (f.clamp(1, 6) - 1) as u64))
+    }
+
+    /// Queue d10 **faces** (`1..=10`) directly — the core dice. `from_d10([10, 9])` forces
+    /// 2d10 = 19 (a fumble); `from_d10([1, 2])` forces 3 (a crit).
+    pub fn from_d10(faces: impl IntoIterator<Item = i32>) -> Self {
+        Self::new(faces.into_iter().map(|f| (f.clamp(1, 10) - 1) as u64))
     }
 }
 
@@ -121,8 +133,8 @@ mod tests {
     }
 
     #[test]
-    fn scripted_3d6_sums() {
-        let mut r = ScriptedRng::from_d6([6, 6, 6]);
-        assert_eq!(r.roll_3d6(), 18);
+    fn scripted_2d10_sums() {
+        let mut r = ScriptedRng::from_d10([10, 9]);
+        assert_eq!(r.roll_2d10(), 19);
     }
 }

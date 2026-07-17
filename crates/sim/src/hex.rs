@@ -85,6 +85,36 @@ impl Hex {
             .min_by_key(|n| n.distance(goal))
             .unwrap_or(self)
     }
+
+    /// The neighbour (or `self`) that **maximises** distance from `threat` — one
+    /// step of a retreat (Kite / Disperse). Stable tiebreak so it's deterministic.
+    pub fn step_away(self, threat: Hex) -> Hex {
+        std::iter::once(self)
+            .chain(self.neighbors())
+            .max_by_key(|h| (h.distance(threat), -h.q, -h.r))
+            .unwrap_or(self)
+    }
+
+    /// A **flanking** step toward `goal`: close the distance, but break ties toward
+    /// the greatest frontage (row) offset — approach from the side.
+    pub fn step_flank(self, goal: Hex) -> Hex {
+        std::iter::once(self)
+            .chain(self.neighbors())
+            .min_by_key(|h| (h.distance(goal), -(h.r - goal.r).abs(), h.q, h.r))
+            .unwrap_or(self)
+    }
+
+    /// The axial **direction index** (`0..6`) whose one-hex step best closes on
+    /// `goal` — the bearing a beam fires along. Ties break to the lower index for
+    /// determinism.
+    pub fn direction_to(self, goal: Hex) -> usize {
+        (0..6)
+            .min_by_key(|&d| {
+                let (dq, dr) = DIRECTIONS[d];
+                Hex::new(self.q + dq, self.r + dr).distance(goal)
+            })
+            .unwrap_or(0)
+    }
 }
 
 #[cfg(test)]
@@ -127,6 +157,23 @@ mod tests {
         assert_eq!(c.ring(2).len(), 12);
         // A ring sits at exactly its radius.
         assert!(c.ring(2).iter().all(|h| c.distance(*h) == 2));
+    }
+
+    #[test]
+    fn step_away_increases_distance() {
+        let pos = Hex::new(0, 0);
+        let threat = Hex::new(2, 0);
+        let away = pos.step_away(threat);
+        assert!(away.distance(threat) > pos.distance(threat)); // retreated
+        assert_eq!(pos.distance(away), 1); // exactly one step
+    }
+
+    #[test]
+    fn step_flank_still_closes_in() {
+        let pos = Hex::new(0, 0);
+        let goal = Hex::new(4, 0);
+        let flanked = pos.step_flank(goal);
+        assert!(flanked.distance(goal) < pos.distance(goal)); // approaches
     }
 
     #[test]

@@ -16,7 +16,10 @@ reproduce identically (needed for async / replayable auto-resolution):
 
 ```
 crates/
-  sim/    atomica-sim   pure Rust, no engine deps, deterministic (seeded RNG)
+  sim/    atomica-sim   pure Rust, no engine deps, deterministic (seeded RNG) — one battle
+  run/    atomica-run   the roguelike progression: Encounter (one battle) < Run (a series,
+                        attrition gauntlet, no R&R within) < Game (a series of runs, R&R
+                        between) — permadeath, end-on-wipe, engine-free, deterministic
   game/   atomica-game  thin macroquad + egui front-end that renders sim state
 web/      index.html    macroquad wasm loader
 ```
@@ -27,8 +30,8 @@ renderer, or run the sim on a server, without touching game logic.
 > Status: scaffold. `sim` models the *locked shapes* (stat line, layered defense,
 > penetration tiers, armor-matrix axis, initiative-ordered ticks) with placeholder
 > values and a minimal "attack nearest / step toward" resolution loop. The status
-> pool, both contagions, netrunning, IFF/spoof, and Heat are marked extension
-> points, not guessed numbers.
+> pool, both contagions, netrunning, and IFF/spoof are marked extension
+> points, not guessed numbers. *(Heat was one such — dropped for now.)*
 
 ## Develop
 

@@ -5,8 +5,8 @@
 //! timer. All game rules live in the sim crate.
 
 use atomica_sim::{
-    ArmorClass, Attack, Battle, Chassis, DamageType, Defense, Hex, Outcome, StatusSpec, Team, Unit,
-    UnitId,
+    ArmorClass, Attack, Battle, Chassis, DamageType, Footprint, Hex, Implant, NetDoctrine, Outcome,
+    Program, Skill, StatusSpec, Team, Unit, EquipmentTags, HP_PER_BODY,
 };
 use egui_macroquad::egui;
 use macroquad::prelude::*;
@@ -25,34 +25,80 @@ fn hex_to_pixel(h: Hex, origin: Vec2) -> Vec2 {
 
 /// A tiny demo encounter so the window shows something real on first run.
 fn demo_battle() -> Battle {
-    let mk = |id: u32, name: &str, team, q, r, dmg, init, range, dtype, pen, armor_class| Unit {
-        id: UnitId(id),
-        name: name.to_string(),
-        team,
-        pos: Hex::new(q, r),
-        integrity: 40.0,
-        max_integrity: 40.0,
-        defense: Defense { barrier: 6.0, plating: 6.0 },
-        armor_class,
-        chassis: Chassis::Augmented,
-        skills: Chassis::Augmented.baseline_skills(),
-        initiative: init,
-        link: 0.0,
-        firewall: 0,
-        immunity: 0,
-        attack: Attack { damage: dmg, dtype, pen, range },
-        statuses: Vec::new(),
-        alive: true,
+    let mk = |id: u32, name: &str, team, q, r, dmg, init, range, dtype, pen, armor_class| {
+        let mut u = Unit::new(id, name, team, Chassis::Augmented)
+            .at(Hex::new(q, r))
+            .with_initiative(init)
+            .with_attack(Attack {
+                damage: dmg,
+                speed: if range > 1 { 3 } else { 1 },
+                dtype,
+                pen,
+                skill: if range > 1 { Skill::Gunnery } else { Skill::Melee },
+                accuracy: 0,
+                range,
+                min_range: 1,
+                emp: false,
+                footprint: Footprint::Single,
+                tags: EquipmentTags::NONE,
+            });
+        u = u.with_armor(armor_class);
+        // Beefier base than the default: Integrity 40 (Body-derived now), Plating / Barrier 6 — then fill.
+        u.character.base_mut().body = 40.0 / HP_PER_BODY;
+        u.character.base_mut().plating = 6.0;
+        u.character.base_mut().barrier = 6.0;
+        u.character.fill();
+        u
     };
     use atomica_sim::PenTier::*;
     use ArmorClass::*;
     use DamageType::*;
+    // (Katana takes wired reflexes below — a stat-up showcase on the melee duelist.)
     let mut units = vec![
         mk(0, "Katana", Team::A, 0, 0, 14.0, 7.0, 1, Slashing, Internal, Padding),
-        mk(1, "Rifle", Team::A, 0, 2, 9.0, 5.0, 4, Piercing, Contact, Mail),
+        mk(1, "Runner", Team::A, 0, 2, 9.0, 5.0, 4, Piercing, Contact, Mail),
         mk(2, "Bulwark", Team::B, 5, 0, 7.0, 4.0, 1, Bludgeoning, Contact, Plate),
         mk(3, "SMG", Team::B, 5, 2, 8.0, 6.0, 3, Piercing, External, Mail),
     ];
+    // Wire the Runner as a netrunner by **installing a cyberdeck** — the implant grants the hack
+    // loadout and folds in its Link (5) + Ice. A sharp Intellect (the derived Hacking) so the
+    // breaches actually land on first run, and a **Burner doctrine** flying a coherent loadout: it
+    // dives heat-prone chrome and leads with the burns, falling through to a softener.
+    units[1].character.base_mut().intellect = 10.0; // eff Hacking 14
+    units[1].skills.set(Skill::Hacking, 4);
+    units[1].install(Implant::cyberdeck());
+    units[1].install(Implant::neural_net()); // a neural net ups its Intellect → Hacking
+    for p in [Program::Lockware, Program::Overheat, Program::Meltdown, Program::Breach] {
+        units[1].install_program(p);
+    }
+    units[1].set_doctrine(NetDoctrine::Burner);
+    units[0].install(Implant::wired_reflexes()); // the duelist's stat-up: +Dexterity → Evasion
+
+    // The enemy line shows the netrunning spread *and* the program duel. Bulwark is a hardened
+    // "fortress" (deep if cracked) running **heat-prone** chrome — a juicy mark for the Runner's
+    // burns — and swinging an EMP maul that fries the deck on contact (the physical counter).
+    units[2].character.base_mut().link = 5.0;
+    units[2].character.base_mut().ice = 8.0; // hardened, but crackable on first run
+    units[2].install(Implant::reflex_booster()); // heat-prone digital chrome (the Burner's target)
+    // A chromed-up heavy — the stat-up suite: a fat HP buffer, raw strength, harder strikes.
+    units[2].install(Implant::decentralized_heart()); // +max Integrity (the HP stat)
+    units[2].install(Implant::actuators()); // +Body (strength)
+    units[2].install(Implant::rams()); // +damage (strike force)
+    units[2].rearm(|w| w.emp = true); // an EMP maul — frying the Runner's deck on contact
+
+    // SMG is a soft **enemy breaker**: its own cyberdeck lets it hack back, running a Controller
+    // doctrine that **Spoofs** the Runner's script and a **Ghost** that keeps it harder to crack.
+    units[3].character.base_mut().intellect = 9.0;
+    units[3].character.base_mut().link = 2.0;
+    units[3].character.base_mut().ice = 6.0;
+    units[3].skills.set(Skill::Hacking, 2);
+    units[3].install(Implant::cyberdeck());
+    units[3].install(Implant::neural_net()); // the enemy breaker matches the cognition edge
+    for p in [Program::Lockware, Program::Spoof, Program::Ghost] {
+        units[3].install_program(p);
+    }
+    units[3].set_doctrine(NetDoctrine::Controller);
+
     // Seed a couple of statuses so the pipeline is visible on first run.
     units[2].add_status(StatusSpec::burn(), 6, 3);
     units[3].add_status(StatusSpec::lag(), 6, 1);
@@ -104,7 +150,7 @@ async fn main() {
             draw_text(&u.name, p.x - HEX_SIZE * 0.7, p.y - 4.0, 18.0, col);
 
             // Integrity bar.
-            let frac = (u.integrity / u.max_integrity).clamp(0.0, 1.0);
+            let frac = (u.integrity() / u.max_integrity()).clamp(0.0, 1.0);
             let bw = HEX_SIZE * 1.3;
             let bx = p.x - bw / 2.0;
             let by = p.y + 6.0;
@@ -142,20 +188,22 @@ async fn main() {
                         continue;
                     }
                     let statuses: String = u
-                        .statuses
+                        .statuses()
                         .iter()
-                        .map(|s| {
-                            if s.stacks > 1 {
-                                format!("{}×{}", s.spec.name, s.stacks)
+                        .map(|(name, stacks)| {
+                            if *stacks > 1 {
+                                format!("{name}×{stacks}")
                             } else {
-                                s.spec.name.to_string()
+                                name.to_string()
                             }
                         })
                         .collect::<Vec<_>>()
                         .join(", ");
+                    let deck = if u.hack().is_some() { "⚡" } else { " " };
                     ui.label(format!(
-                        "{:?}  {:<8} {:>4.0}/{:<3.0}  [{:?}]  {}",
-                        u.team, u.name, u.integrity, u.max_integrity, u.armor_class, statuses
+                        "{:?}  {:<7}{} {:>4.0}/{:<3.0}  [{:?}]  L{:<2} {}",
+                        u.team, u.name, deck, u.integrity(), u.max_integrity(), u.armor_class(), u.link(),
+                        statuses
                     ));
                 }
             });

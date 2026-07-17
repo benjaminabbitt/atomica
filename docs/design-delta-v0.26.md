@@ -99,6 +99,12 @@ Principles:
 
 ## 3. The sustain triad + cross-pool healing ◆
 
+> **Status: the Doctor's mend built ✅** — a `Capability::Mend` ([`Heal`], `crates/sim`) that a medic
+> spends on its most-in-need ally each round: it **heals Integrity** (reviving a Downed ally, §9.4)
+> and **Rallies Resolve** (§4) — a first **cross-pool** heal (bio + morale). The **content medic**
+> (*Stitch*) fields it. **Still 🔭:** the Ripperdoc / White-hat menders, the equipment-condition
+> enabler (§3.1), and the marquee cross-pool ults (§3.3).
+
 ### 3.1 Equipment-condition state (enabler)
 
 "Field repair" only matters if damage disables *capabilities*, not just Integrity. So every piece of gear (implant, weapon, armor layer) carries a condition:
@@ -115,7 +121,7 @@ Mirrors the §7I attack matrix:
 |---|---|---|---|---|
 | **Bio** | Integrity (flesh) | **Doctor** | Virus → Vaccinated; Reject | Clan (flesh path) |
 | **Chrome** | Barrier / Plating; un-bricks Offline gear | **Ripperdoc** | EMP / Shed / Lockout damage | back-alley **Independent** ↔ premium **Corp** clinic |
-| **Code** | Firewall, Link; clears corruption | **White-hat** | Worm → Antimalware; spoofs | Runner |
+| **Code** | ICE, Link; clears corruption | **White-hat** | Worm → Antimalware; spoofs | Runner |
 
 (All three names are generic genre / real-world vocabulary — IP-clean.)
 
@@ -128,7 +134,7 @@ Keep the baseline **siloed**, let the **big abilities cross**:
 
 **Four pools** a mender can touch (the biggest reach the fourth):
 
-1. **Integrity** (bio) · 2. **Barrier / Plating + equipment-online** (chrome) · 3. **Firewall / Link + de-corrupt** (code) · 4. **Resolve** (morale, §4)
+1. **Integrity** (bio) · 2. **Barrier / Plating + equipment-online** (chrome) · 3. **ICE / Link + de-corrupt** (code) · 4. **Resolve** (morale, §4)
 
 Marquee cross-pool ult names (original — avoid the *Trauma Team* trademark): **Hard Reset**, **Cold Boot**, **Crash Cart**, **Code Blue**, **Dust-off**.
 
@@ -138,9 +144,22 @@ Marquee cross-pool ult names (original — avoid the *Trauma Team* trademark): *
 
 ## 4. Morale — the Resolve layer ◆
 
-A **second pool**, **Resolve** (the mind's Integrity), built from the existing status schema:
+> **Status: built ✅** (§17 factoring note) — the Resolve pool, Stress, Break (rout/berserk by
+> `break_mode`), machine immunity, the **full trigger set** (ally death · leader-death cascade ·
+> flanked · heavy hit), **Rally / leaders** (the *Anthem* projection), and **per-engagement reset**
+> are all in `crates/sim`, with mid-battle **recovery** (a broken unit rolls the **Grit** skill off
+> Nerve each round to pull back — hysteresis via a roll-gate + deficit penalty + comeback-above-floor),
+> and the **content roster fields it** — the **Anthem** leader (high Nerve, `leadership`), a berserk
+> blade, a disciplined bulwark (`crates/run/content.rs`). **Still 🔭:** only ⏳ tuning the feel-numbers,
+> and **Death's Door** for Integrity (§9.4) — a lethal hit downs (Integrity rides negative), a
+> per-round **Grit-off-Body** save bleeds out or clings on, a heal above 0 revives. **Still 🔭:** the
+> revive *sources* (menders / extraction) and ⏳ tuning the feel-numbers.
 
-- **Stress** = a DoT on Resolve (the **Mind / Psychic** damage type §3.1 reserved; Darkest Dungeon's Stress bar is the precedent).
+A **second pool**, **Resolve** (the mind's Integrity), built from the existing status schema and **sized by the new [`Nerve`](stats.md) attribute** (§17): `Resolve = Nerve × K`, the exact mental mirror of `Integrity = Body × K`. **Nerve : Resolve :: Body : Integrity** — Nerve both sizes the pool and *is* the composure resist (spoof / intimidation / Stress).
+
+**Morale is per-engagement ◆** (decided in build): Resolve resets to full and `broken` clears at **each battle's deploy**, unlike *physical* state (Integrity / chrome) which **persists across a run** (R&R between runs). A unit re-forms steady for the next fight even if its wounds carry — so a Break is a *within-battle* swing, not a run-long debuff. (Persistent morale attrition is a possible later dial; this keeps the baseline content winnable.)
+
+- **Stress** = a DoT on Resolve (the **Mind / Psychic** damage type §3.1 reserved; Darkest Dungeon's Stress bar is the precedent). Sources built: **ally death** (nearby), **leader death** (cascade — extra), **flanked** (≥2 adjacent enemies, per round), **heavy hit** (a blow ≥⅓ max Integrity).
 - **Resolve 0 → Break:** *rout* (forced Kite / Disperse, can't attack) or *berserk* (forced Advance, hits nearest incl. allies).
 - Triggers: nearby ally death, flanked, leader lost, heavy hit → Stress; kills, Rally, winning → restore.
 
@@ -148,13 +167,13 @@ A **second pool**, **Resolve** (the mind's Integrity), built from the existing s
 
 A unit's **script can be corrupted from all three realms** — the payoff of adding morale:
 
-| Vector | Corrupts behavior via | Immune chassis |
-|---|---|---|
-| **Digital** | spoof / Lockware / Worm (§7J) | zero-Link / Flesh |
-| **Bio** | **Delirium** virus strain (§7G) | Machine (no flesh) |
-| **Psych** | **morale Break** (rout / berserk) | Machine (no mind) |
+| Vector | Corrupts behavior via | Resisted by | Immune chassis |
+|---|---|---|---|
+| **Digital** | spoof / Lockware (§7J) | **Nerve** (composure) | zero-Link (no AR to edit) |
+| **Bio** | **Delirium** virus strain (§7G) | **Body** | Machine (no flesh) |
+| **Psych** | **morale Break** (rout / berserk) | **Nerve / Resolve** | Machine (no mind) |
 
-→ **Machines don't panic and don't go delirious** but are the most digitally exposed; **Flesh** is mind/bio-fragile but can go air-gapped. Sharpens the chassis rock-paper-scissors.
+→ **Nerve guards behavior on two of the three vectors** — composure throws off both a spoofed feed and raw fear (ICE, by contrast, guards the *system*: a Worm melts ICE but can't make you act). **Machines (Nerve 0)** don't panic and don't go delirious, but with no composure they're the most spoof- and digitally-exposed; **Flesh** is mind/bio-fragile but can go air-gapped. Sharpens the chassis rock-paper-scissors.
 
 **Leaders** project **+Resolve / Rally** to their formation (morale's Bulwark — the *Anthem* archetype); losing the leader → morale cascade.
 
@@ -227,8 +246,8 @@ Archetype { callsign · chassis · faction · link_floor · inbuilt[] · signatu
 | **Anthem** | Clan | Augmented | the leader — projects Resolve / Rally; the morale anchor |
 | **Rig** | Clan (The Haul) | Vehicle | crewed transport — multi-hex, ram, spills crew on death |
 | **Null** | Runner (Indep.) | Augmented | console-cowboy — high-Link, Spike, glass-jaw netrunner |
-| **Patch** | Runner (Indep.) | Augmented | **White-hat** — Worm cleanse, Firewall / Link restore |
-| **Ironclad** | Corp (Mil-Ind.) | Augmented | the anchor — subdermal Plate + Firewall projector |
+| **Patch** | Runner (Indep.) | Augmented | **White-hat** — Worm cleanse, ICE / Link restore |
+| **Ironclad** | Corp (Mil-Ind.) | Augmented | the anchor — subdermal Plate + ICE projector |
 | **Hollowpoint** | Corp (Mil-Ind.) | Machine | smartgun drone — Virus-immune; spoof its IFF and it guns your line |
 | **Broker** | Independent | Flesh | the **Fixer** — run-layer; Rep → discounts, slots, intel |
 
@@ -254,7 +273,7 @@ The **Rep + gear faucet.** Alongside standard battles (which pay currency / surv
 | **Take the dive** | you **lose** — but by **no more than X** (a controlled, convincing loss) |
 | **Time attack** | you win within **N** rounds |
 
-A Flight carries a **list** of these in an objectives container — the simple **WinFight** (the node's standard fight) plus any bonus goals — and can **meet any number** independently. The container **sums winnings** (rewards from met goals) and **losses** (penalties from failed ones) and surfaces the **unachieved**. A goal is *satisfied* (not failed) until its explicit **fail condition** fires — being merely unachieved is not a failure. The standard fight still drives termination.
+A battle carries a **list** of these in an objectives container — the simple **WinFight** (the node's standard fight) plus any bonus goals — and can **meet any number** independently. The container **sums winnings** (rewards from met goals) and **losses** (penalties from failed ones) and surfaces the **unachieved**. A goal is *satisfied* (not failed) until its explicit **fail condition** fires — being merely unachieved is not a failure. The standard fight still drives termination.
 
 ### 9.2 Requirements (the oddball entry / run conditions)
 
@@ -271,7 +290,7 @@ A Flight carries a **list** of these in an objectives container — the simple *
 
 ### 9.4 Death, extraction & the downtime economy ◆
 
-**Downed, then extracted — or dead.** A unit at 0 Integrity is **downed** (a Death's-Door grace state, §6.4), not instantly gone. **Extraction is the *only* thing that prevents death:**
+**Downed, then extracted — or dead.** A unit at 0 Integrity is **downed** (a Death's-Door grace state, §6.4), not instantly gone. **Extraction is the *only* thing that prevents death:** *(✅ the sim half is built — `Character.downed`, Integrity rides negative, a per-round **Grit-off-Body** save in `death_door_phase` bleeds out (succumb on a failure ≥ `DEATH_SAVE_MARGIN`) or clings on, and a **heal above 0 revives**. The **mender** revive source (the Doctor, §3) is now ✅ **built** — a medic heals a downed ally back above 0 and stands it up; **extraction** (vehicles/medevac, §5) is still 🔭.)*
 
 | Outcome | Condition | Result |
 |---|---|---|
@@ -286,7 +305,7 @@ A Flight carries a **list** of these in an objectives container — the simple *
 
 The **run still ends only on a battle loss** (army wiped), but you can now **bleed units permanently across a run while winning** — real stakes. *(Revises the earlier "always resurrect next battle" rule.)*
 
-**Withdraw — forfeit to save units ◆.** The player can **withdraw** from a Flight: the fight is **forfeited** (WinFight + objectives fail, no win rewards; a Job fails), but **all still-standing units escape** — no casualties. The *cut-your-losses* play: when a fight turns, withdraw to **preserve veterans** (their earned skills are unsalvageable, §10) rather than risk a wipe. Cost: the forfeit, plus a withdraw penalty (Rep / Notoriety / morale ding for bailing). It sits beside extraction: **extraction** pulls *downed* units out mid-fight; **withdraw** retreats the *whole army*. Factoring: the `sim` can end a Flight in a **Withdrawn** state (all alive units preserved, objectives forfeited); `atomica-run` applies the penalty and banks the roster.
+**Withdraw — forfeit to save units ◆.** The player can **withdraw** from a battle: the fight is **forfeited** (WinFight + objectives fail, no win rewards; a Job fails), but **all still-standing units escape** — no casualties. The *cut-your-losses* play: when a fight turns, withdraw to **preserve veterans** (their earned skills are unsalvageable, §10) rather than risk a wipe. Cost: the forfeit, plus a withdraw penalty (Rep / Notoriety / morale ding for bailing). It sits beside extraction: **extraction** pulls *downed* units out mid-fight; **withdraw** retreats the *whole army*. Factoring: the `sim` can end a battle in a **Withdrawn** state (all alive units preserved, objectives forfeited); `atomica-run` applies the penalty and banks the roster.
 
 **On death — two offsets, neither prevents the death ◆:**
 - **Insurance is *money*** (pre-paid, financial) — a **payout** when an insured unit dies, standing in for its **next-phase economic contribution** (a dead insured unit still "earns" via the payout). A bet on who falls; it **never saves the unit.**
@@ -318,7 +337,7 @@ A dead unit can be **both insured and salvaged** (money + materials), but it's s
 
 The **RPG layer** — what a unit *knows*, separate from what it *is* (chassis) or *carries* (gear). A fourth identity dimension, and the engine behind the character/fungible split.
 
-**Skills modify rolls ◆.** A skill shifts the **stochastic rolls** (§3.5) in its domain — hacking bends the hack-power-vs-Firewall margin, medical the cure / heal roll, a blade the crit / contagion-catch roll. Skills sit beside the resist stats (Immunity / Firewall) as the per-character roll-modifiers; deterministic effects (a flat Burn) ignore them, rolled ones don't.
+**Skills modify rolls ◆.** A skill shifts the **stochastic rolls** (§3.5) in its domain — hacking bends the hack-power-vs-ICE margin, medical the cure / heal roll, a blade the crit / contagion-catch roll. Skills sit beside the resist stats (Body / ICE) as the per-character roll-modifiers; deterministic effects (a flat Burn) ignore them, rolled ones don't.
 
 **Two sources, asymmetric ◆:**
 
@@ -379,7 +398,7 @@ None of it breaks the crate split or phase ordering.
 15. **[◑ Mixed]** **Casualty-offset dials (§9.4)** — Insurance pre-combat: premium cost, per-unit vs. blanket, and the purchase window; Medical-benefit conversion: salvage vs. claim model, what "more loss → more benefit" curves to, and whether it harvests the lost unit's *gear*; can a unit carry **both** offsets, and do they stack?
 16. **[⏳ Playtest]** **Extraction & salvage dials (§9.4)** — *sources resolved* (a **vehicle** exiting the board — removing it *and* the rescued — or an extraction membership); *reward gradient resolved* (kills > extraction, slightly). **⏳ Deferred to playtest (needs code):** the **permadeath-rate dial** — the **downed→dead window** (how long a downed unit survives awaiting pickup — the Death's Door clock), extractions-per-battle, membership response time, and whether extraction costs tempo/risk. These are *feel* numbers, untunable on paper. Plus the **salvage tables** (what gear / biomatter a death returns).
 17. **[◑ Mixed]** **Skills & progression (§10)** — the skill list and which rolls each modifies; the **XP curve** and whether levels persist across *runs* (meta-progression) or reset each run; the **skill-chip level cap** and slot cost; when a character's own skill and a chip cover the same domain, do they **stack or take the max**?
-18. **[◑ Mixed]** **Withdraw (§9.4)** — the bail penalty (Rep / Notoriety / morale?); do downed units escape too or only standing ones; can you withdraw from any Flight or only some.
+18. **[◑ Mixed]** **Withdraw (§9.4)** — the bail penalty (Rep / Notoriety / morale?); do downed units escape too or only standing ones; can you withdraw from any battle or only some.
 19. **[⏳ Playtest]** **Upgrade point normalization (§13)** — the hidden point value per upgrade; the **async-PvP matchmaking curve** (budget caps vs. handicapping) that balances different meta-progression; whether shop offers are point-balanced too.
 
 ---
@@ -389,10 +408,10 @@ None of it breaks the crate split or phase ordering.
 *Resolutions from the design-working session; these **supersede** the matching §12 items. Specifics marked ◆ are my fill on the user's call — override freely. Numbers still ⏳ where noted.*
 
 **Roll resolution — the core mechanic: `3d6 + skill + equipment` vs. TN, no stats.** ◆
-- **When you roll:** only **contested / stochastic** actions — hacks, spoofs, contagion (tick / build / spread), skill-gated abilities. **Basic attacks auto-hit** (the deterministic damage pipeline, §10.5 of the taxonomy); the dice live in the digital / contagion / skill layer, keeping the auto-battler fast.
-- **The roll:** `3d6 + skill + equipment` vs. a **Target Number**. **Margin = total − TN**; **margin > 0 succeeds**, and the **margin's size = degree of success** (scales the effect — a bigger hack margin trips a stronger effect; a bigger contagion margin pushes a higher tier / harder-to-resist). This **subsumes** the old `margin = hack-power − Firewall` and the contagion **T1/T2/T3** roll into one rule.
-- **Skills attack, stats defend.** The *only* additive bonus to a roll is **skill** (character or chip — take-the-max, chips capped, §10) **+ equipment** (deck hack-rating, weapon mod, …). **No chassis stat is added to a roll.** Instead the defender's stat line *is* the TN: **Firewall** (hacks / Worm / spoof), **Immunity** (Virus), a control-resist — thresholds you roll *against*, never bonuses to your own roll.
-- **Equipment arms both sides.** Just as gear lifts the attacker's roll (a cyberdeck → Hacking), it also lifts the **defender's stat/TN** (a Firewall implant → higher Firewall). So the TN is *base stat + equipment*, the mirror of the attacker's *skill + equipment* — gear buys offense and defense alike. (In the engine the stat field already *is* the TN, so loadout derivation just folds equipment into it.)
+- **When you roll:** **contested / stochastic** actions — hacks, spoofs, contagion (tick / build / spread), skill-gated abilities, **and weapon attacks** (to-hit). A weapon rolls `3d6 + weapon skill + accuracy` vs the target's **Evasion** (plus weapon range penalties — **ranged** falloff with distance and an **awkward** weapon's close-quarters bite, discrete, §10.5). **Fast-path:** an **undefended** blow (Evasion 0, melee, no awkward penalty ⇒ TN ≤ 0) **auto-hits with no roll** and burns no RNG — so trivial exchanges stay deterministic and the auto-battler fast; the dice only enter once a defender can actually evade or a long weapon is jammed up close.
+- **The roll:** `3d6 + skill + equipment` vs. a **Target Number**. **Margin = total − TN**; **margin > 0 succeeds**, and the **margin's size = degree of success** (scales the effect — a bigger hack margin trips a stronger effect; a bigger contagion margin pushes a higher tier / harder-to-resist). This **subsumes** the old `margin = hack-power − ICE` and the contagion **T1/T2/T3** roll into one rule.
+- **Skills attack, stats defend.** The *only* additive bonus to a roll is **skill** (character or chip — take-the-max, chips capped, §10) **+ equipment** (deck hack-rating, weapon mod, …). **No chassis stat is added to a roll.** Instead the defender's stat line *is* the TN: **ICE** (hacks / Worm / spoof), **Body** (Virus / Poison — the bio resist folded into the attribute), **Evasion** (physical to-hit — weapon **range tags** add on top: **ranged** falloff with distance, **awkward** clumsiness up close; but **nothing** adds to a hack: range can't touch the digital realm), a control-resist — thresholds you roll *against*, never bonuses to your own roll.
+- **Equipment arms both sides.** Just as gear lifts the attacker's roll (a cyberdeck → Hacking), it also lifts the **defender's stat/TN** (a ICE implant → higher ICE). So the TN is *base stat + equipment*, the mirror of the attacker's *skill + equipment* — gear buys offense and defense alike. (In the engine the stat field already *is* the TN, so loadout derivation just folds equipment into it.)
 - **Why 3d6 — the bell curve.** Mean 10.5, tight spread → **skill dominates, luck is a small nudge**, big upsets rare (~0.5% each extreme). Fits the seeded-RNG, replayable, low-swing feel over d20 randomness.
 - **Defaults ◆ (tunable):** succeed on **≥ TN**; **nat 3 = fumble, nat 18 = crit** (rare, splashy). **Calibration ⏳** — skill ranges, equipment bonuses, and TN bands set so a matched contest (skill + equip ≈ TN − 10.5) sits near 50%. *(Also closes the taxonomy's "resolution math" TBD, §8 #5.)*
 
@@ -444,7 +463,7 @@ So Rep has two inputs: **fielding affiliated units** (the live unit-summation, �
 
 | Shop | Sells | Vendor |
 |---|---|---|
-| **Cyber** | implants (Link / Firewall / Hack-effect) **+ skill chips** (§10) | Cyberware corp / Ripperdoc |
+| **Cyber** | implants (Link / ICE / Hack-effect) **+ skill chips** (§10) | Cyberware corp / Ripperdoc |
 | **Bioware** | bio-augments (no Link, EMP-immune, Reject) | Medical corp / Doctor |
 | **Arms** | **guns + melee/blades + armor/defense** — the whole physical realm | Mil-Industrial / clans |
 | **Programs** | **all software — offense (hacks / worms / spoof) + defense (anti-Worm / firewall / Link-effects)** — the digital realm | Runner |
@@ -471,25 +490,25 @@ So Rep has two inputs: **fielding affiliated units** (the live unit-summation, �
 
 ## 15. Run structure — the navigation tree ◆
 
-The roguelike run is a **branching navigation tree** (Slay-the-Spire-style map) of nodes from start to a boss, **rolled per run** (seeded). At each branch you **choose your route**, trading off reward, risk, Rep, and recovery. (**"Flight"** = a battle / combat sortie — the in-world term.)
+The roguelike run is a **branching navigation tree** (Slay-the-Spire-style map) of nodes from start to a boss, **rolled per run** (seeded). At each branch you **choose your route**, trading off reward, risk, Rep, and recovery.
 
 **Node types:**
 
 | Node | What |
 |---|---|
-| **Flight** (battle) | the auto-resolved combats; **elite / boss flights** are tougher |
+| **Battle** | the auto-resolved combats; **elite / boss battles** are tougher |
 | **Economy / shop** | a §14 market (2 vendors/category — buy, sell) |
-| **Politicking** | offers a **selection of Jobs** (§9) to accept — contracts negotiated here, fought as objective Flights |
+| **Politicking** | offers a **selection of Jobs** (§9) to accept — contracts negotiated here, fought as objective battles |
 | **Event** | a choice / dilemma (narrative, gambles, faction overtures) |
 | **Fixer** | intel (scout ahead), Rep brokering, black-market |
 | **Clinic / Rest** | heal · chrome-repair · Worm-cleanse (menders as a service) |
 | **Raid** | a forced **cop** encounter spawned by Notoriety (§13 #2) |
 
-**Cadence ◆:** between **flights**, the route runs through **2–3 economy / shopping segments** (shop · Job · event · rest) — the downtime where the casualty economy (§9.4), the *Recovered-units-sit-out-one-segment* rule (§13 #13), and Rep flows play out across **multiple stops**, not one.
+**Cadence ◆:** between **battles**, the route runs through **2–3 economy / shopping segments** (shop · Job · event · rest) — the downtime where the casualty economy (§9.4), the *Recovered-units-sit-out-one-segment* rule (§13 #13), and Rep flows play out across **multiple stops**, not one.
 
 **Routing is the strategy:** you see the tree ahead and plan — dive for Jobs (Rep + gear, risk), stock up at shops, rest to recover downed units, or rush the boss. Branches force trade-offs (you can't hit every node), and **Notoriety + the dynamic rivalry (§13 #3) reshape which nodes and enemies appear** — so no two runs route the same.
 
-**Factoring:** `atomica-run` owns the tree — seeded generation, node resolution, routing; the `sim` only runs **Flight** nodes. The tree is run-state. *(⏳ tuning: tree depth, flights-per-run, node mix, boss structure.)*
+**Factoring:** `atomica-run` owns the tree — seeded generation, node resolution, routing; the `sim` only runs **Battle** nodes. The tree is run-state. *(⏳ tuning: tree depth, battles-per-run, node mix, boss structure.)*
 
 ---
 
@@ -501,8 +520,35 @@ Rep cashes out as **shop access**, not battle-board presence. *(Supersedes the e
 - So §14's *"more vendors unlock over a run"* is **Rep-driven** — build standing, its shop spawns.
 - The **dynamic rivalry** (§13 #3) still bites: a rival's shop may close (or price away) as the aligned one opens.
 
-**Jobs come from politicking nodes, not the board.** A challenge **is a Job** (§9), offered at a **politicking node** (§15) — a run-tree stop presenting a **selection of Jobs** to accept; the accepted Job then runs as an objective **Flight**. No board reps, no board challenges.
+**Jobs come from politicking nodes, not the board.** A challenge **is a Job** (§9), offered at a **politicking node** (§15) — a run-tree stop presenting a **selection of Jobs** to accept; the accepted Job then runs as an objective **battle**. No board reps, no board challenges.
 
 **Factoring:** all `atomica-run` — Rep thresholds gate shop spawns; politicking nodes generate Job offers. The `sim` is untouched.
 
 *Open ⏳: which thresholds spawn which shops; politicking Job-offer counts / refresh; whether a rival shop closes or just prices away.*
+
+---
+
+## 17. Stat-model consolidation (v0.27 pass) ◆
+
+*A simplification pass over the stat line and the contagion model. **Supersedes** every earlier mention of `Immunity`, `Firewall`, and a standalone `Health`/HT attribute across the corpus — the canonical statement now lives in [`stats.md`](stats.md) §2/§5/§6. ◆ = decision on the user's call.*
+
+**Four attributes — swap constitution for character.** Two moves that net to four: the GURPS ST/HT split is **collapsed** (the short-lived **Health/HT** attribute **folds into Body**), and a new will/composure attribute, **Nerve**, is **added**. So the substrate is **Body · Dexterity · Intellect · Nerve** — we traded a *constitution* stat for a *character* stat. One **Body** stat now carries **Integrity/HP** (`Body × K`), **melee damage**, *and* **biological resilience** (`power − Body`); the trade we accept there is no fragile-but-hardy build — might, bulk, and constitution move together.
+
+**`Nerve` added — the mind's attribute ◆.** Morale, social presence, and composure had no home attribute (they were borrowing Intellect); the §4 Resolve layer and the spoof vector made them load-bearing, so **Nerve** owns them. It **sizes the Resolve pool** (`Resolve = Nerve × K`, mirroring Integrity) and **is** the composure resist that **spoof / intimidation / Stress** roll against — **Nerve : Resolve :: Body : Integrity**. Genre note: this is Cyberpunk's **Cool**, splitting *smart* (Intellect → ICE, hacking) from *steady* (Nerve → Resolve, presence) so the genius-glass-cannon and the nerves-of-steel solo are different builds. The key payoff: **spoof now resists off Nerve, not ICE** — *ICE guards the system, Nerve guards the self.* A Worm melts ICE to crack your surface; a Spoof edits your senses to hijack your behavior, and composure (Nerve), not your wall, throws it off. **Machines (Nerve 0)** get no Resolve pool — morale- and intimidation-proof, but with no composure they're the most spoof-credulous chassis (consistent with §4.1: machines are the most digitally exposed). Every corruption family now resists off an attribute: **Virus → Body, Worm → ICE, Spoof → Nerve.**
+
+**`Firewall → ICE` (renamed).** The digital active-defense / digital Internal-resist is **ICE** (all-caps — *Intrusion Countermeasures Electronics*), granted off Intellect + deck. The rename pays off in flavor: a worm **melts** ICE, an attacker's **icebreaker breaks** it, and **Black ICE** is a ready-made lethal-countermeasure tier (🔭). It reads as a *capability rating*, not a device — distinct from **Link** (which owns "installed connectivity").
+
+**`Immunity → Body` (folded).** There is **no standalone bio-resist stat**. The Internal tier still has two flavors, but they now key off:
+- **bio** (Virus, Poison, organic toxins) → the **Body** attribute (a tough frame shrugs off toxins);
+- **digital** (Worm, intrusion, malware) → **ICE**.
+
+This keeps the two-flavor structure of [`status-effects-taxonomy.md`](../status-effects-taxonomy.md) §7A/§7E while dropping a stat: bio resilience is just *Body*, mirroring how the two active defenses (Evasion off Dexterity, ICE off Intellect) hang off attributes.
+
+**Contagion model — virus wastes, poison burns, worm melts ◆.** The bio/digital corruption split is sharpened, with an **intentional asymmetry**:
+- **Virus** (bio) now **attacks Body** — a *wasting* disease that chips Body for its duration. Because Body *is* the HP pool, the attack **drags Integrity/HP down**; because bio-resist *is* Body, it also **softens the host for the next strain**. One effect does the work the old Immunity-rot snowball did *and* bites HP. Keeps its **fever DoT** (Internal, bypasses armor — the immediate sting atop the slow wasting). The contagious **plague** variant contests `virulence` vs **Body**.
+- **Poison** (bio) is the **pure DoT** sibling — it ticks, is resisted (roll-modified) by **Body**, and **attacks no stat**. The burst, not the wasting.
+- **Worm** (digital) **melts ICE** — rots the wall, softening the surface for the next strike; the contagious **worm-swarm** contests `virulence` vs **ICE**.
+
+So **digital corruption snowballs** (thinner ICE → deeper next bite) while **bio splits** into a slow killer (Virus → Body/HP) and a flat burn (Poison). Cleanses unchanged in role: **antivirus** strips Virus, the **ICE patch** strips Worm.
+
+**Factoring note — engine reconciled (✅); the morale layer now built too.** The stat-line consolidation is now **in the `sim` crate**: `Stat::Firewall → Ice`, the **Health attribute removed** (bio-resist rolls against **Body**: `Resist::Body`, `Contagion.resist = Stat::Body`), **`Corruption::virus` attacks Body** (a `−Body` factor — the wasting that drags Integrity), **Poison** is the pure-DoT softener resisted by Body, and the **`Nerve` attribute** + Resolve-pool derivation (`max_resolve = Nerve × RESOLVE_PER_NERVE`) + `Resist::Nerve` are wired. The follow-on **features shipped too**: **spoof rolls a Nerve composure contest** (`deploy_rider`: a breach cracks ICE, then Spoof/Misfire must beat `SPOOF_POWER − Nerve` — *ICE guards the system, Nerve guards the self*; a Nerve-0 machine is spoofed freely); the **active-Guard recast** of `net_defense` (the **Sentinel** doctrine walls one covered ally via [`Unit::guarding`], the old free passive `max()` gone); and the **morale loop** (§4) — a live **Resolve pool** (`Character.resolve`), **Stress** (`apply_stress`), **Break** at 0 (rout = flee + can't attack / berserk = charge the nearest *any*-team unit, friendly fire — by the unit's `break_mode`), the **ally-death → nearby-ally Stress** trigger (`morale_shock` in `reap`), **machine immunity** (Nerve 0 ⇒ no Resolve), **Rally / leaders** (`rally_phase`: a `leadership` unit regens nearby allies' Resolve each round — the *Anthem* projection) with the **leader-death cascade**; the **full Stress trigger set** (`flank_stress` for ≥2 adjacent enemies; a **heavy-hit** hook in `resolve_attack_with` for a wound ≥⅓ max Integrity); **per-engagement reset** (`reset_morale` at deploy — Resolve refills and `broken` clears each battle, while physical wounds persist across a run); and mid-battle **recovery** (`recovery_phase`: a broken unit rolls the **Grit** skill off Nerve each round to pull back — the hysteresis is the **roll-gate** plus a **deficit penalty** that Rally/calming ease, with a **comeback above the revive floor** so it can't flicker); and **Death's Door** (§9.4) — a lethal hit now **downs** rather than kills (`Character.downed`, Integrity riding **negative** as the running penalty), and each round a downed unit rolls **Grit off Body** to cling on (`death_door_phase`: a pass holds, a *lesser* failure bleeds it deeper, a failure **by ≥ `DEATH_SAVE_MARGIN`** or a fumble **succumbs**, and a **heal back above 0 revives**); and the **mender** (§3) — a `Capability::Mend` (the **Doctor**'s kit, `Heal::doctor`) a medic spends each round on its most-in-need ally (`mend_target` → `mend_activation`): it **heals Integrity (reviving a Downed ally) and Rallies Resolve** (steadying a shaken one), fighting only when the line is whole. So **Death's Door's revive now has a source in play**. The **content roster** fields it (`crates/run/content.rs`): the **Anthem** leader (whose death cascades), a **berserk** blade, a disciplined high-Nerve **bulwark**, and the **medic** (*Stitch*). sim 235 + run 19 green. What's **still 🔭** is only ⏳ tuning the feel-numbers and the *other* revive source — **extraction** (vehicles / medevac, §5). The docs and code now agree on the stat model, the corruption resists, the netrunning defense, the full morale layer, Death's Door, and the Doctor's mend.

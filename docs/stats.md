@@ -1,0 +1,258 @@
+# Stats & the core roll — the resolution spine
+
+*The canonical reference for **how a number becomes an outcome**: the dice, the
+attributes, the skill tiers, and the three contest shapes every system resolves
+through. Everything else (`combat.md`, `netrunning.md`, `corruption.md`,
+`cyberware.md`) cites this file for the roll. **Numbers are illustrative / tuning
+(TBD).** ◆ = decision. Status: **✅ built** · **◑ partial** · **🔭 planned**.*
+
+---
+
+## 1. The core roll — `2d10` roll-under ✅
+
+Every check in the engine is one mechanic ([`crates/sim/src/roll.rs`](../crates/sim/src/roll.rs)):
+
+```text
+2d10 ≤ target          success on equal-or-under
+margin = target − dice   the degree of success (drives stacks / severity)
+```
+
+- **No additive, no doubling, no base.** The `target` *is* the actor's effective
+  number (skill, rating) less any situational penalty — nothing is added to the
+  dice. This keeps one dice language everywhere.
+- **Crit / fumble** key off the *natural* dice: a natural **2–3** crits
+  (auto-succeed, even against an impossible target), a natural **19–20** fumbles
+  (auto-fail, even against a trivial one). ≈3% each.
+
+### Why 2d10 and not 3d6 ◆
+
+2d10 is a **flatter (triangular)** curve than 3d6's bell (σ ≈ 4.1 vs 3.0). The
+point is **lower balance sensitivity**: 2d10 **caps the extremes** — no roll
+exceeds ~90% — so no single unit can become a near-invincible linchpin the whole
+run pivots on, and a one-point stat change moves the outcome far less.
+
+| roll ≤ target | 7 | 10 | 13 | 15 (elite) | 16 |
+|---|---|---|---|---|---|
+| **3d6** | 16% | 50% | 84% | **95%** | 98% |
+| **2d10** | 21% | 45% | 72% | **85%** | 90% |
+
+Measured on the sharpest sensitivity case (one unit's Evade → run clear %), 2d10
+roughly **halved** the swing (worst single-point step 49 pts → 16) and removed the
+cliffs (no setting auto-wipes or auto-sweeps). The cost: the flatter curve lifts
+baseline miss (~49% → ~56%) — luck matters more per roll, by design.
+
+---
+
+## 2. Primary attributes — the GURPS ~10 scale ✅
+
+**Four** characteristics, centred on **10 = average human** (range ≈ 8–14; combat
+archetypes 10–13). They are the substrate the **skill families** are tiers
+*on*, and the combat/digital stats derive from.
+
+| Attribute | Field | Governs (skills) | Feeds |
+|---|---|---|---|
+| **Body** | `unit.body` | Melee, Heavy | **Integrity = Body × `HP_PER_BODY`** ✅ (toughness *is* HP — one stat), **melee damage** ✅ (signed off 10: heavier swings harder, frail softer), **biological resilience** ✅ — the resist **poison / plague / virus** afflictions roll against (their attack is `power − Body`), and that a virus *attacks* (§5). A strong, tough frame shrugs off toxins and infection. |
+| **Dexterity** | `unit.dexterity` | Gunnery, Stealth, **Evade** | **Evasion** ✅, **physical Initiative** ✅ — *dragged down by heavy plating (the armor tradeoff)* |
+| **Intellect** | `unit.intellect` | Hacking, Medical, Tech | **ICE** ✅ (digital active defense), **digital Initiative** ✅ (net turn order — *speed of thought*) |
+| **Nerve** | `unit.nerve` | Social (Command, Intimidate), **Grit** | **Resolve = Nerve × `K`** ✅ (composure *is* the morale pool — the mental mirror of Integrity, [`design-delta`](design-delta-v0.26.md) §4), **composure** ✅ — the resist **spoof / intimidation / Stress** roll against (`power − Nerve`). Force of personality (genre: *Cool*). Machines have **Nerve 0** — no mind to break (morale-proof) and no judgement to override a lie (utterly spoof-credulous). |
+
+> **ICE and Link are *granted*, not derived.** They come from gear / chassis (a cyberdeck
+> lifts both), not from an attribute — Intellect governs the netrunning *skills* and the digital
+> turn order, but the wall itself is equipment. This is deliberate: the net surface is something
+> you *install*, not something you *are*. (The `Damage` stat is *also* gear — a weapon's base plus
+> chrome like rams / combat-stim — but a Melee blow adds a signed **Body** bump on top: `weapon +
+> (Body − 10)×k + chrome` (heavier hits harder, frail softer; the blow can't drop below 0). Ranged /
+> Heavy damage is the munition, so it doesn't scale with Body.)
+>
+> **Programs are the digital domain's *skills*.** Where a physical action is `attribute + skill-tier`,
+> a digital one is `granted stat (Link / ICE) + quality program` — you don't *train* onto the
+> net surface, you *load better software* onto it. A quality program runs **on** the granted stat
+> and acts as its skill-tier: **Ghost** raises net defense on top of ICE (a defensive program,
+> `netrunning.md` §10.8), the offensive riders run on the attacker's Link channel. So a fat granted
+> stat with cheap software, or a thin one with premium programs, are two routes to the same edge —
+> the same attribute-vs-skill trade, in installed form.
+
+**Body and Integrity are one stat ✅.** Max Integrity (the HP pool) is **derived** —
+`Body × HP_PER_BODY` (K = 6: an average Body-10 build carries ~60 HP; a bolted-down node
+scales Body up to whatever pool it needs). So wounds and toughness aren't tracked separately:
+a heavier unit (more HP) is *also* a harder melee hitter, and a Body stat-up implant (actuators,
+the decentralized heart) fattens the HP pool directly. The cost the design accepts: a very
+high-HP bruiser reliably lands its melee (Evasion, not a to-hit roll, is the defense). (We
+deliberately **collapse the GURPS ST/HT split**: one **Body** stat is *both* the HP pool *and* the
+toxin/disease resist (§2/§5) — a big frame *is* a hardy one. The simplification we accept: there's
+no fragile-but-hardy or burly-but-sickly build; physical might, bulk, and constitution move together
+— and because bio-resist *is* Body, a wasting **virus** that attacks Body shrinks the HP pool with it.)
+
+**Nerve and Resolve are one stat too** 🔭. The morale pool mirrors the physical one:
+`Resolve = Nerve × K`, just as `Integrity = Body × K`. **Nerve : Resolve :: Body :
+Integrity** — the attribute both *sizes* its pool and *is* its resist (Body shrugs
+off toxins; Nerve shrugs off fear, intimidation, and the spoof that edits your
+senses). So a wide-Resolve veteran is *also* harder to spook or fool, the way a
+high-HP bruiser is *also* a harder hitter. (Morale is a [`design-delta`](design-delta-v0.26.md)
+§4 layer — 🔭 planned, not yet built.)
+
+**Initiative is action-typed ✅.** A unit's turn order derives from the attribute the *action*
+uses — **Dexterity** for a physical activation (reflexes), **Intellect** for a digital one (a
+quick mind dives sooner). Link still gates a hack's reach/channel/presence but no longer sets
+the net turn order.
+
+---
+
+## 3. Skills — tiers on the governing attribute ✅
+
+A skill is **not** an independent number; it's a **proficiency tier** *on* its
+governing attribute ([`skills.rs`](../crates/sim/src/skills.rs)):
+
+```text
+effective skill = governing attribute + skill tier
+```
+
+The tiers run the GURPS default-to-master spread (**±4**):
+
+| Tier | Untrained | Exposed | Beginner | Competent | Expert | Elite |
+|---|---|---|---|---|---|---|
+| **modifier** | **−4** | −3 | −2 | **0** | +2 | +4 |
+
+- **`competent` = your raw attribute** (the 0 tier).
+- **Untrained (−4) is the *default*** ◆ — every skill a unit hasn't trained sits
+  there. This is load-bearing: a non-dodger's Evade is `Dex − 4`, a genuine but
+  **secondary** save (see §4). Training raises specific skills off the floor.
+- A high attribute lifts *all* its skills at once; plating's −Dexterity drags
+  every Dex skill (Gunnery, Evade…) down with it.
+
+So an elite duelist on Body 12 with Melee Elite (+4) attacks at effective **16**;
+a rank-and-file mook with an untrained Dex-10 Evade defends at **6**.
+
+**A skill's attribute is the *use case's*, not a fixed binding ✅.** `governs()` names a skill's
+**home** attribute (the default), but the same trained tier can roll off **whichever attribute
+the situation calls for** — `effective_skill_off(skill, stat)`:
+
+```text
+effective skill = (use-case attribute) + skill tier
+```
+
+The tier is what you *trained*; the attribute is what the moment *tests*. The **skill-borrows-attribute**
+rule means we add an attribute only where a domain is load-bearing enough to *own* one: morale, social
+presence, and composure graduated to first-class (the §4 morale layer, the spoof vector), so they get
+**Nerve** — the will/composure stat — rather than borrowing. The four attributes (Body, Dexterity,
+Intellect, Nerve) are the substrate; the framework still lets a skill *borrow* whichever the moment
+tests (a nerve-test made under physical duress can ride **Body**), so we don't multiply attributes for
+every flavor of "resist." (Biological affliction rolls against **Body**, and spoof / intimidation /
+Stress against **Nerve** — see §5/§6 — standing TNs, not trained rolls.)
+
+**Weapons carry this too — the to-hit attribute is a *tag* ✅.** A `FINESSE` weapon (a light blade,
+a pistol) rolls its Melee/Gunnery tier off **Dexterity**; a `BRAWN` weapon (a heavy maul, a braced
+launcher) rolls off **Body**; an untagged one uses the skill's home stat. So a duelist's slash rides
+reflexes while a bruiser's maul rides muscle — same skill, different governing stat, picked by the
+weapon (`EquipmentTags::to_hit_attribute`). Melee's home is already Body, so only *light* melee needs
+`FINESSE`; `BRAWN` is what lets a *heavy ranged* weapon override Gunnery's Dexterity.
+
+---
+
+## 4. Combat resolution — the opposed roll ✅
+
+A blow is an **opposed** exchange ([`resolve_opposed`](../crates/sim/src/roll.rs),
+[`combat.md`](combat.md)): the attacker rolls to hit *and* the target rolls an
+active **Evade**. **The blow lands only if the attacker succeeds *and* the
+defender fails.**
+
+```text
+attacker:  2d10 ≤ effective(weapon skill) + accuracy − range − cover
+defender:  2d10 ≤ Evasion − Speed                    (Evasion = effective Evade = Dex + tier)
+land = attacker succeeds AND defender fails
+```
+
+- **Evasion is just the Evade skill** ◆ — `Dexterity + Evade-tier`, defaulting to
+  untrained (`Dex − 4`). Dodge is potent for a trained acrobat and a thin secondary
+  save for everyone else; nothing special, no separate formula.
+- **Speed — the Dodge penalty** ◆ (a stat on `Attack`, peer of `damage`). A
+  fast attack is far harder to dodge than a slow one, so the weapon's **Speed**
+  docks the defender's Evade: a swung blade is slow (Speed ~1, Dodge stays potent),
+  a high-velocity round is fast (Speed ~3, Dodge barely helps). *(May also feed
+  penetration later — 🔭.)*
+- **Situational penalties** shrink the attacker's target: **range** (a projectile
+  is harder the farther the shot), **awkward** (a rifle/polearm is clumsy jammed up
+  close), and **cover** (the hex's bonus). See [`combat.md`](combat.md) §3.5.
+- **Undefended ⇒ auto-hit.** If the target's (Speed-adjusted) Evade ≤ 0 and the
+  shot is clear, the blow lands with no roll — trivial exchanges stay
+  deterministic; the dice only matter once the target can actually dodge.
+- **Hacking is opposed too** ◆ — a netrunner's breach has the same shape: the
+  runner rolls `2d10 ≤ avg(effective Hacking, channel)` and the target's
+  **ICE** rolls an *active defense*; the breach lands only if the runner
+  connects **and** the ICE fails. An **undefended** surface (ICE ≤ 0)
+  needs no defense roll. See [`netrunning.md`](netrunning.md).
+
+---
+
+## 5. Static contests — the resist *modifier* ✅
+
+A **contagion jump** or a **poison tick** has no active defender — it resolves
+against a **passive threshold**, folded in as a **modifier (a flat penalty), not a
+target number** ◆ ([`resolve_versus`](../crates/sim/src/roll.rs)):
+
+```text
+2d10 ≤ rating − resist
+```
+
+- `rating` is the actor's effective skill/potency (~10–15); `resist` is the
+  target's **ICE / Body / Nerve / security rating** as a penalty, *not* a number to beat.
+  Every point of resist costs the actor a point of target. This is the GURPS
+  skill-check pattern: *roll under your skill, penalized by the difficulty.*
+  (Bio afflictions resist against **Body** — ~10 for an average frame, more for a
+  bruiser — so a strain's `power` is authored hotter than the old near-zero
+  Immunity baseline to still bite; ⏳.)
+- **No static TN anywhere** — the same `2d10 ≤ target` core; the defense is just a
+  term inside `target`. (Hacking, which *does* have an active defender, is an
+  opposed roll instead — §4.)
+- Used by: **contagion** spread (`rating = virulence`, `resist = Body` for a
+  plague / `ICE` for a worm, [`corruption.md`](corruption.md)), a **spoof** /
+  intimidation landing (`resist = Nerve` — composure 🔭), and the status
+  **stochastic gate** (`rating = power + stacks`, `resist = the status's Resist`).
+  Afflictions/contagions are authored on the same ~10 scale so the penalty bites
+  meaningfully.
+
+---
+
+## 6. Derived & digital stats ✅
+
+| Stat | From | Role |
+|---|---|---|
+| **Evasion** | `Dexterity + Evade-tier` | the active-defense roll (§4) |
+| **ICE** | `Intellect` + implants | digital **active defense** — rolls back against a hack (opposed, §4); a worm **melts** it, an icebreaker **breaks** it; ≤ 0 = undefended |
+| **Link** | implants (cyberdeck…) | reachability gate · digital initiative · hack channel · **antenna range** ([`netrunning.md`](netrunning.md)) |
+| **Initiative** | `Dexterity` + gear | physical activation order |
+| **Integrity / Barrier / Plating** | Body + armor | the HP pools ([`combat.md`](combat.md)) — *not* modifiers; clamped pools |
+| **Resolve** ✅ | `Nerve × K` | the **morale pool** — Stress depletes it; at 0 a unit **Breaks** (rout / berserk). A broken unit rolls **Grit** off Nerve each round to **recover** (`2d10 ≤ effective(Grit, Nerve) − deficit`); the mental mirror of Integrity ([`design-delta`](design-delta-v0.26.md) §4) |
+
+---
+
+## 7. Calibration — the Moderate target ⏳
+
+The probe (`atomica-run probe`) tunes content against the fixed starter trio. The
+current landing — squarely **Moderate** under 2d10:
+
+| Scenario | Clear | Losses | To-hit miss |
+|---|---|---|---|
+| **gauntlet** (3-unit trio, the tuning target) | ~91% | ~1.1 / 3 | ~56% |
+| **street** (5-unit squad) | ~100% | ~0.4 / 5 | ~56% |
+
+Illustrative bands on the 2d10 scale:
+
+- **Attributes** — weak 8 · average 10 · strong 12 · exceptional 13–14.
+- **Skill tiers** — untrained −4 (default) · competent 0 · expert +2 · elite +4.
+- **Effective combat skill** — fodder ~8–10 · professional ~13–15 · master ~16.
+- **ICE (penalty)** — unprotected 0 · modest 4 · hardened 6–8.
+- **Body as bio-resist (penalty)** — the whole Body value folds in (~8 frail · 10
+  average · 14+ bruiser), so bio afflictions are authored hotter to clear it.
+- **Nerve as composure (penalty)** 🔭 — folds in the same way for spoof /
+  intimidation / Stress; a machine (Nerve 0) is a wide-open behavioral surface.
+- **Speed** — melee/thrown ~1 · firearm ~3.
+
+The flatter curve means **bigger skill *gaps*** read as advantage (a +4 effective
+edge is ~30 points of hit-rate), where 3d6 rewarded tighter ones. Tuning is now a
+gentle knob rather than a cliff (§1).
+
+> **Beyond per-roll calibration**, the model leans on *emergent* meta-balance
+> (Body-vs-Dex builds, machine-glass, the drone dark/loud trade). Those watch-items —
+> with their healthy bands and probe signals — live in
+> [`balance-watch.md`](balance-watch.md).
